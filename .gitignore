@@ -1,0 +1,21 @@
+# Executable spec baseline + interview study doc (kept local, never committed)
+index.md
+images/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Test / eval outputs
+.pytest_cache/
+eval/report.json
+
+# Local runtime data (sqlite working copy, ssh keys, env secrets)
+*.db
+*.sqlite3
+.env
+*.pem
+*.key

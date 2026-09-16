@@ -1,0 +1,1 @@
+{"config_version": "2.0.0", "golden_samples": 100, "coverage": ["Problem", "Event", "Business", "Host"], "priorities": ["P0", "P1", "P2", "P3"], "trace_replay_required": true, "note": "Frozen alert inputs / expected routes / expected evidence / task plans / artifacts / risk labels / conclusions; train/tune/eval splits isolated (100 frozen samples per spec Sec.7.6/Sec.21.1)"}

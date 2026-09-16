@@ -1,0 +1,51 @@
+services:
+  api:
+    build: .
+    command: uvicorn app.api:app --host 0.0.0.0 --port 8000 --workers 2
+    environment:
+      MYSQL_URL: ${MYSQL_URL:-}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      ES_URL: ${ES_URL:-http://elasticsearch:9200}
+      RERANKER_MODE: base_plus_rules
+    depends_on:
+      mysql: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      elasticsearch: {condition: service_healthy}
+    deploy:
+      resources:
+        limits: {cpus: "1.25", memory: 1G}
+        reservations: {cpus: "0.5", memory: 512M}
+    restart: unless-stopped
+  harness-worker:
+    build: .
+    command: python -m app.worker
+    environment:
+      MYSQL_URL: ${MYSQL_URL:-}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      ES_URL: ${ES_URL:-http://elasticsearch:9200}
+      RERANKER_MODE: base_plus_rules
+    depends_on:
+      mysql: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      elasticsearch: {condition: service_healthy}
+    deploy:
+      resources:
+        limits: {cpus: "1.5", memory: 1536M}
+        reservations: {cpus: "0.75", memory: 768M}
+    restart: unless-stopped
+  # Local fallback (no RDS / cloud Redis): extra containers, vendor-neutral; override with managed-service URLs when available
+  mysql:
+    image: mysql:8.0
+    environment: {MYSQL_ROOT_PASSWORD: example, MYSQL_DATABASE: sre}
+    volumes: [mysql-data:/var/lib/mysql]
+    healthcheck: {test: ["CMD", "mysqladmin", "ping", "-h", "localhost"], interval: 10s, retries: 5}
+  redis:
+    image: redis:7-alpine
+    volumes: [redis-data:/data]
+    healthcheck: {test: ["CMD", "redis-cli", "ping"], interval: 10s, retries: 5}
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
+    environment: {discovery.type: single-node, xpack.security.enabled: "false", ES_JAVA_OPTS: "-Xms512m -Xmx512m"}
+    volumes: [es-data:/usr/share/elasticsearch/data]
+    healthcheck: {test: ["CMD-SHELL", "curl -sf http://localhost:9200 || exit 1"], interval: 15s, retries: 5}
+volumes: {mysql-data: {}, redis-data: {}, es-data: {}}

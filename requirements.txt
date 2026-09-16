@@ -1,0 +1,7 @@
+# Optional: only needed for external backends; local stubs have no extra dependencies
+# pymysql
+# redis
+# elasticsearch
+fastapi
+uvicorn
+pytest
