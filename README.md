@@ -2,6 +2,11 @@
 
 *Intelligent SRE Collaboration Assistant*
 
+> **New here? Start with the visual tour:** https://envymoon.github.io/sre-blackboard/
+> -- an animated walkthrough of a P0 incident through all 10 stages, including
+> the human-approval pause. (Enable GitHub Pages on `main` / `docs` if the link
+> 404s.)
+
 A production-style, multi-agent incident copilot for cloud-native (Kubernetes)
 microservices. Given a P0 alert, it collects metrics/log/trace/change/code
 evidence, ranks root-cause candidates, and proposes a rollback -- while a Safety
