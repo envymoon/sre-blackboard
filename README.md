@@ -4,7 +4,9 @@
 
 > **New here? Start with the visual tour:** https://envymoon.github.io/sre-blackboard/
 > -- an animated walkthrough of a P0 incident through all 10 stages, including
-> the human-approval pause. (Enable GitHub Pages on `main` / `docs` if the link
+> the human-approval pause. Run `uvicorn app.main:app` and open
+> https://envymoon.github.io/sre-blackboard/live.html for the live agent board
+> (status, queue, approvals). (Enable GitHub Pages on `main` / `docs` if a link
 > 404s.)
 
 A production-style, multi-agent incident copilot for cloud-native (Kubernetes)

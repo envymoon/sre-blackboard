@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SRE Blackboard — Live Agent Board</title>
+<meta name="description" content="Live ops board: agent status, queue depths, incident pipeline stages and R3 approvals, streamed from the Harness API.">
+<style>
+  :root{
+    --bg:#0a0e14; --panel:#111823; --panel2:#0d141d; --line:#1e2a3a;
+    --txt:#dbe4f0; --mut:#8b98ab; --acc:#38e1c6; --acc2:#6aa8ff;
+    --red:#ff5d5d; --amber:#ffb454; --green:#4ade80; --violet:#b28bff;
+    --mono:"SFMono-Regular",Consolas,"Liberation Mono",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;line-height:1.6}
+  a{color:var(--acc);text-decoration:none} a:hover{text-decoration:underline}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+  nav{position:sticky;top:0;z-index:50;background:rgba(10,14,20,.9);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  nav .wrap{display:flex;align-items:center;gap:22px;height:58px}
+  nav .logo{font-weight:800} nav .logo span{color:var(--acc)}
+  nav .links{margin-left:auto;display:flex;gap:18px;font-size:14px} nav .links a{color:var(--mut)} nav .links a:hover{color:var(--txt)}
+  header{padding:40px 0 8px}
+  h1{font-size:32px;font-weight:800;letter-spacing:-.5px}
+  .sub{color:var(--mut);margin:6px 0 20px;max-width:760px}
+  /* connection bar */
+  .conn{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:18px}
+  .pill{font-family:var(--mono);font-size:12px;padding:4px 12px;border-radius:20px;border:1px solid var(--line);color:var(--mut)}
+  .pill.on{color:var(--green);border-color:#1f4a34} .pill.off{color:var(--red);border-color:#5a2323}
+  .pill .d{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:currentColor}
+  .pill.on .d{animation:blink 1.6s infinite} @keyframes blink{50%{opacity:.3}}
+  #baseUrl{flex:1;min-width:220px;background:#070b11;border:1px solid var(--line);border-radius:8px;color:var(--txt);font-family:var(--mono);font-size:13px;padding:8px 12px}
+  .btn{font-family:var(--mono);font-size:12px;padding:8px 16px;border-radius:8px;border:1px solid var(--acc);background:transparent;color:var(--acc);cursor:pointer}
+  .btn:hover:not(:disabled){background:rgba(56,225,198,.12)} .btn:disabled{opacity:.35;cursor:not-allowed}
+  .btn.solid{background:var(--acc);color:#06110e;font-weight:700}
+  .btn.warn{border-color:var(--amber);color:var(--amber)} .btn.warn:hover:not(:disabled){background:rgba(255,180,84,.12)}
+  .banner{display:none;background:#2a1515;border:1px solid #5a2323;color:#f0b0b0;border-radius:12px;padding:14px 18px;margin-bottom:18px;font-size:14px}
+  .banner.show{display:block} .banner code{font-family:var(--mono);font-size:12px}
+  section{padding:26px 0;border-top:1px solid var(--line)}
+  h2{font-size:20px;font-weight:800;margin-bottom:4px} h2 .n{color:var(--acc);font-family:var(--mono);font-size:14px;margin-right:8px}
+  .lede{color:var(--mut);font-size:14px;margin-bottom:16px}
+  .grid{display:grid;gap:12px} .g5{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .agent .hd{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:14px;font-weight:700}
+  .dot{width:9px;height:9px;border-radius:50%;background:#3a4a5e}
+  .agent.working{border-color:#2a5a50} .agent.working .dot{background:var(--green);animation:blink 1.2s infinite}
+  .agent .role{font-size:12px;color:var(--mut);margin:6px 0}
+  .agent .model{font-family:var(--mono);font-size:11px;color:var(--acc2)}
+  .agent .task{font-family:var(--mono);font-size:11px;color:var(--green);margin-top:6px;min-height:17px}
+  /* queue */
+  .qrow{display:flex;align-items:center;gap:12px;margin:8px 0;font-family:var(--mono);font-size:13px}
+  .qrow .lbl{width:34px;font-weight:800}
+  .qbar{flex:1;height:14px;background:#1a2432;border-radius:7px;overflow:hidden}
+  .qbar i{display:block;height:100%;width:0;transition:width .5s;background:linear-gradient(90deg,var(--acc),var(--acc2))}
+  .qrow .n{width:36px;text-align:right}
+  .sev-P0{color:var(--red)} .sev-P1{color:var(--amber)} .sev-P2{color:var(--acc2)} .sev-P3{color:var(--mut)}
+  /* incidents */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+  th{font-family:var(--mono);font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:1px}
+  td.mono{font-family:var(--mono);font-size:12px}
+  .stagebar{height:6px;background:#1a2432;border-radius:3px;overflow:hidden;margin-top:5px;min-width:120px}
+  .stagebar i{display:block;height:100%;background:linear-gradient(90deg,var(--acc),var(--acc2));transition:width .5s}
+  .st-ACTIVE{color:var(--acc2)} .st-AWAITING_APPROVAL{color:var(--amber)} .st-RESOLVED{color:var(--green)}
+  .empty{color:var(--mut);font-size:14px;padding:18px;text-align:center;border:1px dashed var(--line);border-radius:12px}
+  .ledger{display:flex;align-items:center;gap:14px;font-family:var(--mono);font-size:13px}
+  .ledger .big{font-size:22px;font-weight:800;color:var(--acc)}
+  footer{border-top:1px solid var(--line);padding:30px 0;color:var(--mut);font-size:13px;text-align:center;margin-top:20px}
+  code.inline{font-family:var(--mono);font-size:12px;background:var(--panel);border:1px solid var(--line);padding:2px 7px;border-radius:5px}
+</style>
+</head>
+<body>
+
+<nav><div class="wrap">
+  <div class="logo">⬛ <span>SRE Blackboard</span></div>
+  <div class="links"><a href="index.html">Tour</a><a href="index.html#pipeline">Pipeline</a><a href="index.html#safety">Safety</a><a href="https://github.com/envymoon/sre-blackboard">GitHub</a></div>
+</div></nav>
+
+<div class="wrap">
+<header>
+  <h1>Live Agent Board</h1>
+  <p class="sub">Real-time mirror of the Harness: who is working, what waits in queue, where each incident sits in the 10-stage pipeline. Read-only except the R3 approval button — same rule as production.</p>
+  <div class="conn">
+    <span class="pill off" id="pill"><span class="d"></span><span id="pillTxt">offline</span></span>
+    <input id="baseUrl" spellcheck="false" placeholder="http://localhost:8000">
+    <button class="btn solid" id="btnConn">Connect</button>
+    <button class="btn" id="btnInject" disabled>⚡ Inject P0 test alert</button>
+  </div>
+  <div class="banner" id="banner"></div>
+</header>
+
+<section>
+  <h2><span class="n">01</span>Agents <span class="pill" id="agentCount" style="margin-left:8px">–</span></h2>
+  <p class="lede">Green = working on the current pipeline stage. Model route per role: heavy brain (<code class="inline">muse-spark-1.3</code>) only where judgment pays, <code class="inline">gemini-3.8-flash</code> for high-frequency roles.</p>
+  <div class="grid g5" id="agents"></div>
+</section>
+
+<section>
+  <h2><span class="n">02</span>Queue + Ledger</h2>
+  <p class="lede">Strict P0→P3 dispatch, 90s leases, dead-letter after 3 attempts. Token spend capped per incident.</p>
+  <div class="card">
+    <div id="queues"></div>
+    <div class="ledger" style="margin-top:14px">
+      <span>token spend</span><span class="big" id="spend">$0.00</span><span style="color:var(--mut)">/ $0.50 budget</span>
+      <span style="margin-left:auto" id="qmeta"></span>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">03</span>Incidents</h2>
+  <p class="lede">Every alert becomes one row. Stage advances ~6s per step; at stage 8 the row waits for your approval.</p>
+  <div id="incWrap"><div class="empty">No incidents yet — connect the backend and inject a P0 test alert.</div></div>
+</section>
+
+<section>
+  <h2><span class="n">04</span>Run the backend</h2>
+  <p class="lede">This board is static — it only visualizes. Point it at a running Harness:</p>
+  <div class="card" style="font-family:var(--mono);font-size:13px;line-height:2">
+    git clone https://github.com/envymoon/sre-blackboard.git &amp;&amp; cd sre-blackboard<br>
+    pip install -r requirements.txt<br>
+    uvicorn app.main:app --port 8000<br>
+    <span style="color:var(--mut)"># then press Connect above (default URL already matches)</span>
+  </div>
+</section>
+</div>
+
+<footer><div class="wrap"><b style="color:var(--txt)">SRE Blackboard</b> · live board reads <code class="inline">GET /api/v1/status</code> every 2s · <a href="index.html">animated tour</a> · <a href="https://github.com/envymoon/sre-blackboard">GitHub</a></div></footer>
+
+<script>
+(function(){
+  var baseInput=document.getElementById('baseUrl'),
+      pill=document.getElementById('pill'), pillTxt=document.getElementById('pillTxt'),
+      banner=document.getElementById('banner'),
+      btnConn=document.getElementById('btnConn'), btnInject=document.getElementById('btnInject'),
+      agentsEl=document.getElementById('agents'), queuesEl=document.getElementById('queues'),
+      incWrap=document.getElementById('incWrap'),
+      base=localStorage.getItem('sre_backend')||'http://localhost:8000',
+      timer=null, online=false;
+  baseInput.value=base;
+
+  function url(p){return base.replace(/\/+$/,'')+p;}
+  function showBanner(html){banner.innerHTML=html;banner.classList.add('show');}
+  function hideBanner(){banner.classList.remove('show');}
+  function setOnline(on,uptime){
+    online=on; btnInject.disabled=!on;
+    pill.className='pill '+(on?'on':'off');
+    pillTxt.textContent=on?('live · uptime '+uptime+'s'):'offline';
+  }
+  function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+
+  async function poll(){
+    try{
+      var r=await fetch(url('/api/v1/status'));
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      render(await r.json()); hideBanner();
+    }catch(e){ setOnline(false); showBanner('<b>Backend unreachable at '+esc(base)+'</b> — start it with <code>uvicorn app.main:app --port 8000</code>, then press Connect. ('+esc(e.message)+')'); }
+  }
+
+  function render(s){
+    setOnline(true,s.harness.uptime_s);
+    // agents
+    var working=s.agents.filter(function(a){return a.status==='working';}).length;
+    document.getElementById('agentCount').textContent=working+' / '+s.agents.length+' working';
+    agentsEl.innerHTML=s.agents.map(function(a){
+      return '<div class="card agent'+(a.status==='working'?' working':'')+'">'+
+        '<div class="hd"><span class="dot"></span>'+esc(a.name)+'</div>'+
+        '<div class="role">'+esc(a.role)+'</div><div class="model">'+esc(a.model)+'</div>'+
+        '<div class="task">'+(a.current_stage?('▸ '+esc(a.current_stage)):'')+'</div></div>';
+    }).join('');
+    // queues
+    var max=Math.max(1,...Object.values(s.harness.queue));
+    queuesEl.innerHTML=Object.keys(s.harness.queue).map(function(p){
+      var n=s.harness.queue[p];
+      return '<div class="qrow"><span class="lbl sev-'+p+'">'+p+'</span>'+
+        '<div class="qbar"><i style="width:'+(n/max*100)+'%"></i></div><span class="n">'+n+'</span></div>';
+    }).join('');
+    document.getElementById('spend').textContent='$'+s.harness.ledger.spent.toFixed(2);
+    document.getElementById('qmeta').textContent='leases '+s.harness.leases+' · dead-letter '+s.harness.dead_letter+' · tasks done '+s.harness.tasks_done;
+    // incidents
+    if(!s.incidents.length){incWrap.innerHTML='<div class="empty">No incidents yet — press “⚡ Inject P0 test alert”.</div>';return;}
+    var rows=s.incidents.map(function(i){
+      var pct=Math.round(i.stage_no/10*100),
+          appr=(i.status==='AWAITING_APPROVAL')
+            ?'<button class="btn warn" data-appr="'+esc(i.incident_id)+'" data-plan="'+esc(i.action_plan_id||'')+'">Approve</button>'
+            :(i.status==='RESOLVED'?'<span class="st-RESOLVED">✓ done</span>':'<span style="color:var(--mut)">…</span>');
+      return '<tr><td class="mono">'+esc(i.incident_id)+'</td><td class="mono">'+esc(i.service)+'</td>'+
+        '<td><b class="sev-'+i.priority+'">'+i.priority+'</b></td>'+
+        '<td><span class="mono">'+i.stage_no+'/10 · '+esc(i.stage)+'</span><div class="stagebar"><i style="width:'+pct+'%"></i></div></td>'+
+        '<td><b class="st-'+i.status+'">'+i.status+'</b></td>'+
+        '<td class="mono">$'+i.cost.toFixed(2)+'</td><td>'+appr+'</td></tr>';
+    }).join('');
+    incWrap.innerHTML='<div class="card" style="padding:6px 10px;overflow-x:auto"><table>'+
+      '<tr><th>Incident</th><th>Service</th><th>Sev</th><th>Pipeline stage</th><th>Status</th><th>Cost</th><th></th></tr>'+rows+'</table></div>';
+    incWrap.querySelectorAll('[data-appr]').forEach(function(b){
+      b.onclick=function(){approve(b.getAttribute('data-appr'),b.getAttribute('data-plan'),b);};
+    });
+  }
+
+  async function approve(id,plan,btn){
+    btn.disabled=true;btn.textContent='…';
+    try{
+      var r=await fetch(url('/incidents/'+encodeURIComponent(id)+'/approve'),{method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({action_plan_id:plan,approver:'ops-board',idempotency_key:'board-'+Date.now()})});
+      var j=await r.json();
+      if(!j.approved)showBanner('Approval rejected: '+esc(j.reason||'unknown'));
+      poll();
+    }catch(e){showBanner('Approval failed: '+esc(e.message));btn.disabled=false;btn.textContent='Approve';}
+  }
+
+  btnConn.onclick=function(){
+    base=baseInput.value.trim()||'http://localhost:8000';
+    localStorage.setItem('sre_backend',base);
+    if(timer)clearInterval(timer);
+    poll(); timer=setInterval(poll,2000);
+  };
+  btnInject.onclick=async function(){
+    btnInject.disabled=true;
+    try{
+      await fetch(url('/api/v1/alerts'),{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({alert_id:'alt-board-'+Date.now(),tenant_id:'demo',priority:'P0',
+          service_id:'checkout-service',alert_name:'CheckoutLatencyHigh',environment:'prod',
+          auth:{tenant_id:'demo'}})});
+      poll();
+    }catch(e){showBanner('Inject failed: '+esc(e.message));}
+    btnInject.disabled=!online;
+  };
+  btnConn.onclick(); // auto-connect on load
+})();
+</script>
+</body>
+</html>

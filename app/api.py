@@ -35,9 +35,28 @@ try:
     from fastapi import FastAPI
     app = FastAPI(title="intelligent-sre-collaboration-assistant")
 
+    try:  # browsers (docs/live.html, GitHub Pages) call the API cross-origin
+        from fastapi.middleware.cors import CORSMiddleware
+        app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"],
+                           allow_headers=["*"])
+    except Exception:
+        pass
+
+    from .status import STATE
+
     @app.post("/api/v1/alerts")
     def create_alert(alert: dict):
-        return normalize(alert)
+        result = normalize(alert)
+        STATE.record_alert(result, alert)
+        return result
+
+    @app.get("/api/v1/status")
+    def get_status():
+        return STATE.snapshot()
+
+    @app.get("/api/v1/incidents")
+    def list_incidents():
+        return {"incidents": STATE.snapshot()["incidents"]}
 
     @app.get("/incidents/{incident_id}")
     def get_incident(incident_id: str):
@@ -53,7 +72,10 @@ try:
         from .auth import APPROVALS
         if not body.get("action_plan_id") or not body.get("idempotency_key"):
             return {"incident_id": incident_id, "approved": False, "reason": "plan+idempotency required"}
-        return {"incident_id": incident_id, **APPROVALS.approve(incident_id, body["action_plan_id"], body.get("approver", ""), body["idempotency_key"])}
+        out = {"incident_id": incident_id, **APPROVALS.approve(incident_id, body["action_plan_id"], body.get("approver", ""), body["idempotency_key"])}
+        if out.get("approved"):
+            STATE.approve(incident_id)  # release the stage-8 gate in the runtime mirror
+        return out
 
     @app.get("/metrics")
     def metrics():
