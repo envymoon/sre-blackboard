@@ -2,6 +2,9 @@
 index.md
 images/
 
+# Personal resume with PII (kept local, never committed)
+resume/
+
 # Python
 __pycache__/
 *.py[cod]
