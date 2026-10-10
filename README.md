@@ -7,7 +7,7 @@ root-cause candidates. Every claim has to cite evidence. Any change to
 production is proposed, checked by a deterministic policy engine, and needs
 human approval before an isolated executor applies it.
 
-> **Status: being rebuilt (milestone M0 of 10).** The first version was a
+> **Status: being rebuilt (M0 done, M1 next).** The first version was a
 > spec-shaped prototype: it had no real model calls, no real tool backends, and
 > an evaluation that could not fail. This repository is now being rebuilt into a
 > working system, one milestone at a time. The plan, including every known
@@ -70,7 +70,7 @@ Or run the API in a container with `docker compose up --build`.
 
 | Milestone | Scope | Status |
 |---|---|---|
-| M0 | Cleanup, honest docs, engineering baseline | in progress |
+| M0 | Cleanup, honest docs, engineering baseline | done (`v0.1.0`) |
 | M1 | Postgres, `SKIP LOCKED` job queue with leases and fencing, stateless API, auth | planned |
 | M2 | kind + OpenTelemetry Demo, SLO alerts, fault injection (flagd, Chaos Mesh, bad rollouts) | planned |
 | M3 | Read-only tools (Prometheus, Loki, Jaeger, Kubernetes), evidence store, record/replay | planned |
