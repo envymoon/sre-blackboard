@@ -1,36 +1,38 @@
-"""Gateway tests: routing / hard caps / incident budgets / billing convention / freeze. Maps to spec Sec.3."""
-from app.gateway import (route, call_cost, estimate_p0_cost, ModelGateway, TokenLedger,
-                         PRIMARY_HARD_LIMIT, FAST_HARD_LIMIT)
+"""Gateway tests: routing, per-call cap, incident budgets, model pinning."""
+
+import pytest
+
+from app.gateway import PER_CALL_TOKEN_LIMIT, ModelGateway, TokenLedger, route
+from app.settings import get_settings
 
 
-def test_routing():
-    assert route("coordinator")["model_id"] == "muse-spark-1.3"
-    assert route("safety")["tier"] == "xhigh"
-    assert route("log")["model_id"] == "gemini-3.8-flash"
-    assert route("triage")["thinking_level"] == "low"
-    assert route("reporter")["thinking_level"] == "medium"
+def test_routing_uses_configured_model(monkeypatch):
+    monkeypatch.setenv("SRE_LLM_MODEL", "claude-haiku-5-5")
+    monkeypatch.setenv("SRE_LLM_ROLE_MODELS", '{"synthesizer": "claude-sonnet-5-5"}')
+    get_settings.cache_clear()
+    try:
+        assert route("logs") == "claude-haiku-5-5"
+        assert route("synthesizer") == "claude-sonnet-5-5"
+        with pytest.raises(ValueError):
+            route("unknown-role")
+    finally:
+        get_settings.cache_clear()
 
 
-def test_hard_limits():
+def test_per_call_limit():
     gw = ModelGateway(TokenLedger(incident_id="i1", priority="P0"))
-    assert gw.complete("coordinator", PRIMARY_HARD_LIMIT + 1, 0)["status"] == "BUDGET_EXCEEDED"
-    assert gw.complete("log", FAST_HARD_LIMIT + 1, 0)["status"] == "BUDGET_EXCEEDED"
+    assert gw.complete("coordinator", PER_CALL_TOKEN_LIMIT + 1, 0)["status"] == "BUDGET_EXCEEDED"
 
 
-def test_incident_budget_and_cost():
-    gw = ModelGateway(TokenLedger(incident_id="i2", priority="P0"))
-    r = gw.complete("coordinator", 26000, 3500)  # Problem-skill P0 input/output profile
-    assert r["status"] == "ok"
-    # A full P0 incident estimates to about $0.12 (Sec.3.3)
-    assert 0.08 < estimate_p0_cost() < 0.16
-    # Blow the budget
-    gw2 = ModelGateway(TokenLedger(incident_id="i3", priority="P3"))
-    gw2.complete("log", 20000, 2000)
-    assert gw2.complete("log", 20000, 2000)["status"] == "BUDGET_EXCEEDED"
+def test_incident_budget():
+    gw = ModelGateway(TokenLedger(incident_id="i2", priority="P3"))
+    assert gw.complete("logs", 20_000, 2_000)["status"] == "ok"
+    assert gw.complete("logs", 20_000, 2_000)["status"] == "BUDGET_EXCEEDED"
 
 
-def test_frozen():
-    ledger = TokenLedger(incident_id="i4")
+def test_model_pinned_per_incident(monkeypatch):
+    ledger = TokenLedger(incident_id="i3")
     gw = ModelGateway(ledger)
-    assert ledger.check_frozen("muse-spark-1.3", "xhigh", "gemini-3.8-flash", "medium")
-    assert not ledger.check_frozen("muse-spark-1.3", "max", "gemini-3.8-flash", "medium")
+    assert gw.complete("logs", 100, 10)["model_id"] == get_settings().llm_model
+    monkeypatch.setitem(ledger.frozen, "logs", "pinned-model")
+    assert gw.complete("logs", 100, 10)["model_id"] == "pinned-model"

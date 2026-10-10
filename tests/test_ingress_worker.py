@@ -1,15 +1,22 @@
-"""Ingress/Worker tests. Maps to spec Sec.28.1, Sec.16.2.1, Sec.15."""
-import time
+"""Ingress/Worker tests."""
+
 from app.api import normalize
-from app.worker import process_one, recovery_job
-from app.queue import PriorityQueue, make_message
 from app.persistence import Store
+from app.queue import PriorityQueue, make_message
+from app.worker import process_one, recovery_job
 
 
 def test_ingress_validation_and_idempotency():
     assert normalize({})["status"] == "REJECTED"
-    a = {"alert_id": "a1", "tenant_id": "t1", "priority": "P0", "service_id": "checkout-service",
-         "alert_name": "X", "environment": "production", "auth": {"tenant_id": "t1"}}
+    a = {
+        "alert_id": "a1",
+        "tenant_id": "t1",
+        "priority": "P0",
+        "service_id": "checkout-service",
+        "alert_name": "X",
+        "environment": "production",
+        "auth": {"tenant_id": "t1"},
+    }
     r1 = normalize(dict(a))
     assert r1["status"] == "OK"
     assert normalize(dict(a))["status"] == "DEDUP_MERGED"

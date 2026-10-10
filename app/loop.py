@@ -1,5 +1,6 @@
-"""Agent Loop: observe -> act -> verify -> converge. Maps to spec Sec.5.2.
+"""Agent Loop: observe -> act -> verify -> converge.
 Note: harness.execute_action is the control plane, not the tool itself."""
+
 from __future__ import annotations
 
 

@@ -1,5 +1,6 @@
-"""Safety + R0-R4 risk tiers. Maps to spec Sec.17.2, Sec.17.3, Sec.25.6.
+"""Safety + R0-R4 risk tiers.
 The AI is read-only by default; R3 actions require human approval."""
+
 from __future__ import annotations
 
 RISK_LEVELS = ["R0", "R1", "R2", "R3", "R4"]
@@ -16,7 +17,7 @@ def classify_risk(action_name: str) -> str:
 
 
 def safety_review(artifact, action_proposal: dict, context: dict | None = None) -> dict:
-    """10-item review (Sec.17.3): evidence / host match / blast radius / alternative /
+    """10-item review: evidence / host match / blast radius / alternative /
     rollback / window / permission / injection / verifiability."""
     if context is None:
         return _legacy(artifact, action_proposal)
@@ -33,7 +34,9 @@ def safety_review(artifact, action_proposal: dict, context: dict | None = None) 
         "verifiable": bool(context.get("verify_plan")),
     }
     risk = classify_risk(action_proposal.get("name", ""))
-    critical_fail = not checks["evidence"] or not checks["host_match"] or not checks["not_event_host"] or not checks["no_injection"]
+    critical_fail = (
+        not checks["evidence"] or not checks["host_match"] or not checks["not_event_host"] or not checks["no_injection"]
+    )
     if risk == "R4" or critical_fail:
         return {"verdict": "DENY", "risk": risk, "checks": checks}
     if risk in ("R2", "R3"):

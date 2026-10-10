@@ -1,10 +1,11 @@
-"""Harness: the control plane. Maps to spec Sec.7.4. Never executes tools directly;
+"""Harness: the control plane. Never executes tools directly;
 it only orchestrates the Loop and the Runtime."""
-from __future__ import annotations
-import time
-from typing import Any, Dict, List
-from .models import Task, Artifact, IncidentState
 
+from __future__ import annotations
+
+import time
+
+from .models import Artifact, IncidentState, Task
 
 FIXED_STAGES = [
     "normalize_and_deduplicate",
@@ -22,9 +23,9 @@ FIXED_STAGES = [
 
 class InMemoryStore:
     def __init__(self):
-        self.states: Dict[str, IncidentState] = {}
-        self.artifacts: List[Artifact] = []
-        self.checkpoints: Dict[str, dict] = {}
+        self.states: dict[str, IncidentState] = {}
+        self.artifacts: list[Artifact] = []
+        self.checkpoints: dict[str, dict] = {}
 
     def save_state(self, s: IncidentState):
         self.states[s.incident_id] = s
@@ -38,14 +39,14 @@ class InMemoryStore:
 
 class Tracer:
     def __init__(self):
-        self.events: List[dict] = []
+        self.events: list[dict] = []
 
     def append(self, kind: str, payload: dict):
-        self.events.append({"kind": kind, **payload})  # type: ignore
+        self.events.append({"kind": kind, **payload})
 
 
 class AgentHarness:
-    """Sec.7.4 run_task / validate_action / validate_artifact / save_checkpoint / apply_observation."""
+    """run_task / validate_action / validate_artifact / save_checkpoint / apply_observation."""
 
     def __init__(self, runtime, store=None, tracer=None):
         self.runtime = runtime
@@ -103,14 +104,23 @@ class AgentHarness:
             return {"status": "DENIED"}
         return self.runtime.execute(action, {"task_id": task.task_id})
 
-    def run_task(self, task: Task, state: IncidentState, model, max_steps: int = 5,
-                 gateway=None, input_tokens: int = 2000, output_tokens: int = 500) -> str:
+    def run_task(
+        self,
+        task: Task,
+        state: IncidentState,
+        model,
+        max_steps: int = 5,
+        gateway=None,
+        input_tokens: int = 2000,
+        output_tokens: int = 500,
+    ) -> str:
         from .loop import run_agent_loop
+
         mid = getattr(model, "model_id", "unknown")
         tier = getattr(model, "tier", getattr(model, "thinking_level", ""))
         self.tracer.append("MODEL_DECISION", {"task_id": task.task_id, "model_id": mid, "tier": tier})
         if gateway is not None:
-            agent = getattr(model, "agent_role", "log")
+            agent = getattr(model, "agent_role", "logs")
             g = gateway.complete(agent, input_tokens, output_tokens)
             if g.get("status") == "BUDGET_EXCEEDED":
                 return "ESCALATE_TO_HUMAN"

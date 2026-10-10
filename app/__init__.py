@@ -1,3 +1,3 @@
-"""intelligent-sre-collaboration-assistant v2.0.0. The single config contract lives in
-index.md and is read-only at runtime."""
-__version__ = "2.0.0"
+"""SRE Blackboard: a multi-agent incident copilot for Kubernetes services."""
+
+__version__ = "0.1.0"

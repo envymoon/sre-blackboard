@@ -1,8 +1,11 @@
-"""Pipeline smoke test: minimal driver of the fixed 10-stage workflow. Maps to spec Sec.8.5/Sec.13.5."""
-import json, pathlib
+"""Pipeline smoke test: minimal driver of the fixed 10-stage workflow."""
+
+import json
+import pathlib
+
 from app.harness import AgentHarness
-from app.runtime import AgentRuntime
 from app.pipeline import run_p0_problem_pipeline
+from app.runtime import AgentRuntime
 from app.safety import safety_review
 
 

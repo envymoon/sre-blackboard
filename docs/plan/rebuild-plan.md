@@ -254,12 +254,14 @@ claude -p \
 
 目标：让仓库在任何时刻都"说的和做的一致"。
 
-- [ ] README 改写：只描述已实现的功能，新增"路线图"一节链接到本文档。
-- [ ] 删除虚构内容：`muse-spark-1.3` / `gemini-3.8-flash`、伪造的价格、`Sec.x` 引用。
-- [ ] 删除或隔离空壳模块：`evolution.py`、`online.py`、`code_analysis.py`、`status.py`、`e2e.py`、`ext.py`、`limits.py`、`skills/*/scripts`。这些代码只保留在 git 历史中，有价值的概念写进 ADR 的"未来工作"一节。
-- [ ] 工程化：`pyproject.toml`（uv）、ruff、mypy（strict 逐步开启）、pre-commit、GitHub Actions CI（lint + type + test）。
-- [ ] 修复 B7（`app=None`）。
-- [ ] 建立 `docs/adr/` 模板，写 ADR-0001《为什么做深度而不是广度》。
+- [x] README 改写：只描述已实现的功能，新增"路线图"一节链接到本文档。
+- [x] 删除虚构内容：`muse-spark-1.3` / `gemini-3.8-flash`、伪造的价格、`Sec.x` 引用。
+- [x] 删除或隔离空壳模块：`evolution.py`、`online.py`、`code_analysis.py`、`status.py`、`e2e.py`、`ext.py`、`limits.py`、`skills/*/scripts`（实际还删除了只含常量的 `observe.py`、`store.py`）。这些代码只保留在 git 历史中，有价值的概念写进 ADR 的"未来工作"一节。
+- [x] 工程化：`pyproject.toml`（uv）、ruff、mypy（strict 逐步开启）、pre-commit、GitHub Actions CI（lint + type + test）。
+- [x] 修复 B7（`app=None`）。
+- [x] 建立 `docs/adr/` 模板，写 ADR-0001《为什么做深度而不是广度》。
+
+- [x] 附加：下线无鉴权的审批接口和返回写死数据的接口，去掉 `CORS *`；compose 改为单 API 进程（多 worker 的前提是 M1 的数据库状态）；学习笔记 `docs/learn/m0-engineering-baseline.md`。
 
 验收：CI 通过；README 中的每一条声明都能在代码中找到对应实现。
 
@@ -546,7 +548,7 @@ claude -p \
 
 | 里程碑 | 状态 | 完成日期 | 备注 |
 |---|---|---|---|
-| M0 | 未开始 | | |
+| M0 | 已完成，待合并 | 2026-10-10 | 分支 `milestone/m0-cleanup` |
 | M1 | 未开始 | | |
 | M2 | 未开始 | | |
 | M3 | 未开始 | | |
