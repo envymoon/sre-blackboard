@@ -1,11 +1,14 @@
-"""Role agents + Coordinator. Maps to spec Sec.9.1.2, Sec.13.5, Sec.9.1.
+"""Role agents + Coordinator.
 Agents only emit next_task_proposals; the Coordinator owns task creation."""
+
 from __future__ import annotations
-from .models import Task, Artifact
+
+from .models import Artifact, Task
 
 
 class StubModel:
-    """Dual-model routing placeholder: primary=muse-spark-1.3 / fast=gemini-3.8-flash, picked by the Harness per role."""
+    """Placeholder model that always finishes immediately; replaced by real LLM backends in M4."""
+
     def __init__(self, model_id: str):
         self.model_id = model_id
 
@@ -22,16 +25,23 @@ class LogAgent:
         return task.capability == self.capability
 
     def plan_action(self, task: Task) -> dict:
-        return {"type": "tool", "name": "elasticsearch.search_logs",
-                "args": {"service": task.service, "window": task.time_window}}
+        return {
+            "type": "tool",
+            "name": "elasticsearch.search_logs",
+            "args": {"service": task.service, "window": task.time_window},
+        }
 
     def build_artifact(self, task: Task, observation: dict) -> Artifact:
         ev = observation.get("evidence_id", "LOG-7782")
         return Artifact(
-            incident_id=task.incident_id, producer=self.name, artifact_type="LogEvidence",
+            incident_id=task.incident_id,
+            producer=self.name,
+            artifact_type="LogEvidence",
             facts=[{"statement": "Checkout TimeoutException spike", "evidence_ids": [ev]}],
-            evidence_refs=[ev], hypotheses=[],
-            gaps=[], next_task_proposals=[{"capability": "trace"}],
+            evidence_refs=[ev],
+            hypotheses=[],
+            gaps=[],
+            next_task_proposals=[{"capability": "trace"}],
         )
 
 
@@ -44,6 +54,7 @@ def run_log_agent_once(task: Task, harness) -> str:
     artifact = agent.build_artifact(task, obs)
     # Minimal demo path: the caller owns the state, so resolve it from the harness store here.
     from .models import IncidentState
+
     state = harness.store.states.get(task.incident_id) or IncidentState(incident_id=task.incident_id)
     harness.store.save_state(state)
     harness.publish_artifact(task, artifact, state)
@@ -51,7 +62,7 @@ def run_log_agent_once(task: Task, harness) -> str:
 
 
 def coordinator_plan(alert: dict):
-    """Sec.13.5 minimal rule: a P0 Problem always spawns Problem+Business; add Event when a release exists; add Host on anomalous Pods."""
+    """Minimal routing rule: a P0 Problem always spawns Problem+Business; add Event when a release exists; add Host on anomalous Pods."""
     tasks = ["Problem", "Business"]
     if alert.get("change_id") or alert.get("known_events"):
         tasks.append("Event")
@@ -61,7 +72,7 @@ def coordinator_plan(alert: dict):
 
 
 def synthesize(artifacts: list):
-    """Sec.13.5 synthesis: the artifact with most evidence wins; conflicts keep both sides' evidence plus follow-up tasks, never averaged."""
+    """Synthesis: the artifact with most evidence wins; conflicts keep both sides' evidence plus follow-up tasks, never averaged."""
     best = max(artifacts, key=lambda a: len(a.evidence_refs))
     gaps = list(best.gaps)
     for a in artifacts:

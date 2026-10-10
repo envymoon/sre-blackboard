@@ -1,6 +1,8 @@
-"""Priority queue + leases + retries. Maps to spec Sec.15: priority beats arrival time;
+"""Priority queue + leases + retries: priority beats arrival time;
 four ready ZSETs, 90s leases renewed every 30s, dead-letter after 3 attempts."""
+
 from __future__ import annotations
+
 import time
 import uuid
 
@@ -12,15 +14,20 @@ def make_message(incident_id: str, task_id: str, alert_type: str, priority: str,
     now = time.time()
     return {
         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-        "incident_id": incident_id, "task_id": task_id, "alert_type": alert_type,
-        "priority": priority, "stage": stage, "attempt": 0,
-        "deadline_at": now + 300, "idempotency_key": f"{incident_id}+{task_id}+{stage}",
+        "incident_id": incident_id,
+        "task_id": task_id,
+        "alert_type": alert_type,
+        "priority": priority,
+        "stage": stage,
+        "attempt": 0,
+        "deadline_at": now + 300,
+        "idempotency_key": f"{incident_id}+{task_id}+{stage}",
         "enqueue_time_ms": int(now * 1000),
     }
 
 
 class PriorityQueue:
-    """In-memory version of the four Redis ZSET queues: score=enqueue_time_ms, FIFO within
+    """In-memory priority queues: score=enqueue_time_ms, FIFO within
     a level, strict P0->P3 dispatch order."""
 
     def __init__(self):
@@ -38,7 +45,7 @@ class PriorityQueue:
             self.p0_arrived = True
 
     def pop_next(self):
-        # Once a P0 has arrived, no new P1-P3 may be dispatched (Sec.15 acceptance check)
+        # Once a P0 has arrived, no new P1-P3 may be dispatched
         for p in PRIORITIES:
             if not self.ready[p]:
                 continue
@@ -50,8 +57,12 @@ class PriorityQueue:
 
     def claim(self, msg: dict, worker_id: str, ttl_s: int = 90) -> dict:
         fencing = uuid.uuid4().hex[:8]
-        self.leases[msg["task_id"]] = {"worker": worker_id, "fencing": fencing,
-                                       "expires_at": time.time() + ttl_s, "attempt": msg.get("attempt", 0)}
+        self.leases[msg["task_id"]] = {
+            "worker": worker_id,
+            "fencing": fencing,
+            "expires_at": time.time() + ttl_s,
+            "attempt": msg.get("attempt", 0),
+        }
         return {"lease": True, "fencing_token": fencing}
 
     def renew(self, task_id: str, ttl_s: int = 90) -> bool:
@@ -76,7 +87,6 @@ class PriorityQueue:
             requeued.append({"task_id": task_id, "attempt": attempt})
         return requeued
 
-    # Sec.15.3 retry policy (pure function, easy to test)
     @staticmethod
     def retry_policy(error_kind: str, attempt: int) -> dict:
         if error_kind == "tool_timeout":

@@ -1,8 +1,10 @@
-"""Harness Worker: dispatch + lease renewal + recovery. Maps to spec Sec.15, Sec.16.2, Sec.28.3 (2 workers)."""
+"""Harness Worker: dispatch + lease renewal + recovery."""
+
 from __future__ import annotations
+
 from .harness import AgentHarness
-from .runtime import AgentRuntime
 from .queue import PriorityQueue
+from .runtime import AgentRuntime
 
 harness = AgentHarness(runtime=AgentRuntime())
 
@@ -17,7 +19,7 @@ def process_one(queue: PriorityQueue, worker_id: str = "worker-1"):
 
 
 def recovery_job(store, queue: PriorityQueue) -> dict:
-    """Requeue expired leases at original priority (queue.expire_leases) + rebuild READY from MySQL (store.rebuild_queue)."""
+    """Requeue expired leases at original priority (queue.expire_leases) + rebuild READY tasks from the store (store.rebuild_queue)."""
     requeued = queue.expire_leases()
     rebuilt = store.rebuild_queue(queue)
     return {"requeued": requeued, "rebuilt": rebuilt}

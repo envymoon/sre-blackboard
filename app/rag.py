@@ -1,11 +1,13 @@
-"""RAG dual-path recall + rerank. Maps to spec Sec.12.8: RRF k=60 Top30 ->
+"""RAG dual-path recall + rerank: RRF k=60 Top30 ->
 rules -> cross-encoder Top12, threshold 0.55, P95 < 200ms."""
+
 from __future__ import annotations
+
 import time
 
 
 def rrf_fuse(rank_bm25: dict, rank_vec: dict, k: int = 60):
-    scores = {}
+    scores: dict[str, float] = {}
     for cid, r in rank_bm25.items():
         scores[cid] = scores.get(cid, 0) + 1.0 / (k + r)
     for cid, r in rank_vec.items():
@@ -23,7 +25,8 @@ def rule_rerank(candidates, alert: dict):
         if c.get("trust_level") == "internal_runbook":
             s += 10
         return s
-    return sorted(candidates, key=lambda c: (c.get("base_score", 0) + bonus(c)), reverse=True)
+
+    return sorted(candidates, key=lambda c: c.get("base_score", 0) + bonus(c), reverse=True)
 
 
 def qwen_rerank_stub(query: str, candidates, timeout_ms: int = 300, threshold: float = 0.55):

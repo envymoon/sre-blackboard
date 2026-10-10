@@ -1,6 +1,9 @@
-"""Two-layer memory. Maps to spec Sec.11: Redis working memory for the live incident +
-MySQL verified-experience memory. Read order: task + Redis hot -> MySQL adopted -> RAG published."""
+"""Two-layer memory prototype (in-process): working memory for the live incident plus
+verified-experience memory. Read order: task + hot -> adopted experience -> RAG published.
+Not wired into the Harness yet; see docs/plan/rebuild-plan.md section 4."""
+
 from __future__ import annotations
+
 import time
 
 WORKING_TTL_S = 6 * 3600
@@ -35,7 +38,7 @@ class VerifiedMemory:
         self.published: list = []
 
     def promote(self, incident: dict) -> dict:
-        """Sec.11.2 six conditions + Sec.11.3 anti-pollution: reject when any is missing."""
+        """Six admission conditions + anti-pollution: reject when any is missing."""
         required = ["evidence_ids", "verified", "service", "environment", "human_confirmed", "desensitized"]
         if not all(incident.get(k) for k in required):
             return {"status": "REJECTED", "reason": "promotion conditions unmet"}

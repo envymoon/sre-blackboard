@@ -1,6 +1,7 @@
-"""Queue + persistence tests. Maps to spec Sec.15/Sec.16: priority / preemption / leases / dead-letter / rebuild."""
-from app.queue import PriorityQueue, make_message
+"""Queue + persistence tests: priority / preemption / leases / dead-letter / rebuild."""
+
 from app.persistence import Store
+from app.queue import PriorityQueue, make_message
 
 
 def test_priority_p0_first():
@@ -23,6 +24,7 @@ def test_lease_expiry_and_deadletter():
 
 def test_retry_policy():
     from app.queue import PriorityQueue as Q
+
     assert Q.retry_policy("tool_timeout", 0) == {"retry": True, "backoff_s": 5, "narrow_scope": False}
     assert Q.retry_policy("tool_timeout", 1)["narrow_scope"]
     assert Q.retry_policy("permission", 0)["escalate"]
@@ -33,7 +35,9 @@ def test_persistence_and_rebuild():
     s = Store()
     s.save_incident("inc-1", "tenant-checkout", "Problem", "P0", {"a": 1})
     s.save_task("t-1", "inc-1", "tenant-checkout", "problem-alert-skill", "P0")
-    s.append_trace("run-1", "inc-1", "t-1", "tenant-checkout", "log-agent", "elasticsearch.search_logs", 100, 50, 12, "ok")
+    s.append_trace(
+        "run-1", "inc-1", "t-1", "tenant-checkout", "log-agent", "elasticsearch.search_logs", 100, 50, 12, "ok"
+    )
     q = PriorityQueue()
     assert s.rebuild_queue(q) == 1
     assert q.pop_next()["task_id"] == "t-1"

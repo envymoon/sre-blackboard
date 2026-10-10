@@ -87,11 +87,16 @@
 </style>
 </head>
 <body>
+<div style="background:#2a1f0b;border-bottom:1px solid #6b4e16;color:#ffd38a;font-size:14px;padding:10px 16px;text-align:center">
+  Legacy concept animation from the prototype: the run shown below is scripted, not a live system.
+  The project is being rebuilt milestone by milestone &mdash; see the
+  <a href="https://github.com/envymoon/sre-blackboard/blob/main/docs/plan/rebuild-plan.md" style="color:#ffd38a;text-decoration:underline">rebuild plan</a>.
+</div>
 
 <nav><div class="wrap">
   <div class="logo">⬛ <span>SRE Blackboard</span></div>
   <div class="links">
-    <a href="#pipeline">Pipeline</a><a href="#demo">Live Demo</a><a href="live.html">Live Board</a><a href="#safety">Safety</a><a href="#eval">Eval</a>
+    <a href="#pipeline">Pipeline</a><a href="#demo">Live Demo</a><a href="#safety">Safety</a><a href="#eval">Eval</a>
     <a href="https://github.com/envymoon/sre-blackboard">GitHub</a>
   </div>
 </div></nav>
@@ -191,21 +196,6 @@
     <tr><td class="num">G5</td><td>Report completeness (§18)</td><td class="num">10 / 10 sections</td><td>Every incident leaves a full audit trail</td></tr>
   </table></div>
   <p class="lede" style="margin-top:16px">Retrieval funnel per incident: <b>Top20 dense + Top20 sparse → Top30 fused → Top12 reranked (score ≥ 0.55) → Top6 for P0/P1</b>, fused with RRF (k=60).</p>
-</div></section>
-
-<section id="start"><div class="wrap">
-  <h2><span class="n">07</span>Run it yourself in 5 minutes</h2>
-  <p class="lede">Local stubs stand in for MySQL / Redis / Elasticsearch until you provide real URLs — no infra required to start.</p>
-<pre class="code"><span class="c-c"># 1. clone &amp; install</span>
-<span class="c-f">git clone</span> https://github.com/envymoon/sre-blackboard.git <span class="c-f">cd</span> sre-blackboard
-pip install -r requirements.txt
-
-<span class="c-c"># 2. (optional) real infra — otherwise local stubs are used</span>
-<span class="c-f">export</span> <span class="c-k">MYSQL_URL</span>=<span class="c-s">mysql://root:pw@localhost:3306/sre</span> <span class="c-k">REDIS_URL</span>=<span class="c-s">redis://localhost:6379/0</span>
-
-<span class="c-c"># 3. replay the P0 baseline + run tests</span>
-python fixtures/make_p0.py
-python -m pytest tests/ -q   <span class="c-c"># 37 passed</span></pre>
 </div></section>
 
 <footer><div class="wrap">

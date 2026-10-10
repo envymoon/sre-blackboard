@@ -1,2 +1,5 @@
-"""Entrypoint alias: the Sec.28.5 compose file serves uvicorn app.main:app; the implementation lives in app.api."""
-from .api import app  # noqa: F401
+"""ASGI entrypoint: ``uvicorn app.main:app``."""
+
+from .api import app
+
+__all__ = ["app"]

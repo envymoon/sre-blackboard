@@ -1,9 +1,13 @@
-"""MCP tool layer. Maps to spec Sec.14: 10-server split + per-tool security contract.
+"""MCP tool layer: 10-server split + per-tool security contract.
 Remediation tools are high-risk and require approval."""
+
 from __future__ import annotations
 
 SERVERS = {
-    "Observability MCP": {"tools": ["prometheus.query_metrics", "elasticsearch.search_logs", "trace.search"], "perm": "read"},
+    "Observability MCP": {
+        "tools": ["prometheus.query_metrics", "elasticsearch.search_logs", "trace.search"],
+        "perm": "read",
+    },
     "CMDB MCP": {"tools": ["cmdb.describe"], "perm": "read"},
     "Host Runtime MCP": {"tools": ["host.describe"], "perm": "read"},
     "Database MCP": {"tools": ["db.describe"], "perm": "read"},
@@ -12,7 +16,10 @@ SERVERS = {
     "Knowledge MCP": {"tools": ["knowledge.search"], "perm": "read"},
     "Ticket MCP": {"tools": ["ticket.create"], "perm": "controlled_write"},
     "Notification MCP": {"tools": ["notify.send"], "perm": "controlled_write"},
-    "Remediation MCP": {"tools": ["rollback_release", "shift_traffic", "restart_stateless", "scale_out"], "perm": "high_risk_approval"},
+    "Remediation MCP": {
+        "tools": ["rollback_release", "shift_traffic", "restart_stateless", "scale_out"],
+        "perm": "high_risk_approval",
+    },
 }
 
 ROLLBACK_INPUT = ["incident_id", "service", "target_version", "reason", "idempotency_key"]
@@ -35,10 +42,9 @@ def check_tool_call(auth: dict, tool: str, args: dict, approved: bool = False) -
         return {"allow": False, "reason": "tenant mismatch"}
     if (tool in ("rollback_release", "shift_traffic")) and not approved:
         return {"allow": False, "reason": "R3 human_approval_required"}
-    if any(k in str(args).lower() for k in SECRET_KEYS):
-        # Credentials must never enter prompts, the blackboard, or artifacts: reject calls carrying secrets
-        if tool != "rollback_release" or "approval_key" in args:
-            return {"allow": False, "reason": "credential in args"}
+    # Credentials must never enter prompts, the blackboard, or artifacts: reject calls carrying secrets
+    if any(k in str(args).lower() for k in SECRET_KEYS) and (tool != "rollback_release" or "approval_key" in args):
+        return {"allow": False, "reason": "credential in args"}
     if tool == "rollback_release":
         missing = [k for k in ROLLBACK_INPUT if k not in args]
         if missing:

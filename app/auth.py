@@ -1,6 +1,8 @@
-"""Tenants + four auth gates + approvals. Maps to spec Sec.17.1, Sec.25.6, Sec.26:
+"""Tenants + four auth gates + approvals:
 RBAC + ABAC, approvals bound to incident + action_plan + idempotency key, hash-chained audit log."""
+
 from __future__ import annotations
+
 import hashlib
 import time
 
@@ -23,21 +25,38 @@ def runtime_claim_check(auth: dict, task: dict) -> bool:
         return False
     if task.get("service") and task["service"] not in auth.get("service_scope", [task["service"]]):
         return False
-    if "viewer" in auth.get("role_ids", []):
-        return False
-    return True
+    return "viewer" not in auth.get("role_ids", [])
 
 
 class Approvals:
     def __init__(self):
         self.cards: dict = {}
-    def create_card(self, incident_id: str, plan_id: str, priority: str, service: str,
-                    cur_ver: str, target_ver: str, evidence: list, impact: str, expires_s: int = 1800) -> dict:
+
+    def create_card(
+        self,
+        incident_id: str,
+        plan_id: str,
+        priority: str,
+        service: str,
+        cur_ver: str,
+        target_ver: str,
+        evidence: list,
+        impact: str,
+        expires_s: int = 1800,
+    ) -> dict:
         key = f"{incident_id}+{plan_id}"
-        card = {"incident_id": incident_id, "action_plan_id": plan_id, "priority": priority,
-                "service": service, "cur_version": cur_ver, "target_version": target_ver,
-                "evidence": evidence, "impact": impact,
-                "expires_at": time.time() + expires_s, "decision": "pending"}
+        card = {
+            "incident_id": incident_id,
+            "action_plan_id": plan_id,
+            "priority": priority,
+            "service": service,
+            "cur_version": cur_ver,
+            "target_version": target_ver,
+            "evidence": evidence,
+            "impact": impact,
+            "expires_at": time.time() + expires_s,
+            "decision": "pending",
+        }
         self.cards[key] = card
         return card
 
@@ -50,12 +69,13 @@ class Approvals:
         return {"approved": True, "scope": key}
 
 
-# In-process singleton: production persists to the DB; local demos keep create->approve on one instance
+# In-process singleton, so it only works with a single API worker; moves to Postgres in M1
 APPROVALS = Approvals()
 
 
 class AuditLog:
     """Append-only audit log with hash chain."""
+
     def __init__(self):
         self.events: list = []
         self.prev_hash: str = "genesis"
@@ -63,8 +83,16 @@ class AuditLog:
     def append(self, tenant_id: str, principal: str, action: str, resource: str, decision: str, run_id: str) -> dict:
         body = f"{self.prev_hash}|{tenant_id}|{principal}|{action}|{resource}|{decision}|{run_id}"
         h = hashlib.sha256(body.encode()).hexdigest()[:16]
-        ev = {"tenant_id": tenant_id, "principal": principal, "action": action,
-              "resource": resource, "decision": decision, "run_id": run_id, "hash": h, "prev": self.prev_hash}
+        ev = {
+            "tenant_id": tenant_id,
+            "principal": principal,
+            "action": action,
+            "resource": resource,
+            "decision": decision,
+            "run_id": run_id,
+            "hash": h,
+            "prev": self.prev_hash,
+        }
         self.events.append(ev)
         self.prev_hash = h
         return ev
