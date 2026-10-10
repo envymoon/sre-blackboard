@@ -1,8 +1,8 @@
-# SRE Blackboard 重构计划（v0.1 草案）
+# SRE Blackboard 重构计划（v0.2）
 
 > 目的：把当前"规格形状的骨架"改造成一个**真实可运行、可度量、可在面试中被深挖**的生产级 AI SRE 事件协作系统。
 > 原则：**深度优先于广度**。只做一条真实闭环，做扎实，再横向扩展。
-> 状态：计划阶段，尚未开始实现。每个里程碑完成后更新本文档的"进度"一节。
+> 状态：计划已确认（见第 7 节），准备从 M0 开始实现。每个里程碑完成后更新附录 B 的进度表。
 
 ---
 
@@ -10,7 +10,7 @@
 
 | 项 | 现在 | 目标 |
 |---|---|---|
-| LLM | `StubModel` 永远返回 `finish`，模型名和价格是虚构的 | 真实 Claude API：tool use、结构化输出、prompt caching；成本按真实 usage 计算 |
+| LLM | `StubModel` 永远返回 `finish`，模型名和价格是虚构的 | 真实 Claude 模型。可插拔后端：默认通过 `claude -p` 使用订阅额度（Haiku 5.5），同时保留 Anthropic API 后端和录制/回放后端；token 用量和等价成本取自真实返回 |
 | 工具 | 返回伪造的 `EV-xxxxx` | 真实查询 Prometheus / Jaeger / 日志 / K8s API；每条证据都有快照和哈希，可回放 |
 | 故障环境 | 无，数据写死在代码里 | kind + OpenTelemetry Demo，用 flagd 特性开关、Chaos Mesh 和坏版本发布注入可标注的故障 |
 | 存储与队列 | sqlite 内存库 + 进程内字典；MySQL/Redis/ES 只在 compose 里启动，代码从未使用 | **一个 Postgres**：状态、队列（`SKIP LOCKED`）、审计、知识库混合检索（tsvector + pgvector） |
@@ -18,10 +18,12 @@
 | 安全 | 审批接口无鉴权，CORS 为 `*`，缺租户时直接放行（fail-open） | 鉴权 + RBAC、职责分离、审批绑定计划哈希、执行器独立且权限最小、默认拒绝（fail-closed） |
 | 评测 | 自证循环，指标必然 100% | 20–30 个注入真实故障的标注场景；测根因 Top-1/Top-3、动作正确率、安全违规、成本和耗时；做消融对比 |
 | 可观测性 | 只有一个计数器字典 | 系统自身接入 OpenTelemetry trace（GenAI 语义约定）+ Prometheus 指标 + 结构化日志 |
-| 前端 | 写死的动画 + 按墙钟时间推进的"实时看板" | React 控制台展示真实事件；GitHub Pages 回放**真实运行**录下的 trace |
+| 前端 | 写死的动画 + 按墙钟时间推进的"实时看板"，视觉普通 | 最小但**设计精良、流畅**的 React 控制台（先出视觉方案、经你确认再实现）；GitHub Pages 回放**真实运行**录下的 trace |
 | 文档 | README 写的比代码做的多；规格文档不公开 | README 只写已实现的内容；ADR（架构决策记录）+ 每个里程碑一篇学习笔记和面试问答 |
 
-预估工期（业余时间投入）：**12–16 周**。M0–M5 是核心，做完就是一个可信的简历项目；M6–M9 是加分项。
+预估工期（业余时间投入）：**12–16 周**。M0–M5 加最小控制台（M9）是核心，做完就是一个可信、可演示的简历项目；M6–M8 是加分项。
+
+**执行顺序**：M0 → M1 →（M2 与 M1 并行）→ M3 → M4 → M5 → **M9 最小控制台** → M7 → M6 → M8；M10 文档贯穿全程。M9 的视觉方案探索不依赖后端，可在 M3/M4 期间提前进行。
 
 ---
 
@@ -33,8 +35,8 @@
 
 | # | 问题 | 位置 | 修复方案 | 里程碑 | 验收 |
 |---|---|---|---|---|---|
-| T1 | 没有真实 LLM 调用 | `app/agents.py` `StubModel` | 新建 `app/llm/`：Anthropic SDK 客户端、模型路由、预算、重试、录制/回放 | M4 | 回放模式下的集成测试；真实模式下的冒烟脚本能打出 usage |
-| T2 | 模型名和价格是虚构的 | `app/gateway.py`、README | 使用真实 Claude 模型 ID；价格放进配置表，标注来源和日期 | M4 | 成本数据取自 API 返回的 `usage` 字段 |
+| T1 | 没有真实 LLM 调用 | `app/agents.py` `StubModel` | 新建 `app/llm/`：统一的后端接口，实现 Claude CLI（订阅）、Anthropic API、回放三种后端；模型路由、预算、重试 | M4 | 回放模式下的集成测试；`make llm-smoke` 用 `claude -p` 跑通一次并打出 usage |
+| T2 | 模型名和价格是虚构的 | `app/gateway.py`、README | 使用真实 Claude 模型 ID（默认 `claude-haiku-5-5`）；不再手写价格表 | M4 | token 和等价成本取自 CLI/API 返回的 `usage` 与 `total_cost_usd` 字段 |
 | T3 | Agent 产出写死的内容 | `LogAgent`、`rank_hypotheses.py` | 删除这些代码；由 LLM 根据真实工具结果产出 Finding | M4 | 同一套代码面对不同故障，能给出不同的根因 |
 | T4 | 工具返回伪造的证据 ID | `app/runtime.py` | 新建 `app/tools/`，接入真实客户端；证据快照入库 | M3 | 证据 ID 能反查到原始查询、时间窗口、结果哈希 |
 | T5 | 评测是自证的 | `app/eval.py:42,67`：`expected_plan` 由被测函数生成，`rag_hit`/`rag_rank` 写死 | 场景的标签由人工标注，与被测系统独立；指标从运行结果算出 | M7 | 故意放一个坏 prompt，指标会下降，闸门会拦下 |
@@ -72,7 +74,7 @@
                  ┌───────────────────────── kind 集群 ─────────────────────────┐
                  │  OpenTelemetry Demo（约 15 个微服务）                         │
  故障注入 ──────▶ │   flagd 特性开关 / Chaos Mesh / 坏镜像发布                       │
- (eval runner)   │  Prometheus ─ Alertmanager ─┐   Jaeger   OpenSearch(日志)    │
+ (eval runner)   │  Prometheus ─ Alertmanager ─┐   Jaeger   Loki(日志)          │
                  └─────────────────────────────┼──────▲──────────▲───────────────┘
                                                │      │ 只读查询  │
                                      webhook   ▼      │          │
@@ -113,11 +115,13 @@ RECEIVED → TRIAGED → INVESTIGATING ⇄ (最多 N 轮补充取证)
 
 | Agent | 模型（可配置） | 输入 | 输出 | 工具 |
 |---|---|---|---|---|
-| Coordinator | `claude-sonnet-5-5` | 告警 + 黑板摘要 | `InvestigationPlan`（要调查的问题和分派给谁） | 无，只做规划 |
+| Coordinator | `claude-haiku-5-5` | 告警 + 黑板摘要 | `InvestigationPlan`（要调查的问题和分派给谁） | 无，只做规划 |
 | Metrics Investigator | `claude-haiku-5-5` | 一个子问题 | `Finding[]` | `prom_query`、`prom_range` |
 | Logs & Traces Investigator | `claude-haiku-5-5` | 一个子问题 | `Finding[]` | `logs_search`、`traces_search`、`trace_get` |
 | Change & K8s Investigator | `claude-haiku-5-5` | 一个子问题 | `Finding[]` | `k8s_events`、`rollout_history`、`deploy_diff`、`flag_state` |
-| Synthesizer | `claude-sonnet-5-5` | 黑板上的全部 Finding + 知识库检索结果 | `Diagnosis`（按置信度排序的假设，区分 Problem Host 和 Event Host）+ `ActionPlan` 草案 | `kb_search` |
+| Synthesizer | `claude-haiku-5-5` | 黑板上的全部 Finding + 知识库检索结果 | `Diagnosis`（按置信度排序的假设，区分 Problem Host 和 Event Host）+ `ActionPlan` 草案 | `kb_search` |
+
+模型列是默认值：受订阅额度约束，全部默认使用 Haiku 5.5；每个角色的模型可以单独配置，M7 的消融实验会比较"规划和汇总改用更强模型"带来的收益。
 
 关键约束（全部保留自原设计，但要真正落实）：
 
@@ -135,7 +139,8 @@ RECEIVED → TRIAGED → INVESTIGATING ⇄ (最多 N 轮补充取证)
 | 数据库 | Postgres 16 + pgvector | MySQL+Redis+ES 三件套：运维成本高，事务边界跨系统，对这个规模没有收益 |
 | 数据访问 | SQLAlchemy 2.0（Core 为主）+ Alembic 迁移 + psycopg 3 | 裸 SQL：迁移和类型安全较差 |
 | 任务队列 | Postgres `FOR UPDATE SKIP LOCKED` + 租约 + fencing token | Redis Streams：多一个组件，且入队无法与业务写入放在同一事务（需要 outbox）；Celery：语义不透明；Temporal：能力最强但太重，在 ADR 中作为"规模扩大后的演进方向"讨论 |
-| LLM | Anthropic Python SDK，手写 agent 循环（tool use + 结构化输出 + prompt caching） | LangGraph / LangChain：抽象层厚，面试时讲不清内部机制；手写循环更能体现理解深度 |
+| Agent 循环 | 手写循环，由 Harness 掌控步数、工具执行、证据入库和预算 | LangGraph / LangChain：抽象层厚，面试时讲不清内部机制；手写循环更能体现理解深度 |
+| LLM 后端 | 统一接口 `LLMBackend.step(transcript, tools, schema) -> AgentStep`。三种实现：**ClaudeCLIBackend**（默认，`claude -p` 走订阅额度）、AnthropicAPIBackend（原生 tool use，生产路径）、ReplayBackend（测试与 CI） | 只绑定一种后端：本地没有 API Key 时无法运行，或者 CI 要花钱；详见 2.7 节 |
 | 嵌入与重排 | fastembed（ONNX，CPU 可跑）：`BAAI/bge-small-en-v1.5` 做嵌入，`bge-reranker-base` 做重排 | 调用外部嵌入 API：多一个依赖和成本 |
 | 故障环境 | kind + OpenTelemetry Demo（Helm），用 flagd 特性开关注入故障，辅以 Chaos Mesh 和坏镜像发布 | Online Boutique：遥测较弱，没有内置的故障开关 |
 | 自身可观测性 | OpenTelemetry SDK（GenAI 语义约定）、prometheus-client、structlog | — |
@@ -187,6 +192,58 @@ kb/               运行手册与复盘文档（公开、自写）
 | `audit_log` | seq, ts, actor, event, payload, prev_hash, hash | 只追加；数据库层面撤销 UPDATE/DELETE 权限 |
 | `kb_docs` / `kb_chunks` | chunk_id, doc_id, version, heading, text, tsv, embedding vector(384), tenant_id | 混合检索 |
 
+### 2.7 LLM 后端设计（订阅额度优先）
+
+你选择用订阅额度跑真实评测，所以默认后端是 Claude Code 的无头模式 `claude -p`。Agent 循环仍然由我们自己掌控，CLI 只充当"单步推理引擎"。
+
+**每一步的调用方式（草案，M4 开工时先用探针脚本确认各字段的实际行为）：**
+
+```bash
+claude -p \
+  --model claude-haiku-5-5 \
+  --system-prompt "$AGENT_SYSTEM_PROMPT" \
+  --tools "" \
+  --strict-mcp-config --setting-sources "" \
+  --json-schema "$AGENT_STEP_SCHEMA" \
+  --output-format json \
+  --no-session-persistence \
+  < transcript.txt
+```
+
+| 参数 | 作用 |
+|---|---|
+| `--system-prompt` | 用我们自己的系统提示**替换**默认提示，避免 Claude Code 自带的编码助手提示浪费额度、干扰角色 |
+| `--tools ""`、`--strict-mcp-config`、`--setting-sources ""` | 禁用全部内置工具、外部 MCP 和本机设置。模型无法自行执行任何操作，只能"提议"下一步，这同时也是一层安全边界 |
+| `--json-schema` | 强制输出 `AgentStep` 结构：`{reasoning_summary, actions: [ToolCall…] \| final: Finding[]}`，每步最多 3 个并行工具调用 |
+| `--output-format json` | 返回结果、`usage` 和 `total_cost_usd`；我们把它们写入 `llm_calls`，作为"等价 API 成本"报告 |
+| `--no-session-persistence` | 每步无状态，transcript 由 Harness 渲染并压缩后传入；保证可回放、可断点续跑 |
+
+注意：`--bare` 模式要求使用 `ANTHROPIC_API_KEY`，订阅登录下不能用，所以靠上面几个参数达到类似的隔离效果。
+
+**三种后端，同一个接口：**
+
+| 后端 | 用途 | 工具调用方式 | 运行位置 |
+|---|---|---|---|
+| ClaudeCLIBackend | 本地开发、live 评测（订阅额度） | 由 JSON schema 约束的 `actions` 字段 | 你的本机（需已登录 `claude`） |
+| AnthropicAPIBackend | 生产路径演示（有 API Key 时） | 原生 `tool_use` / `tool_result`，并使用 prompt caching | 任意环境 |
+| ReplayBackend | 单测、CI、云端开发 | 从 cassette 读取录制的 `AgentStep` | 任意环境，零成本、确定性 |
+
+**这个选择带来的取舍（写进 ADR-0013，也是很好的面试素材）：**
+
+- 好处：零 API 账单；后端可插拔，证明 Harness 不绑定供应商；"模型只能提议、Harness 才能执行"的边界非常清晰。
+- 代价：
+  - 每步要启动一个进程（约 1–3 秒开销）；
+  - 每步都要重发 transcript，所以必须做好结果压缩；
+  - 订阅有用量窗口限制，评测并发默认设为 2，并在遇到限流时退避。
+- 可选的对照实验：用 `--mcp-config` 把只读工具暴露成 MCP server，让 Claude Code 自己跑循环，再与手写循环比较准确率、步数和耗时。属于加分项，不在关键路径上。
+
+### 2.8 分支与发布约定
+
+- 在原仓库按里程碑重构：每个里程碑一个分支 `milestone/m0-cleanup`、`milestone/m1-core` …，完成后开 PR 合并进 `main`。
+- 使用 merge commit 而不是 squash，保留演进历史；每个里程碑合并后打 tag（`v0.1.0` 对应 M0，依此类推）。
+- `main` 始终保持 CI 绿色；README 中的每一条声明都必须对应已经合并的代码。
+- 提交信息遵循 Conventional Commits（`feat:`、`fix:`、`docs:`、`refactor:`、`test:`）。
+
 ---
 
 ## 3. 里程碑
@@ -236,7 +293,20 @@ kb/               运行手册与复盘文档（公开、自写）
   - flagd 开关：如 `paymentFailure`、`productCatalogFailure`、`recommendationCacheFailure`、`adHighCpu`、`kafkaQueueProblems`、`emailMemoryLeak` 等（以所用 Demo 版本实际提供的开关为准）。
   - Chaos Mesh：网络延迟、pod 被杀、CPU 压力。
   - 坏版本发布：把某个服务的镜像替换为会出错的版本（例如通过环境变量让它返回 5xx），从而产生 rollout 历史，用于验证"回滚"闭环。
-- [ ] 资源说明：本地需要约 8–12 GB 内存。云端开发环境跑不了集群，在其中靠录制回放开发（见 M3）。
+- [ ] 资源预算（你的机器为 16 GB，以下是估算，M2 中实测后更新）：
+
+  | 部分 | 预估内存 | 说明 |
+  |---|---|---|
+  | 系统、浏览器、编辑器 | 4–5 GB | 演示时尽量关掉不需要的程序 |
+  | OTel Demo（裁剪后） | 3–4 GB | 关闭 Kafka、fraud-detection、accounting 等 JVM/.NET 重组件；load-generator 降低用户数 |
+  | 日志后端 | 约 0.3 GB | 用 Loki 替换 OpenSearch（OpenSearch 至少需要 1 GB 以上） |
+  | Prometheus、Jaeger、Alertmanager | 约 1 GB | 缩短数据保留时间 |
+  | Chaos Mesh | 约 0.3 GB | 只装 controller 和 daemon |
+  | 本系统（Postgres、API、worker） | 约 1 GB | 用 docker compose 跑在集群外，通过 NodePort 访问集群 |
+  | `claude -p` 进程 | 每个 0.2–0.4 GB | 评测并发为 2 |
+
+  Docker 或 kind 的虚拟机建议分配约 10 GB 内存。如果仍然吃紧，退路是用 Demo 的 docker compose 版本做只读诊断，只在演示回滚时才起 kind。
+- [ ] 云端开发环境跑不了集群，在其中靠录制回放开发（见 M3、M4）。
 
 验收：注入任一故障后 5 分钟内，本服务能收到告警 webhook；恢复后告警自动解除。
 
@@ -247,7 +317,7 @@ kb/               运行手册与复盘文档（公开、自写）
 目标：Agent 能查到真实数据，每条证据都可追溯、可回放。
 
 - [ ] 工具注册表：每个工具有 Pydantic 入参/出参 schema、风险等级（只读工具全部为 R0）、超时、结果大小上限。这些 schema 会自动生成 Claude tool use 的 `input_schema`。
-- [ ] 工具实现：`prom_query` / `prom_range`、`logs_search`（OpenSearch）、`traces_search` / `trace_get`（Jaeger HTTP API）、`k8s_events`、`rollout_history`、`deploy_diff`、`flag_state`。
+- [ ] 工具实现：`prom_query` / `prom_range`、`logs_search`（Loki LogQL）、`traces_search` / `trace_get`（Jaeger HTTP API）、`k8s_events`、`rollout_history`、`deploy_diff`、`flag_state`。
 - [ ] 结果压缩：原始结果入库保存，交给 LLM 的是摘要（统计、Top-N、异常点），附带 `evidence_id`。这是原设计中"原始日志不进 prompt"的真正落地。
 - [ ] 弹性：超时、有限重试、简单熔断；工具失败时返回结构化错误，让 Agent 能够理解并换一种查法。
 - [ ] 录制/回放：live 模式下把每次工具调用的 `(tool, args) → result` 录成 cassette；replay 模式下从 cassette 读取。这让 CI 和云端开发环境都能在没有集群的情况下确定性地运行。
@@ -260,14 +330,15 @@ kb/               运行手册与复盘文档（公开、自写）
 
 目标：真实 LLM 对真实数据做诊断，产出带证据链的根因报告。
 
-- [ ] `app/llm/`：
-  - 基于 Anthropic SDK 的客户端；模型路由（规划和汇总用较强的模型，调查用较快的模型，通过配置切换）。
-  - Prompt caching：系统提示和工具定义设为缓存前缀。
-  - 对 429/5xx 做带抖动的重试；并发限流（信号量）。
-  - 从 `usage` 字段（含缓存读写 token）计算成本，写入 `llm_calls`。
-  - 每个事件一个预算账本，超支就停止。
-  - 录制/回放 LLM 响应，用于确定性测试。
-- [ ] Agent 循环（手写）：消息 → `tool_use` → 执行工具 → `tool_result` → … → 结构化最终输出；最大步数限制；每一步都记 trace span。
+- [ ] 探针（M4 第一天）：写一个脚本验证 2.7 节的 `claude -p` 参数组合，确认 `--json-schema` 的输出字段、`usage` 字段、退出码、限流时的报错形态；结论写进学习笔记。
+- [ ] `app/llm/`（见 2.7 节）：
+  - `LLMBackend` 接口和 `AgentStep` schema。
+  - ClaudeCLIBackend：子进程调用、超时、非零退出码和限流的识别与退避；全局并发信号量（默认 2）。
+  - AnthropicAPIBackend：原生 tool use，系统提示和工具定义设为 prompt caching 前缀；对 429/5xx 做带抖动的重试。
+  - ReplayBackend：按 `(agent, prompt_version, transcript_hash)` 查找 cassette；live 运行时自动录制。
+  - 模型路由：每个角色的模型单独配置，默认全部 `claude-haiku-5-5`。
+  - 用量账本：token 和等价成本写入 `llm_calls`；每个事件有 token 上限，超出就进入 ESCALATED。
+- [ ] Agent 循环（手写，与后端无关）：渲染 transcript → `backend.step()` → 校验 `AgentStep` → Harness 执行工具并把结果压缩后追加到 transcript → … → `final`；有最大步数限制，每一步都记 trace span。
 - [ ] Coordinator、3 个 Investigator、Synthesizer 的 prompt 放在 `agents/prompts/`，有版本号，并记录在每次运行中。
 - [ ] 黑板：Finding 和 Hypothesis 写入 Postgres；Investigator 并行执行（同一事件内 asyncio 并发，跨事件由队列并发）。
 - [ ] 引用校验器（确定性）：证据 ID 必须存在、属于本事件、类型匹配；不合格的结论打回重写或丢弃。
@@ -276,7 +347,7 @@ kb/               运行手册与复盘文档（公开、自写）
 
 验收：在 M2 的 3 个代表性故障上，Agent 都能给出根因候选；Top-1 正确至少 2 个；每条结论都有可点开的证据。
 
-面试点：手写 agent 循环与框架的取舍；结构化输出；如何防幻觉（引用校验）；成本控制（缓存、模型分级、预算）；如何让并行 Agent 共享状态又不互相覆盖（黑板加版本号）。
+面试点：手写 agent 循环与框架的取舍；后端可插拔（CLI、API、回放）；结构化输出；如何防幻觉（引用校验）；成本与额度控制（结果压缩、模型分级、预算、并发限流）；如何让并行 Agent 共享状态又不互相覆盖（黑板加版本号）。
 
 ### M5：安全与执行闭环（1–2 周）
 
@@ -345,16 +416,39 @@ kb/               运行手册与复盘文档（公开、自写）
 
 面试点：一个 SRE 工具自身如何被运维；用 trace 调试 Agent。
 
-### M9：前端控制台与 GitHub Pages（1–2 周）
+### M9：最小前端控制台（1–2 周，紧接 M5；视觉探索可提前）
 
-- [ ] `web/`：React + Vite + TS + Tailwind + shadcn/ui，深色主题，信息密度参考 incident.io 和 Grafana。
-- [ ] 页面：
-  - 事件列表（筛选、优先级、状态）。
-  - 事件详情：时间线；Agent 调用树（每一步的工具调用、token 数、耗时）；证据面板（指标小图、日志片段、trace 瀑布图链接）；按置信度排序的假设；审批卡片（显示策略理由和计划 diff）。
-  - 评测报告：各指标和消融对比图。
-- [ ] 实时：用 SSE 订阅事件状态变化。
-- [ ] GitHub Pages：同一套前端以"回放模式"构建，加载一次**真实运行**导出的 JSON；首页放架构图、30 秒演示 GIF 和评测结果。
+目标：**页面少，但每一页都好看、流畅**。宁可只有两页做到精致，也不要五页都平庸。
+
+**设计流程（先看图，再写代码）：**
+
+1. 视觉探索：基于真实数据结构（M4 产出的 schema 和一次真实运行的 JSON）做 2–3 个静态视觉方向，例如"Linear 式克制的深色"、"终端或控制台风格"、"高信息密度的运维面板"，交给你挑选。
+2. 设计规范：选定后固化成 design tokens，包括颜色（深浅两套主题）、字体（UI 用 Inter 或 Geist，数据和 ID 用 JetBrains Mono）、间距、圆角、阴影、动效时长与缓动曲线；严重度和状态有统一的语义色。
+3. 实现：组件只从 tokens 取值，不写零散的魔法数字。
+
+**技术栈：** React + Vite + TypeScript + Tailwind + shadcn/ui（基于 Radix，可访问性好）+ Motion（动效）+ TanStack Query（数据缓存）+ TanStack Virtual（长列表）+ Recharts（指标小图）。
+
+**最小版本的范围：**
+
+- [ ] 事件列表：优先级与状态徽标、实时插入的新事件带入场动画、筛选。
+- [ ] 事件详情（核心页面）：
+  - 状态机进度条，状态切换时有平滑过渡；
+  - 时间线；
+  - Agent 调用树：每一步的工具调用、耗时、token 数，可展开；
+  - 证据抽屉：点击任意 `evidence_id` 滑出，展示指标小图、日志片段、trace 摘要；
+  - 按置信度排序的假设卡片，区分 Problem Host 和 Event Host；
+  - 审批卡片：展示策略引擎的逐条理由和计划内容，按钮操作是乐观更新的。
+- [ ] GitHub Pages 首页：一句话定位、架构图、"回放一次真实事件"（复用事件详情页，数据来自导出的 JSON，按真实时间戳加速回放）、评测结果摘要。
 - [ ] 删除旧的 `docs/index.html` 和 `live.html`。
+- [ ] 推迟到后续：评测报告页、多租户管理、设置页。
+
+**"流畅"的量化验收：**
+
+- 动画只使用 `transform` 和 `opacity`，保持 60 fps；尊重 `prefers-reduced-motion`。
+- 数据通过 SSE 增量更新，局部刷新，不整页重渲染；加载时用骨架屏，没有布局跳动（CLS < 0.05）。
+- Lighthouse 性能分 ≥ 90；交互响应 INP < 200 ms；首屏 JS gzip 后 < 200 KB（路由级代码分割）。
+- 在 375 px 宽的手机上也能正常查看事件详情。
+- 深色和浅色主题都经过检查，文字对比度满足 WCAG AA。
 
 ### M10：文档与面试材料（贯穿全程）
 
@@ -397,7 +491,7 @@ kb/               运行手册与复盘文档（公开、自写）
 | 契约 | 工具客户端对录制的真实响应做解析 | 每次 PR |
 | Agent 回放 | 用 LLM 和工具的 cassette 跑完整诊断流程，断言状态和产物 | 每次 PR |
 | 评测回放 | 全部场景的 replay 评测加发布闸门 | 每次 PR（只读取 cassette，不花钱） |
-| 端到端 | kind 集群上的真实注入加真实 LLM | 手动或夜间运行，在本地机器上 |
+| 端到端 | kind 集群上的真实注入，加上 `claude -p`（订阅额度）的真实推理 | 在本机手动运行；录下的 cassette 提交进仓库，供 CI 回放 |
 | 混沌 | 运行中 kill worker 或 API、断开数据库连接 | 每个里程碑结束时手动执行一次 |
 
 ---
@@ -406,22 +500,26 @@ kb/               运行手册与复盘文档（公开、自写）
 
 | 风险 | 应对 |
 |---|---|
-| 本地资源不足，跑不动 OTel Demo | 用 Helm values 关掉非必要组件；或者用 Demo 的 docker compose 版本做只读诊断，只在演示回滚时才起 kind |
-| LLM 成本 | 开发时默认使用 replay；live 运行设置每日美元上限；调查用较快的模型；prompt caching |
+| 16 GB 内存吃紧 | 按 M2 的资源预算裁剪组件，用 Loki 替换 OpenSearch；本系统跑在集群外；必要时退到 Demo 的 docker compose 版本 |
+| 订阅额度和限流 | 开发时默认使用 replay；live 评测并发为 2，遇到限流就指数退避并支持断点续跑；结果压缩以减少每步的 transcript |
+| `claude` CLI 的参数或输出格式随版本变化 | 在配置中固定 CLI 版本，并在学习笔记中记录；探针脚本作为契约测试，升级 CLI 前先跑一遍；保留 API 后端作为退路 |
 | LLM 的非确定性导致评测不稳 | 每个场景跑多次，报告均值和方差；CI 只跑 replay |
-| 范围蔓延 | 严格按里程碑推进；M5 之前不做任何"加分项" |
+| 范围蔓延 | 严格按里程碑推进；M5 之前不做任何"加分项"；前端只做两页，但做到精致 |
 | 云端开发环境没有集群 | 在云端用 replay 开发；live 录制在本地进行，cassette 提交进仓库 |
 | 诊断准确率不理想 | 这本身就是好素材：分析失败案例，在面试中讲"我如何改进"，比 100% 更可信 |
 
 ---
 
-## 7. 需要你确认的事项
+## 7. 已确认的决策
 
-1. **本地机器配置**：内存大于 16 GB 吗？决定 OTel Demo 能开多少组件。
-2. **Anthropic API Key 与预算**：live 评测大约需要几十美元量级，具体金额在 M4 后根据实测 usage 校准。
-3. **时间投入**：每周大约多少小时？用于校准 12–16 周的估计。
-4. **前端优先级**：是否需要提前做一个最小控制台（例如在 M4 之后），方便阶段性演示？
-5. **仓库处理方式**：在原仓库上按里程碑重构（推荐，git 历史能展示演进过程），还是新开仓库？
+| 事项 | 决定 | 对计划的影响 |
+|---|---|---|
+| 本地机器 | 16 GB 内存 | M2 按资源预算裁剪 Demo，用 Loki 替换 OpenSearch，本系统跑在集群外 |
+| LLM 与额度 | 用订阅额度，通过 `claude -p` 指定 Haiku 5.5 运行 | 默认 ClaudeCLIBackend（2.7 节）；所有角色默认用 Haiku；API 后端保留，作为生产路径和退路 |
+| 前端 | 先做最小版本，但设计必须好看、交互流畅 | M9 提前到 M5 之后；先出视觉方案再实现；设定量化的流畅度验收标准 |
+| 仓库 | 在原仓库按里程碑重构 | 2.8 节的分支与发布约定 |
+
+仍待确认（不阻塞 M0）：每周大约能投入多少小时，用于校准 12–16 周的工期估计。
 
 ---
 
@@ -441,6 +539,8 @@ kb/               运行手册与复盘文档（公开、自写）
 | ADR-0010 | 录制/回放：让 LLM 系统可测试 |
 | ADR-0011 | 混合检索与 RRF |
 | ADR-0012 | 模型分级与成本预算 |
+| ADR-0013 | 可插拔 LLM 后端：用 `claude -p` 订阅额度做单步推理引擎 |
+| ADR-0014 | 前端设计系统与性能预算 |
 
 ## 附录 B：进度
 
