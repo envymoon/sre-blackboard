@@ -92,7 +92,8 @@ except Exception:
 |---|---|---|
 | 改用 uv 后所有测试都报 `No module named 'app'` | 以前靠启动脚本设置 `PYTHONPATH`；uv 的虚拟环境里没有这个变量 | 在 `pyproject.toml` 的 pytest 配置里写 `pythonpath = ["."]`，让测试不依赖外部环境变量 |
 | ruff 报了 90 个问题 | 原型代码从未运行过 linter | 安全的自动修复直接应用；"不安全修复"（如重命名未使用的循环变量、合并 if）逐个审阅 diff 后再接受 |
-| 云端开发容器里无法 `docker build` | 容器里有 docker CLI，但没有 docker daemon | 在临时目录中用与 Dockerfile 相同的步骤（`uv sync --locked --no-dev`、启动 uvicorn、请求 `/healthz`）做等价验证；真正的镜像构建交给本地或 CI |
+| 云端开发容器里 `docker build` 失败 | 守护进程默认没启动；Docker Hub 限流（429）；GHCR 的镜像下载域名被网络策略拦截；构建中的进程连不上宿主机代理，也不信任代理证书 | 手动启动 `dockerd`；基础镜像改从 `mirror.gcr.io` 拉；构建时加 `--network host`，并把代理证书和 `HTTPS_PROXY` 显式传进去。验证用的变体改用 pip 安装同版本 uv，原版 Dockerfile 在本地或 CI 构建 |
+| 云端跑不起 Kubernetes（kind、k3s 都试过） | 沙箱禁止调低进程的 `oom_score_adj`（root 也不行），而 kubelet 创建每个 Pod 的 sandbox 容器时都要把它设成负值 | 这是沙箱限制，放开网络也解决不了。故障环境只在本地跑，云端用录制/回放开发 |
 | 测试时出现 `StarletteDeprecationWarning`，提示改用 `httpx2` | 新版 Starlette 的 TestClient 准备切换底层 HTTP 客户端 | 暂时保留警告，不影响结果；等 FastAPI 官方给出迁移方式后再处理 |
 
 ## 4. 面试问答
