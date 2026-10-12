@@ -1,12 +1,52 @@
-# M0: API only. M1 adds Postgres and the harness worker; M2 adds the kind-based demo cluster.
+# Postgres, a one-shot migration, the API (2 processes) and 2 workers.
+# Needs SRE_JWT_SECRET (32+ characters) in the environment or in .env; see .env.example.
+x-app: &app
+  build: .
+  environment: &app-env
+    SRE_DATABASE_URL: postgresql+psycopg://sre:sre@db:5432/sre
+    SRE_JWT_SECRET: ${SRE_JWT_SECRET:?set SRE_JWT_SECRET (32+ characters) in .env}
+    SRE_LLM_MODEL: ${SRE_LLM_MODEL:-claude-haiku-5-5}
+  restart: unless-stopped
+
 services:
-  api:
-    build: .
-    ports: ["8000:8000"]
+  db:
+    image: pgvector/pgvector:pg16
     environment:
-      SRE_LLM_MODEL: ${SRE_LLM_MODEL:-claude-haiku-5-5}
+      POSTGRES_USER: sre
+      POSTGRES_PASSWORD: sre
+      POSTGRES_DB: sre
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      test: ["CMD", "pg_isready", "-U", "sre"]
+      interval: 2s
+      retries: 30
+
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    depends_on:
+      db: {condition: service_healthy}
+
+  api:
+    <<: *app
+    ports: ["8000:8000"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz')"]
       interval: 10s
       retries: 5
-    restart: unless-stopped
+
+  worker:
+    <<: *app
+    command: ["python", "-m", "app.worker"]
+    deploy:
+      replicas: 2
+    stop_grace_period: 30s
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+
+volumes:
+  pgdata:
