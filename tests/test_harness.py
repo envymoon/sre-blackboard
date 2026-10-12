@@ -1,23 +1,7 @@
-"""Entrypoint, approvals, budget enforcement inside the Harness, and synthesis."""
-
-from fastapi.testclient import TestClient
+"""Prototype harness: budget enforcement and synthesis (replaced by the state machine in M4)."""
 
 from app.agents import synthesize
-from app.api import app as api_app
-from app.auth import APPROVALS
-from app.main import app as main_app
 from app.models import Artifact
-
-
-def test_main_entrypoint():
-    assert main_app is api_app
-    client = TestClient(main_app)
-    assert client.get("/healthz").json() == {"status": "ok"}
-
-
-def test_approval_singleton_roundtrip():
-    APPROVALS.create_card("inc-web", "AP-W", "P0", "checkout-service", "a", "b", ["E1"], "x", expires_s=3600)
-    assert APPROVALS.approve("inc-web", "AP-W", "owner", "k-web")["approved"]
 
 
 def test_gateway_in_harness_and_synthesize():

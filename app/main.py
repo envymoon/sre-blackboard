@@ -1,5 +1,5 @@
-"""ASGI entrypoint: ``uvicorn app.main:app``."""
+"""ASGI entrypoint: ``uvicorn app.main:create_app --factory``."""
 
-from .api import app
+from .api.app import create_app
 
-__all__ = ["app"]
+__all__ = ["create_app"]
