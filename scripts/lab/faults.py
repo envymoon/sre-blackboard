@@ -168,8 +168,9 @@ CATALOGUE: tuple[Fault, ...] = (
         fault_type="network-latency",
         # Observed: product-catalog's own spans slow down too (every request queries
         # Postgres, GetProduct also asks flagd, both over the delayed link), and so does
-        # everything above it.
-        symptoms=("product-catalog", "recommendation", "frontend", "frontend-proxy"),
+        # everything above it, including checkout (GetProduct for every cart item) once
+        # it has enough orders to pass the traffic guard.
+        symptoms=("product-catalog", "recommendation", "checkout", "frontend", "frontend-proxy"),
         mechanism=ChaosFault(
             "NetworkChaos",
             {

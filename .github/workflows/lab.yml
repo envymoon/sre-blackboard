@@ -93,6 +93,17 @@ jobs:
           curl -fsS 'localhost:19090/api/v1/series' --data-urlencode 'match[]=traces_span_metrics_calls_total' \
             | jq -c '.data[:40][]' > lab-out/span-metric-series.jsonl
           curl -fsSG localhost:13100/loki/api/v1/labels | jq -c . > lab-out/loki-labels.json
+          # Where the baseline errors come from (frontend sat near the slow-burn threshold in run 5).
+          {
+            echo "# error spans/s by service, kind, span (5m)"
+            curl -fsS 'localhost:19090/api/v1/query' --data-urlencode 'query=sort_desc(sum by (service_name, span_kind, span_name) (rate(traces_span_metrics_calls_total{status_code="STATUS_CODE_ERROR"}[5m])) > 0)' \
+              | jq -r '.data.result[] | [.metric.service_name, .metric.span_kind, .metric.span_name, (.value[1] | tonumber * 1000 | round / 1000)] | @tsv'
+            echo "# frontend server spans/s by span and status (5m)"
+            curl -fsS 'localhost:19090/api/v1/query' --data-urlencode 'query=sort_desc(sum by (span_name, status_code) (rate(traces_span_metrics_calls_total{service_name="frontend", span_kind="SPAN_KIND_SERVER"}[5m])) > 0)' \
+              | jq -r '.data.result[] | [.metric.span_name, .metric.status_code, (.value[1] | tonumber * 1000 | round / 1000)] | @tsv'
+          } > lab-out/baseline-errors.txt 2>&1 || true
+          curl -fsSG localhost:13100/loki/api/v1/query_range --data-urlencode 'query={service_name="frontend"} |~ "(?i)(error|fail|exception|status: [0-9])"' \
+              --data-urlencode limit=40 | jq -r '.data.result[].values[][1]' | cut -c1-400 > lab-out/frontend-error-logs.txt 2>&1 || true
           wc -l lab-out/*.txt
 
       - name: Resource usage
@@ -135,8 +146,8 @@ jobs:
       - name: Publish cluster state as annotations
         if: always()
         run: |
-          uv run python -m scripts.lab.annotate lab-out/pods.txt:60 lab-out/events.txt:60 \
-            lab-out/span-metric-series.jsonl:12 lab-out/loki-labels.json
+          uv run python -m scripts.lab.annotate lab-out/baseline-errors.txt:60 lab-out/frontend-error-logs.txt:40 \
+            lab-out/pods.txt:40 lab-out/events.txt:40
       - name: Publish logs as annotations
         if: always()
         run: |
