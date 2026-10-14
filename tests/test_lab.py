@@ -359,6 +359,22 @@ def test_pending_alerts_keep_the_lab_from_being_quiet() -> None:
     assert "ErrorBudgetBurn/cart (pending)" in logs[0]
 
 
+def test_baseline_reports_any_alert_on_a_healthy_lab() -> None:
+    pending = {
+        "state": "pending",
+        "labels": {"alertname": "ErrorBudgetBurn", "service_name": "frontend", "environment": "lab"},
+    }
+    firing = {**pending, "state": "firing"}
+    noisy = SimulatedLab(None, prometheus=[[], [pending], [firing], [firing], []])  # type: ignore[arg-type]
+    logs: list[str] = []
+    noise = accept.check_baseline(noisy, duration_s=0.3, log=logs.append, poll_s=0.02)  # type: ignore[arg-type]
+    assert noise == ["ErrorBudgetBurn/frontend (firing)", "ErrorBudgetBurn/frontend (pending)"]
+    assert len(logs) == 2  # each alert logged once
+
+    quiet = SimulatedLab(None)  # type: ignore[arg-type]
+    assert accept.check_baseline(quiet, duration_s=0.05, log=lambda _: None, poll_s=0.02) == []  # type: ignore[arg-type]
+
+
 def test_annotations_escape_chunk_and_cap(tmp_path: Path) -> None:
     from scripts.lab.annotate import build
 

@@ -84,8 +84,19 @@ def cmd_accept(args: argparse.Namespace) -> int:
 
     faults = [get(n) for n in args.names] if args.names else [f for f in CATALOGUE if args.tag in f.tags]
     engine = create_engine(get_settings().database_url)
+    lab = _lab(args)
+    if args.baseline > 0:
+        print(f"[baseline] watching for {args.baseline:.0f}s with no fault injected")
+        if noise := accept.check_baseline(lab, args.baseline, print):
+            message = f"FAIL: alerts on a healthy lab: {', '.join(noise)}\n"
+            print(message)
+            if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
+                with open(summary, "a") as fh:
+                    fh.write("### Fault lab acceptance\n\n" + message)
+            return 1
+        print("[baseline] quiet")
     results = accept.run(
-        _lab(args),
+        lab,
         engine,
         faults,
         tenant=args.tenant,
@@ -129,6 +140,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--alert-timeout", type=float, default=300)
     p.add_argument("--settle", type=float, default=60)
     p.add_argument("--resolve-timeout", type=float, default=600)
+    p.add_argument(
+        "--baseline", type=float, default=600, help="seconds a healthy lab must stay alert-free first (0: skip)"
+    )
     p.add_argument("--hold", type=float, default=60, help="seconds the lab must stay quiet to count as quiet")
     p.add_argument("--report", help="write results as JSON here")
     p.set_defaults(func=cmd_accept)

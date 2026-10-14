@@ -1,6 +1,11 @@
 """M2 acceptance: inject a fault, see the alert reach sre-blackboard, recover, see it resolve.
 
-For each fault:
+First the baseline: with no fault injected, no lab alert may fire or go pending for
+``baseline_s``. Alerts on a healthy lab are noise, and every later result would be
+suspect (lab runs 5 and 6 passed every fault while frontend sat above the slow burn
+threshold).
+
+Then, for each fault:
 
 1. Wait until the lab is quiet: no lab alert firing *or pending* for ``hold_s`` in a row.
    One quiet instant is not enough; a flapping alert from the previous fault would
@@ -110,10 +115,12 @@ def _lab_alerts(lab: Lab) -> list[dict[str, Any]]:
     return [a for a in lab.alerts() if a["labels"].get("environment") == "lab"]
 
 
+def _name(alert: dict[str, Any]) -> str:
+    return f"{alert['labels'].get('alertname')}/{alert['labels'].get('service_name')} ({alert['state']})"
+
+
 def _names(alerts: Sequence[dict[str, Any]]) -> str:
-    return ", ".join(
-        sorted({f"{a['labels'].get('alertname')}/{a['labels'].get('service_name')} ({a['state']})" for a in alerts})
-    )
+    return ", ".join(sorted({_name(a) for a in alerts}))
 
 
 def wait_quiet(lab: Lab, timeout_s: float, log: Log, hold_s: float = 60, poll_s: float = 10) -> bool:
@@ -132,6 +139,20 @@ def wait_quiet(lab: Lab, timeout_s: float, log: Log, hold_s: float = 60, poll_s:
         if now > deadline:
             log(f"not quiet after {timeout_s:.0f}s: {_names(active) or 'quiet, but not for long enough'}")
             return False
+        time.sleep(poll_s)
+
+
+def check_baseline(lab: Lab, duration_s: float, log: Log, poll_s: float = 10) -> list[str]:
+    """Watch the lab with no fault injected; return every alert that fired or went pending."""
+    deadline = time.monotonic() + duration_s
+    seen: set[str] = set()
+    while True:
+        for name in sorted({_name(a) for a in _lab_alerts(lab)}):
+            if name not in seen:
+                seen.add(name)
+                log(f"[baseline] {name}")
+        if time.monotonic() >= deadline:
+            return sorted(seen)
         time.sleep(poll_s)
 
 

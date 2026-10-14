@@ -102,8 +102,19 @@ jobs:
             curl -fsS 'localhost:19090/api/v1/query' --data-urlencode 'query=sort_desc(sum by (span_name, status_code) (rate(traces_span_metrics_calls_total{service_name="frontend", span_kind="SPAN_KIND_SERVER"}[5m])) > 0)' \
               | jq -r '.data.result[] | [.metric.span_name, .metric.status_code, (.value[1] | tonumber * 1000 | round / 1000)] | @tsv'
           } > lab-out/baseline-errors.txt 2>&1 || true
-          curl -fsSG localhost:13100/loki/api/v1/query_range --data-urlencode 'query={service_name="frontend"} |~ "(?i)(error|fail|exception|status: [0-9])"' \
-              --data-urlencode limit=40 | jq -r '.data.result[].values[][1]' | cut -c1-400 > lab-out/frontend-error-logs.txt 2>&1 || true
+          # The log line is only the message; the error details are in structured metadata.
+          curl -fsSG -H 'X-Loki-Response-Encoding-Flags: categorize-labels' localhost:13100/loki/api/v1/query_range \
+              --data-urlencode 'query={service_name="frontend"} |~ "(?i)(error|fail|exception)"' --data-urlencode limit=30 \
+              | jq -c '.data.result[].values[] | [.[1], (.[2].structuredMetadata // {} | with_entries(select(.key | test("err|code|status|message|path"))))]' \
+              | cut -c1-600 > lab-out/frontend-error-logs.txt 2>&1 || true
+          # Error spans from Jaeger, grouped: service, operation, status/peer tags, exception message.
+          curl -fsSG localhost:18080/jaeger/ui/api/traces --data-urlencode service=frontend --data-urlencode 'tags={"error":"true"}' \
+              --data-urlencode limit=200 --data-urlencode lookback=1h \
+            | jq -r '.data[] | . as $t | .spans[] | select(any(.tags[]; .key == "error" and .value == true))
+                | [$t.processes[.processID].serviceName, .operationName,
+                   ([.tags[] | select(.key | test("status|grpc|error.type|peer|server.address")) | "\(.key)=\(.value)"] | join(" ")),
+                   ([.logs[]?.fields[]? | select(.key | test("exception.message|exception.type")) | "\(.value)"] | join(" | "))] | @tsv' \
+            | cut -c1-400 | sort | uniq -c | sort -rn > lab-out/error-traces.txt 2>&1 || true
           wc -l lab-out/*.txt
 
       - name: Resource usage
@@ -146,8 +157,8 @@ jobs:
       - name: Publish cluster state as annotations
         if: always()
         run: |
-          uv run python -m scripts.lab.annotate lab-out/baseline-errors.txt:60 lab-out/frontend-error-logs.txt:40 \
-            lab-out/pods.txt:40 lab-out/events.txt:40
+          uv run python -m scripts.lab.annotate lab-out/error-traces.txt:50 lab-out/frontend-error-logs.txt:30 \
+            lab-out/baseline-errors.txt:40 lab-out/pods.txt:40
       - name: Publish logs as annotations
         if: always()
         run: |
