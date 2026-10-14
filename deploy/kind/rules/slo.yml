@@ -1,0 +1,96 @@
+# SLO alert rules for the fault lab, evaluated by the demo's Prometheus.
+#
+# SLIs come from span metrics (the collector's span_metrics connector), one series set per
+# service, counting SERVER spans only: what callers of that service experienced.
+#   availability: share of server spans with status ERROR; objective 99%
+#   latency:      p95 of server span duration; threshold 1s
+#
+# Burn-rate alerts follow the multi-window pattern from the Google SRE workbook, with the
+# windows shortened 12x so a lab fault pages within minutes instead of an hour:
+#   workbook                      lab
+#   14.4x over 1h and 5m   ->     14.4x over 5m and 1m   (fast burn, page)
+#    6x   over 6h and 30m  ->      6x   over 30m and 5m  (slow burn, ticket)
+# The short window makes an alert resolve within about a minute of recovery, instead of
+# waiting for the long window to drain.
+#
+# Every alert carries `service_name` (the incident's service), `environment` and `severity`;
+# sre-blackboard maps severity critical -> P1, warning -> P2.
+# Unit tests: deploy/kind/rules/tests/ (make rules-test).
+groups:
+  - name: sre-slo-sli
+    interval: 15s
+    rules:
+      - record: service:sli_requests:rate1m
+        expr: sum by (service_name) (rate(traces_span_metrics_calls_total{span_kind="SPAN_KIND_SERVER"}[1m]))
+      - record: service:sli_requests:rate5m
+        expr: sum by (service_name) (rate(traces_span_metrics_calls_total{span_kind="SPAN_KIND_SERVER"}[5m]))
+      - record: service:sli_requests:rate30m
+        expr: sum by (service_name) (rate(traces_span_metrics_calls_total{span_kind="SPAN_KIND_SERVER"}[30m]))
+
+      - record: service:sli_errors:rate1m
+        expr: sum by (service_name) (rate(traces_span_metrics_calls_total{span_kind="SPAN_KIND_SERVER", status_code="STATUS_CODE_ERROR"}[1m]))
+      - record: service:sli_errors:rate5m
+        expr: sum by (service_name) (rate(traces_span_metrics_calls_total{span_kind="SPAN_KIND_SERVER", status_code="STATUS_CODE_ERROR"}[5m]))
+      - record: service:sli_errors:rate30m
+        expr: sum by (service_name) (rate(traces_span_metrics_calls_total{span_kind="SPAN_KIND_SERVER", status_code="STATUS_CODE_ERROR"}[30m]))
+
+      - record: service:sli_error_ratio:rate1m
+        expr: service:sli_errors:rate1m / service:sli_requests:rate1m
+      - record: service:sli_error_ratio:rate5m
+        expr: service:sli_errors:rate5m / service:sli_requests:rate5m
+      - record: service:sli_error_ratio:rate30m
+        expr: service:sli_errors:rate30m / service:sli_requests:rate30m
+
+      - record: service:sli_latency_p95_ms:rate5m
+        expr: histogram_quantile(0.95, sum by (service_name, le) (rate(traces_span_metrics_duration_milliseconds_bucket{span_kind="SPAN_KIND_SERVER"}[5m])))
+
+  - name: sre-slo-alerts
+    interval: 15s
+    rules:
+      # Traffic guard on every alert: at least 10 requests in 5 minutes, so one failed
+      # request out of three does not page.
+      # Fast and slow burn share one alert name, so sre-blackboard (which fingerprints on
+      # alert name, service and environment) folds both into one incident. The `burn` label
+      # tells them apart; severity decides the priority.
+      - alert: ErrorBudgetBurn
+        expr: |
+          service:sli_error_ratio:rate5m > (14.4 * 0.01)
+          and service:sli_error_ratio:rate1m > (14.4 * 0.01)
+          and service:sli_requests:rate5m * 300 >= 10
+        for: 1m
+        labels:
+          severity: critical
+          environment: lab
+          slo: availability
+          burn: fast
+        annotations:
+          summary: "{{ $labels.service_name }} is failing {{ $value | humanizePercentage }} of requests"
+          description: "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days."
+
+      - alert: ErrorBudgetBurn
+        expr: |
+          service:sli_error_ratio:rate30m > (6 * 0.01)
+          and service:sli_error_ratio:rate5m > (6 * 0.01)
+          and service:sli_requests:rate5m * 300 >= 10
+        for: 2m
+        labels:
+          severity: warning
+          environment: lab
+          slo: availability
+          burn: slow
+        annotations:
+          summary: "{{ $labels.service_name }} is failing {{ $value | humanizePercentage }} of requests (30m)"
+          description: "Error ratio over 30m is above 6x the 1% error budget (slow burn)."
+
+      - alert: LatencyP95High
+        expr: |
+          service:sli_latency_p95_ms:rate5m > 1000
+          and service:sli_requests:rate5m * 300 >= 10
+        for: 2m
+        labels:
+          severity: warning
+          environment: lab
+          slo: latency
+        annotations:
+          summary: "{{ $labels.service_name }} p95 latency is {{ $value | humanize }}ms"
+          description: "95th percentile of server span duration over 5m is above 1000ms."

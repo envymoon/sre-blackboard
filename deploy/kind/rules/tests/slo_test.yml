@@ -1,0 +1,97 @@
+# promtool unit tests for ../slo.yml: `make rules-test`.
+# Series are sampled every 15s. Counter notation: 'a+bxn' is a, then n more samples each +b.
+rule_files:
+  - ../slo.yml
+evaluation_interval: 15s
+
+tests:
+  # payment: 1 req/s, all fine for 10m; then 60% errors for 10m; then fine again.
+  # quote: 50% errors, but only about 2 requests per 5m, below the traffic guard.
+  - interval: 15s
+    input_series:
+      - series: 'traces_span_metrics_calls_total{service_name="payment", span_kind="SPAN_KIND_SERVER", status_code="STATUS_CODE_UNSET"}'
+        values: '0+15x39 600+6x39 840+15x40'
+      - series: 'traces_span_metrics_calls_total{service_name="payment", span_kind="SPAN_KIND_SERVER", status_code="STATUS_CODE_ERROR"}'
+        values: '0x39 0+9x39 351x40'
+      # Client spans of the caller must not count toward payment's SLI.
+      - series: 'traces_span_metrics_calls_total{service_name="checkout", span_kind="SPAN_KIND_CLIENT", status_code="STATUS_CODE_ERROR"}'
+        values: '0+9x120'
+      - series: 'traces_span_metrics_calls_total{service_name="quote", span_kind="SPAN_KIND_SERVER", status_code="STATUS_CODE_UNSET"}'
+        values: '0+0.05x120'
+      - series: 'traces_span_metrics_calls_total{service_name="quote", span_kind="SPAN_KIND_SERVER", status_code="STATUS_CODE_ERROR"}'
+        values: '0+0.05x120'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: ErrorBudgetBurn
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: ErrorBudgetBurn
+        exp_alerts: []
+      # A large outage trips both windows; Alertmanager inhibits the slow one while the fast one fires.
+      - eval_time: 14m
+        alertname: ErrorBudgetBurn
+        exp_alerts:
+          - exp_labels:
+              service_name: payment
+              severity: critical
+              environment: lab
+              slo: availability
+              burn: fast
+            exp_annotations:
+              summary: "payment is failing 49.24% of requests"
+              description: "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days."
+          - exp_labels:
+              service_name: payment
+              severity: warning
+              environment: lab
+              slo: availability
+              burn: slow
+            exp_annotations:
+              summary: "payment is failing 17.14% of requests (30m)"
+              description: "Error ratio over 30m is above 6x the 1% error budget (slow burn)."
+      # Errors stopped at 20m: the 1m window clears first, so the page resolves within a minute.
+      - eval_time: 22m
+        alertname: ErrorBudgetBurn
+        exp_alerts:
+          - exp_labels:
+              service_name: payment
+              severity: warning
+              environment: lab
+              slo: availability
+              burn: slow
+            exp_annotations:
+              summary: "payment is failing 26.77% of requests (30m)"
+              description: "Error ratio over 30m is above 6x the 1% error budget (slow burn)."
+      # The slow burn clears once the 5m window drops under 6%, about 5 minutes after recovery.
+      - eval_time: 27m
+        alertname: ErrorBudgetBurn
+        exp_alerts: []
+
+  # checkout: p95 well under 100ms for 10m, then half the requests take 1-5s.
+  - interval: 15s
+    input_series:
+      - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="checkout", span_kind="SPAN_KIND_SERVER", le="100"}'
+        values: '0+15x39 600+7.5x40'
+      - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="checkout", span_kind="SPAN_KIND_SERVER", le="1000"}'
+        values: '0+15x39 600+7.5x40'
+      - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="checkout", span_kind="SPAN_KIND_SERVER", le="5000"}'
+        values: '0+15x39 600+15x40'
+      - series: 'traces_span_metrics_duration_milliseconds_bucket{service_name="checkout", span_kind="SPAN_KIND_SERVER", le="+Inf"}'
+        values: '0+15x39 600+15x40'
+      - series: 'traces_span_metrics_calls_total{service_name="checkout", span_kind="SPAN_KIND_SERVER", status_code="STATUS_CODE_UNSET"}'
+        values: '0+15x79'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: LatencyP95High
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LatencyP95High
+        exp_alerts:
+          - exp_labels:
+              service_name: checkout
+              severity: warning
+              environment: lab
+              slo: latency
+            exp_annotations:
+              summary: "checkout p95 latency is 4.6kms"
+              description: "95th percentile of server span duration over 5m is above 1000ms."

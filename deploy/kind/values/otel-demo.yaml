@@ -1,0 +1,116 @@
+# Overrides for the OpenTelemetry Demo chart (version pinned in ../versions.env).
+#
+# Two goals:
+# 1. Fit the lab in about 10 GB next to the system itself (see the M2 budget in docs/plan).
+# 2. Make the lab alert: SLO rules in Prometheus, Alertmanager posting to sre-blackboard.
+
+components:
+  # Kafka consumers (.NET and JVM) and the demo's own LLM components: not needed for diagnosis
+  # scenarios, and together they cost more than 1.5 GB. Kafka itself stays: checkout publishes to it.
+  accounting: {enabled: false}
+  fraud-detection: {enabled: false}
+  agent: {enabled: false}
+  chatbot: {enabled: false}
+  mcp: {enabled: false}
+  telemetry-docs: {enabled: false}
+
+  frontend-proxy:
+    service:
+      type: NodePort
+      nodePort: 30080
+
+  load-generator:
+    envOverrides:
+      # The browser users run Chromium in the pod; HTTP users are enough to drive every service.
+      - name: LOCUST_BROWSER_TRAFFIC_ENABLED
+        value: "false"
+    resources:
+      limits:
+        memory: 600Mi
+
+opentelemetry-collector:
+  config:
+    exporters:
+      # Logs go to Loki (deploy/kind/manifests/loki.yaml) instead of OpenSearch.
+      otlp_http/loki:
+        endpoint: http://loki:3100/otlp
+        tls:
+          insecure: true
+    connectors:
+      span_metrics:
+        # Default is 60s. Alert windows are 1m and 5m, which need several points per window.
+        metrics_flush_interval: 15s
+    service:
+      pipelines:
+        logs:
+          exporters: [otlp_http/loki, debug]
+
+opensearch:
+  enabled: false
+
+grafana:
+  enabled: false
+
+prometheus:
+  server:
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+    retention: 2d
+    service:
+      type: NodePort
+      nodePort: 30090
+    # SLO rules live in deploy/kind/rules/ and are loaded as a ConfigMap by up.sh,
+    # so the same file is unit-tested with promtool.
+    extraConfigmapMounts:
+      - name: sre-slo-rules
+        mountPath: /etc/sre-rules
+        configMap: sre-slo-rules
+        readOnly: true
+  serverFiles:
+    prometheus.yml:
+      rule_files:
+        - /etc/sre-rules/*.yml
+
+  alertmanager:
+    enabled: true
+    persistence:
+      enabled: false
+    service:
+      type: NodePort
+      nodePort: 30093
+    resources:
+      limits:
+        memory: 100Mi
+    # Bearer token for the ingest API, created by up.sh (role "ingest", tenant "lab").
+    extraSecretMounts:
+      - name: sre-blackboard-token
+        mountPath: /etc/sre-blackboard
+        secretName: sre-blackboard-token
+        readOnly: true
+    config:
+      global:
+        resolve_timeout: 2m
+      route:
+        receiver: sre-blackboard
+        # One notification group per alert and service: each becomes its own incident fingerprint.
+        group_by: [alertname, service_name]
+        group_wait: 10s
+        group_interval: 30s
+        repeat_interval: 1h
+      # While a fast burn pages, the slow burn of the same service adds nothing.
+      inhibit_rules:
+        - source_matchers: [alertname="ErrorBudgetBurn", burn="fast"]
+          target_matchers: [alertname="ErrorBudgetBurn", burn="slow"]
+          equal: [service_name]
+      receivers:
+        - name: sre-blackboard
+          webhook_configs:
+            # Service without a selector; up.sh points it at the API running outside the cluster.
+            - url: http://sre-blackboard:8000/api/v1/alerts
+              send_resolved: true
+              max_alerts: 0
+              http_config:
+                authorization:
+                  type: Bearer
+                  credentials_file: /etc/sre-blackboard/token

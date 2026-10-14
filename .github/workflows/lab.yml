@@ -1,0 +1,134 @@
+name: Fault lab
+
+# The M2 lab on a GitHub-hosted runner (4 vCPU, 16 GB for public repositories): a fresh kind
+# cluster with the OpenTelemetry Demo, the sre-blackboard stack from docker compose, and the
+# acceptance run (inject -> alert within 5 min -> recover -> resolved). Nothing is reused
+# between runs, so every run also proves `make env-up` works from scratch.
+
+on:
+  workflow_dispatch:
+    inputs:
+      faults:
+        description: "Faults to run, space separated (empty: the acceptance set)"
+        required: false
+        default: ""
+  push:
+    branches: ["milestone/m2-*"]
+    paths:
+      - "deploy/kind/**"
+      - "scripts/lab/**"
+      - ".github/workflows/lab.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lab-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lab:
+    # Pinned: ubuntu-latest moves to a new release, and the lab should only change on purpose.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      SRE_DATABASE_URL: postgresql+psycopg://sre:sre@localhost:5432/sre
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
+
+      - name: Load pinned versions
+        run: grep -E '^[A-Z_]+=' deploy/kind/versions.env >> "$GITHUB_ENV"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.32"
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --locked --python 3.12
+
+      - name: Install kind and helm
+        run: |
+          curl -sSLo /tmp/kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+          sudo install /tmp/kind /usr/local/bin/kind
+          curl -sSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" | tar -xz -C /tmp
+          sudo install /tmp/linux-amd64/helm /usr/local/bin/helm
+          kind version && helm version --short && kubectl version --client
+
+      - name: Start sre-blackboard
+        run: |
+          echo "SRE_JWT_SECRET=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')" > .env
+          docker compose up --build -d
+          timeout 120 bash -c 'until curl -fsS localhost:8000/readyz; do sleep 2; done'
+
+      - name: Create the lab
+        run: ./deploy/kind/up.sh
+
+      - name: Wait for span metrics
+        run: |
+          # Every service needs a few minutes of traffic before the 5m SLI windows mean anything.
+          for i in $(seq 1 60); do
+            n=$(curl -fsS 'localhost:19090/api/v1/query' --data-urlencode 'query=count(service:sli_requests:rate5m > 0)' \
+                | jq -r '.data.result[0].value[1] // 0')
+            echo "services with traffic: $n"
+            [ "$n" -ge 8 ] && break
+            sleep 15
+          done
+          sleep 240
+
+      - name: Baseline
+        run: |
+          mkdir -p lab-out
+          uv run python -m scripts.lab probe | tee lab-out/baseline-slis.txt
+          uv run python -m scripts.lab status | tee lab-out/baseline-status.txt
+          curl -fsS localhost:19090/api/v1/label/__name__/values | jq -r '.data[]' > lab-out/metric-names.txt
+          curl -fsS 'localhost:19090/api/v1/series' --data-urlencode 'match[]=traces_span_metrics_calls_total' \
+            | jq -c '.data[:40][]' > lab-out/span-metric-series.jsonl
+          curl -fsSG localhost:13100/loki/api/v1/labels | jq -c . > lab-out/loki-labels.json
+          wc -l lab-out/*.txt
+
+      - name: Resource usage
+        run: |
+          docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}' | tee lab-out/docker-stats.txt
+          free -m | tee -a lab-out/docker-stats.txt
+          docker exec sre-lab-control-plane sh -c 'cat /sys/fs/cgroup/memory.current' | awk '{printf "kind node cgroup memory: %.0f MiB\n", $1/1048576}' | tee -a lab-out/docker-stats.txt
+
+      - name: Acceptance
+        run: |
+          set -o pipefail
+          uv run python -m scripts.lab accept ${{ inputs.faults }} --report lab-out/report.json | tee lab-out/accept.txt
+
+      - name: Diagnostics
+        if: always()
+        run: |
+          mkdir -p lab-out
+          ctx=(--context kind-sre-lab)
+          kubectl "${ctx[@]}" get pods -A -o wide > lab-out/pods.txt 2>&1 || true
+          kubectl "${ctx[@]}" -n otel-demo get events --sort-by=.lastTimestamp > lab-out/events.txt 2>&1 || true
+          kubectl "${ctx[@]}" -n otel-demo logs statefulset/otel-demo-alertmanager --tail=300 > lab-out/alertmanager.log 2>&1 || true
+          kubectl "${ctx[@]}" -n otel-demo logs deployment/prometheus -c prometheus-server --tail=300 > lab-out/prometheus.log 2>&1 || true
+          curl -fsS localhost:19090/api/v1/rules | jq . > lab-out/rules.json 2>&1 || true
+          curl -fsS localhost:19090/api/v1/alerts | jq . > lab-out/alerts.json 2>&1 || true
+          docker compose logs --no-color --tail=500 api worker > lab-out/sre-blackboard.log 2>&1 || true
+          cat lab-out/pods.txt || true
+
+      - name: Publish results as annotations
+        if: always()
+        run: |
+          # Readable through the REST API even where logs and artifacts are not (see the script).
+          uv run python -m scripts.lab.annotate lab-out/accept.txt:80 lab-out/baseline-slis.txt \
+            lab-out/docker-stats.txt lab-out/baseline-status.txt lab-out/pods.txt:60 \
+            lab-out/span-metric-series.jsonl:12 lab-out/loki-labels.json lab-out/sre-blackboard.log:80 \
+            lab-out/alertmanager.log:60 lab-out/prometheus.log:40 lab-out/events.txt:60
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lab-out
+          path: lab-out/
+          retention-days: 14

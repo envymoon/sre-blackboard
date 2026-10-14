@@ -1,0 +1,14 @@
+# Chaos Mesh for network delay, pod failure and CPU stress (see scripts/lab/faults.py).
+# Only the controller and the daemon: no dashboard, one controller replica (default is 3).
+controllerManager:
+  replicaCount: 1
+  leaderElection:
+    enabled: false
+chaosDaemon:
+  # kind nodes run containerd.
+  runtime: containerd
+  socketPath: /run/containerd/containerd.sock
+dashboard:
+  create: false
+dnsServer:
+  create: false
