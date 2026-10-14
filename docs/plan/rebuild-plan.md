@@ -284,7 +284,7 @@ claude -p \
 
 验收：`docker compose up` 起 2 个 API + 2 个 worker，压测脚本发 1000 条重复告警，只生成预期数量的事件，队列中没有重复领取。
 
-验收记录（2026-10-12，云端开发容器）：因为云端网络策略拦截了 GHCR，没有用 compose 构建镜像，改为在宿主机上直接起 2 个 API 进程、2 个 worker 和 Postgres 容器。`scripts/loadtest.py` 发 1000 条告警（10 个指纹）和 2000 条告警（200 个指纹）两轮，全部检查通过，详见 `docs/learn/m1-postgres-queue.md`。`make up` 加 `make loadtest` 的完整 compose 路径需要在本地再跑一次。
+验收记录（2026-10-12，云端开发容器）：因为云端网络策略拦截了 GHCR，没有用 compose 构建镜像，改为在宿主机上直接起 2 个 API 进程、2 个 worker 和 Postgres 容器。`scripts/loadtest.py` 发 1000 条告警（10 个指纹）和 2000 条告警（200 个指纹）两轮，全部检查通过，详见 `docs/learn/m1-postgres-queue.md`。2026-10-14 补充：完整 compose 路径也已验证。云端在镜像构建时额外注入代理 CA（仅限云端，仓库里的 Dockerfile 未改），`docker compose up` 起 2 个 API 进程、2 个 worker，2000 条告警（200 个指纹）全部检查通过，`docker compose down` 1.5 秒内优雅退出。CI 新增 `e2e` job，每个 PR 都用原样的 Dockerfile 重跑这一验收。
 
 面试点：为什么用 SKIP LOCKED；fencing token 解决了什么问题；至少一次投递加幂等如何得到"效果上的恰好一次"；优先级老化与饥饿问题。
 
