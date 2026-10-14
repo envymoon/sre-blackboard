@@ -2,12 +2,18 @@
 
 For each fault:
 
-1. Wait until Prometheus has no firing lab alerts (a false positive here fails the run).
+1. Wait until the lab is quiet: no lab alert firing *or pending* for ``hold_s`` in a row.
+   One quiet instant is not enough; a flapping alert from the previous fault would
+   otherwise be counted against the next one.
 2. Inject. Within ``alert_timeout`` (5 minutes) a firing alert must be stored by the API,
-   i.e. Alertmanager's webhook got through authentication and ingest.
+   i.e. Alertmanager's webhook got through authentication and ingest, and at least one
+   alert must be on a service the catalogue expects (``Fault.symptoms``).
 3. Keep collecting alerts for ``settle_s`` to record the full set of symptoms.
 4. Recover. Within ``resolve_timeout`` every alert that fired must have a resolved
-   notification, and Prometheus must be quiet again.
+   notification, and the lab must be quiet again (as in step 1).
+
+An alert that resolves while its fault is still active, or fires again after resolving,
+is flapping: it would page twice or close an incident early, so it fails the fault.
 
 Timestamps come from the database clock, so host and container clocks need not agree.
 """
@@ -19,6 +25,7 @@ import time
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from itertools import pairwise
 from typing import Any
 
 from sqlalchemy import Engine, text
@@ -48,6 +55,7 @@ class ScenarioResult:
     incident_created: bool = False
     resolved_s: float | None = None
     unresolved: list[str] = field(default_factory=list)
+    flapping: list[str] = field(default_factory=list)
     error: str | None = None
 
     @property
@@ -61,6 +69,8 @@ class ScenarioResult:
             and self.first_alert_s is not None
             and self.first_alert_s <= alert_timeout
             and self.incident_created
+            and self.symptom_matched
+            and not self.flapping
             and self.resolved_s is not None
         )
 
@@ -84,21 +94,60 @@ def _alert_rows(engine: Engine, tenant: str, since: datetime) -> list[Any]:
         )
 
 
+def _key(row: Any) -> str:
+    """One Alertmanager alert. The stored fingerprint is the incident's (alert name, service,
+    environment), which fast and slow burn share, so the label set tells them apart."""
+    return json.dumps(dict(row.labels), sort_keys=True)
+
+
+def _label(labels: dict[str, str]) -> str:
+    burn = f"[{labels['burn']}]" if "burn" in labels else ""
+    return f"{labels.get('alertname', '?')}{burn}"
+
+
 def _lab_alerts(lab: Lab) -> list[dict[str, Any]]:
-    return [a for a in lab.firing_alerts() if a["labels"].get("environment") == "lab"]
+    """Firing and pending lab alerts in Prometheus."""
+    return [a for a in lab.alerts() if a["labels"].get("environment") == "lab"]
 
 
-def wait_quiet(lab: Lab, timeout_s: float, log: Log, poll_s: float = 10) -> bool:
+def _names(alerts: Sequence[dict[str, Any]]) -> str:
+    return ", ".join(
+        sorted({f"{a['labels'].get('alertname')}/{a['labels'].get('service_name')} ({a['state']})" for a in alerts})
+    )
+
+
+def wait_quiet(lab: Lab, timeout_s: float, log: Log, hold_s: float = 60, poll_s: float = 10) -> bool:
+    """Wait until no lab alert is firing or pending for ``hold_s`` in a row."""
     deadline = time.monotonic() + timeout_s
+    quiet_since: float | None = None
     while True:
-        firing = _lab_alerts(lab)
-        if not firing:
+        active = _lab_alerts(lab)
+        now = time.monotonic()
+        if active:
+            quiet_since = None
+        elif quiet_since is None:
+            quiet_since = now
+        if quiet_since is not None and now - quiet_since >= hold_s:
             return True
-        if time.monotonic() > deadline:
-            names = sorted({f"{a['labels'].get('alertname')}/{a['labels'].get('service_name')}" for a in firing})
-            log(f"still firing after {timeout_s:.0f}s: {', '.join(names)}")
+        if now > deadline:
+            log(f"not quiet after {timeout_s:.0f}s: {_names(active) or 'quiet, but not for long enough'}")
             return False
         time.sleep(poll_s)
+
+
+def _flapping(rows: Sequence[Any], seen: dict[str, AlertSeen], t1: datetime) -> list[str]:
+    """Alerts that resolved before recovery started, or fired again after resolving."""
+    out = set()
+    history: dict[str, list[Any]] = {}
+    for r in rows:
+        history.setdefault(_key(r), []).append(r)
+    for key, alert in seen.items():
+        statuses = [r.status for r in history.get(key, [])]
+        early = any(r.status == "resolved" and r.received_at < t1 for r in history.get(key, []))
+        refired = any(a == "resolved" and b == "firing" for a, b in pairwise(statuses))
+        if early or refired:
+            out.add(f"{alert.alertname}/{alert.service}")
+    return sorted(out)
 
 
 def run_scenario(
@@ -112,10 +161,11 @@ def run_scenario(
     settle_s: float = 60,
     resolve_timeout: float = 600,
     quiet_timeout: float = 600,
+    hold_s: float = 60,
     poll_s: float = 5,
 ) -> ScenarioResult:
     result = ScenarioResult(fault.name, fault.root_cause, list(fault.symptoms))
-    result.quiet_before = wait_quiet(lab, quiet_timeout, log)
+    result.quiet_before = wait_quiet(lab, quiet_timeout, log, hold_s=hold_s, poll_s=poll_s)
     if not result.quiet_before:
         result.error = "lab was not quiet before injection"
         return result
@@ -129,18 +179,19 @@ def run_scenario(
         settle_until: float | None = None
         while True:
             for row in _alert_rows(engine, tenant, t0):
-                if row.status == "firing" and row.fingerprint not in seen:
+                key = _key(row)
+                if row.status == "firing" and key not in seen:
                     labels = dict(row.labels)
-                    seen[row.fingerprint] = AlertSeen(
-                        alertname=labels.get("alertname", "?"),
+                    seen[key] = AlertSeen(
+                        alertname=_label(labels),
                         service=labels.get("service_name") or labels.get("service") or "?",
                         labels=labels,
                         seconds_after_injection=round((row.received_at - t0).total_seconds(), 1),
                     )
                     result.incident_created = result.incident_created or row.incident_id is not None
                     log(
-                        f"[{fault.name}] alert {seen[row.fingerprint].alertname} on {seen[row.fingerprint].service} "
-                        f"after {seen[row.fingerprint].seconds_after_injection}s"
+                        f"[{fault.name}] alert {seen[key].alertname} on {seen[key].service} "
+                        f"after {seen[key].seconds_after_injection}s"
                     )
             if seen and settle_until is None:
                 result.first_alert_s = min(a.seconds_after_injection for a in seen.values())
@@ -162,21 +213,31 @@ def run_scenario(
         lab.recover(fault)
 
     deadline_r = time.monotonic() + resolve_timeout
+    quiet_since: datetime | None = None  # database time; resolution counts from here
     while True:
-        # An alert may flap (fire, resolve, fire again): what counts is its latest notification.
-        latest = {r.fingerprint: r.status for r in _alert_rows(engine, tenant, t0)}
-        open_fps = {fp for fp in seen if latest.get(fp) != "resolved"}
-        if not open_fps and not _lab_alerts(lab):
-            result.resolved_s = round((_db_now(engine) - t1).total_seconds(), 1)
+        rows = _alert_rows(engine, tenant, t0)
+        latest = {_key(r): r.status for r in rows}
+        open_keys = {k for k in seen if latest.get(k) != "resolved"}
+        active = _lab_alerts(lab)
+        db_now = _db_now(engine)
+        if open_keys or active:
+            quiet_since = None
+        elif quiet_since is None:
+            quiet_since = db_now
+        if quiet_since is not None and (db_now - quiet_since).total_seconds() >= hold_s:
+            result.resolved_s = round((quiet_since - t1).total_seconds(), 1)
             log(f"[{fault.name}] all alerts resolved {result.resolved_s}s after recovery")
             break
         if time.monotonic() > deadline_r:
-            result.unresolved = sorted(f"{seen[fp].alertname}/{seen[fp].service}" for fp in open_fps)
-            log(
-                f"[{fault.name}] unresolved after {resolve_timeout:.0f}s: {result.unresolved or 'prometheus still firing'}"
-            )
+            result.unresolved = sorted(f"{seen[k].alertname}/{seen[k].service}" for k in open_keys)
+            log(f"[{fault.name}] not resolved after {resolve_timeout:.0f}s: {result.unresolved or _names(active)}")
             break
         time.sleep(poll_s)
+    result.flapping = _flapping(_alert_rows(engine, tenant, t0), seen, t1)
+    if result.flapping:
+        log(f"[{fault.name}] flapping: {', '.join(result.flapping)}")
+    if not result.symptom_matched and seen:
+        log(f"[{fault.name}] no alert on an expected service ({', '.join(fault.symptoms)})")
     return result
 
 
@@ -203,15 +264,17 @@ def to_json(results: Sequence[ScenarioResult], alert_timeout: float) -> str:
 
 def to_markdown(results: Sequence[ScenarioResult], alert_timeout: float) -> str:
     lines = [
-        "| fault | root cause | first alert | alerts (service) | expected symptom seen | resolved after recovery | result |",
-        "|---|---|---|---|---|---|---|",
+        "| fault | root cause | first alert | alerts (service) | expected symptom seen | flapping | resolved after recovery | result |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for r in results:
         alerts = ", ".join(f"{a.alertname} ({a.service}, {a.seconds_after_injection:.0f}s)" for a in r.alerts) or "-"
         first = f"{r.first_alert_s:.0f}s" if r.first_alert_s is not None else "none"
         resolved = f"{r.resolved_s:.0f}s" if r.resolved_s is not None else f"no ({', '.join(r.unresolved)})"
+        flapping = ", ".join(r.flapping) or "-"
         verdict = "ok" if r.ok(alert_timeout) else f"FAIL{': ' + r.error if r.error else ''}"
         lines.append(
-            f"| {r.fault} | {r.root_cause} | {first} | {alerts} | {'yes' if r.symptom_matched else 'no'} | {resolved} | {verdict} |"
+            f"| {r.fault} | {r.root_cause} | {first} | {alerts} | {'yes' if r.symptom_matched else 'no'} "
+            f"| {flapping} | {resolved} | {verdict} |"
         )
     return "\n".join(lines) + "\n"

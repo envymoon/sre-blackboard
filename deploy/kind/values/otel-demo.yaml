@@ -24,6 +24,11 @@ components:
       # The browser users run Chromium in the pod; HTTP users are enough to drive every service.
       - name: LOCUST_BROWSER_TRAFFIC_ENABLED
         value: "false"
+      # The default 5 users give checkout, payment, email and quote ~3 requests a minute:
+      # too few for the 1m burn window and the 10-per-5m traffic guard, so alerts flapped
+      # (lab run 4). 20 users give them ~12 a minute.
+      - name: LOCUST_USERS
+        value: "20"
     resources:
       limits:
         memory: 600Mi

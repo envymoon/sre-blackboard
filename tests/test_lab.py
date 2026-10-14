@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-import uuid
 from pathlib import Path
 from typing import Any
 
@@ -191,51 +190,62 @@ def test_kubectl_failure_raises_with_stderr() -> None:
 # --- acceptance flow against a real database ----------------------------------------------
 
 
-class SimulatedLab:
-    """Stands in for the cluster: injecting makes 'Alertmanager' post firing alerts into the
-    database, recovering posts the resolutions."""
+PAYMENT = {"alertname": "ErrorBudgetBurn", "service_name": "payment"}
+FAST_BURN = {**PAYMENT, "burn": "fast"}
+SLOW_BURN = {**PAYMENT, "burn": "slow"}
 
-    def __init__(self, engine: Engine, *, fire: bool = True, resolve: bool = True) -> None:
-        self.engine, self.fire, self.resolve = engine, fire, resolve
+
+class SimulatedLab:
+    """Stands in for the cluster: injecting makes 'Alertmanager' post the ``on_inject``
+    notifications into the database, recovering posts ``on_recover``."""
+
+    def __init__(
+        self,
+        engine: Engine,
+        on_inject: list[tuple[str, dict[str, str]]] | None = None,
+        on_recover: list[tuple[str, dict[str, str]]] | None = None,
+        prometheus: list[list[dict[str, Any]]] | None = None,
+    ) -> None:
+        self.engine = engine
+        self.on_inject = [("firing", PAYMENT)] if on_inject is None else on_inject
+        self.on_recover = [("resolved", PAYMENT)] if on_recover is None else on_recover
+        self.prometheus = prometheus or []  # successive answers of alerts(), then none
         self.injected: list[str] = []
         self.recovered: list[str] = []
 
-    def firing_alerts(self) -> list[dict[str, Any]]:
-        return []
+    def alerts(self) -> list[dict[str, Any]]:
+        return self.prometheus.pop(0) if self.prometheus else []
 
-    def _post(self, status: str, service: str) -> None:
+    def _post(self, status: str, labels: dict[str, str]) -> None:
+        # Same incident fingerprint for fast and slow burn, as in app.ingest.identify.
+        fingerprint = f"fp-{labels['alertname']}-{labels['service_name']}"
         with self.engine.begin() as conn:
-            incident_id = None
-            if status == "firing":
-                incident_id = conn.execute(
-                    text(
-                        "INSERT INTO incidents (tenant_id, fingerprint, title, service, environment, priority) "
-                        "VALUES ('lab', :fp, 'ErrorBudgetBurn', :svc, 'lab', 1) RETURNING id"
-                    ),
-                    {"fp": uuid.uuid4().hex, "svc": service},
-                ).scalar_one()
+            incident_id = conn.execute(
+                text(
+                    "INSERT INTO incidents (tenant_id, fingerprint, title, service, environment, priority) "
+                    "VALUES ('lab', :fp, :t, :svc, 'lab', 1) "
+                    "ON CONFLICT (tenant_id, fingerprint) WHERE closed_at IS NULL DO UPDATE SET title = EXCLUDED.title "
+                    "RETURNING id"
+                ),
+                {"fp": fingerprint, "t": labels["alertname"], "svc": labels["service_name"]},
+            ).scalar_one()
             conn.execute(
                 text(
                     "INSERT INTO alerts (tenant_id, incident_id, fingerprint, status, labels) "
                     "VALUES ('lab', :i, :fp, :s, CAST(:l AS jsonb))"
                 ),
-                {
-                    "i": incident_id,
-                    "fp": f"fp-{service}",
-                    "s": status,
-                    "l": json.dumps({"alertname": "ErrorBudgetBurn", "service_name": service}),
-                },
+                {"i": incident_id, "fp": fingerprint, "s": status, "l": json.dumps(labels)},
             )
 
     def inject(self, fault: Any) -> None:
         self.injected.append(fault.name)
-        if self.fire:
-            self._post("firing", "payment")
+        for status, labels in self.on_inject:
+            self._post(status, labels)
 
     def recover(self, fault: Any) -> bool:
         self.recovered.append(fault.name)
-        if self.resolve:
-            self._post("resolved", "payment")
+        for status, labels in self.on_recover:
+            self._post(status, labels)
         return True
 
 
@@ -248,7 +258,7 @@ def sync_engine(migrated_url: str) -> Any:
     eng.dispose()
 
 
-FAST = {"settle_s": 0.2, "poll_s": 0.05, "quiet_timeout": 1}
+FAST = {"settle_s": 0.2, "poll_s": 0.05, "quiet_timeout": 1, "hold_s": 0.1}
 
 
 def test_acceptance_passes_when_alert_arrives_and_resolves(sync_engine: Engine) -> None:
@@ -265,7 +275,7 @@ def test_acceptance_passes_when_alert_arrives_and_resolves(sync_engine: Engine) 
 
 
 def test_acceptance_fails_without_alert_and_still_recovers(sync_engine: Engine) -> None:
-    sim = SimulatedLab(sync_engine, fire=False)
+    sim = SimulatedLab(sync_engine, on_inject=[], on_recover=[])
     (result,) = accept.run(
         sim,  # type: ignore[arg-type]
         sync_engine,
@@ -282,7 +292,7 @@ def test_acceptance_fails_without_alert_and_still_recovers(sync_engine: Engine) 
 
 
 def test_acceptance_reports_unresolved_alerts(sync_engine: Engine) -> None:
-    sim = SimulatedLab(sync_engine, resolve=False)
+    sim = SimulatedLab(sync_engine, on_recover=[])
     (result,) = accept.run(
         sim,
         sync_engine,
@@ -295,6 +305,58 @@ def test_acceptance_reports_unresolved_alerts(sync_engine: Engine) -> None:
     assert result.resolved_s is None
     assert result.unresolved == ["ErrorBudgetBurn/payment"]
     assert not result.ok(alert_timeout=300)
+
+
+def _accept_one(sim: SimulatedLab, engine: Engine, name: str = "payment-failure", **kwargs: Any) -> Any:
+    opts = {**FAST, **kwargs}
+    (result,) = accept.run(sim, engine, [get(name)], tenant="lab", log=lambda _: None, **opts)  # type: ignore[arg-type]
+    return result
+
+
+def test_fast_to_slow_burn_handover_is_not_flapping(sync_engine: Engine) -> None:
+    # Both burns share the incident fingerprint. After recovery the fast burn resolves and the
+    # slow burn (inhibited until then) shows up as firing, then resolves too.
+    sim = SimulatedLab(
+        sync_engine,
+        on_inject=[("firing", FAST_BURN)],
+        on_recover=[("resolved", FAST_BURN), ("firing", SLOW_BURN), ("resolved", SLOW_BURN)],
+    )
+    result = _accept_one(sim, sync_engine)
+    assert result.flapping == []
+    assert [a.alertname for a in result.alerts] == ["ErrorBudgetBurn[fast]"]
+    assert result.ok(alert_timeout=300), result
+
+
+def test_alert_resolving_while_the_fault_is_active_is_flapping(sync_engine: Engine) -> None:
+    sim = SimulatedLab(sync_engine, on_inject=[("firing", PAYMENT), ("resolved", PAYMENT), ("firing", PAYMENT)])
+    result = _accept_one(sim, sync_engine)
+    assert result.flapping == ["ErrorBudgetBurn/payment"]
+    assert not result.ok(alert_timeout=300)
+    assert "| ErrorBudgetBurn/payment |" in accept.to_markdown([result], 300)
+
+
+def test_alert_only_on_unexpected_services_fails(sync_engine: Engine) -> None:
+    ad = {"alertname": "ErrorBudgetBurn", "service_name": "ad"}
+    sim = SimulatedLab(sync_engine, on_inject=[("firing", ad)], on_recover=[("resolved", ad)])
+    result = _accept_one(sim, sync_engine)
+    assert result.resolved_s is not None and not result.symptom_matched
+    assert not result.ok(alert_timeout=300)
+
+
+def test_pending_alerts_keep_the_lab_from_being_quiet() -> None:
+    pending = {
+        "state": "pending",
+        "labels": {"alertname": "ErrorBudgetBurn", "service_name": "cart", "environment": "lab"},
+    }
+    other_env = {"state": "firing", "labels": {"alertname": "Watchdog", "environment": "prod"}}
+    lab = SimulatedLab(None, prometheus=[[pending], [pending], [other_env], []])  # type: ignore[arg-type]
+    assert accept.wait_quiet(lab, timeout_s=5, log=lambda _: None, hold_s=0.05, poll_s=0.02)  # type: ignore[arg-type]
+    assert lab.prometheus == []  # it waited through both pending answers
+
+    logs: list[str] = []
+    stuck = SimulatedLab(None, prometheus=[[pending]] * 100)  # type: ignore[arg-type]
+    assert not accept.wait_quiet(stuck, timeout_s=0.1, log=logs.append, hold_s=0.05, poll_s=0.02)  # type: ignore[arg-type]
+    assert "ErrorBudgetBurn/cart (pending)" in logs[0]
 
 
 def test_annotations_escape_chunk_and_cap(tmp_path: Path) -> None:

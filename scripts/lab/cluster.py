@@ -122,10 +122,15 @@ class Lab:
         return [f for f in catalogue if self.is_active(f, flags)]
 
     # --- Prometheus -------------------------------------------------------------------------
-    def firing_alerts(self) -> list[dict[str, Any]]:
+    def alerts(self) -> list[dict[str, Any]]:
+        """Prometheus alerts that are firing or pending (condition true, waiting out ``for``)."""
         resp = self.http.get(f"{self.prometheus_url}/api/v1/alerts")
         resp.raise_for_status()
-        return [a for a in resp.json()["data"]["alerts"] if a["state"] == "firing"]
+        alerts: list[dict[str, Any]] = resp.json()["data"]["alerts"]
+        return alerts
+
+    def firing_alerts(self) -> list[dict[str, Any]]:
+        return [a for a in self.alerts() if a["state"] == "firing"]
 
     def query(self, promql: str) -> list[dict[str, Any]]:
         resp = self.http.get(f"{self.prometheus_url}/api/v1/query", params={"query": promql})

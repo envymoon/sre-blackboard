@@ -92,6 +92,7 @@ def cmd_accept(args: argparse.Namespace) -> int:
         alert_timeout=args.alert_timeout,
         settle_s=args.settle,
         resolve_timeout=args.resolve_timeout,
+        hold_s=args.hold,
     )
     markdown = accept.to_markdown(results, args.alert_timeout)
     print("\n" + markdown)
@@ -128,6 +129,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--alert-timeout", type=float, default=300)
     p.add_argument("--settle", type=float, default=60)
     p.add_argument("--resolve-timeout", type=float, default=600)
+    p.add_argument("--hold", type=float, default=60, help="seconds the lab must stay quiet to count as quiet")
     p.add_argument("--report", help="write results as JSON here")
     p.set_defaults(func=cmd_accept)
 
