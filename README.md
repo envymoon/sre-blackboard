@@ -7,7 +7,7 @@ root-cause candidates. Every claim has to cite evidence. Any change to
 production is proposed, checked by a deterministic policy engine, and needs
 human approval before an isolated executor applies it.
 
-> **Status: being rebuilt (M0 and M1 done; M2 next).** The first version was a
+> **Status: being rebuilt (M0 and M1 done; M2 in progress).** The first version was a
 > spec-shaped prototype: it had no real model calls, no real tool backends, and
 > an evaluation that could not fail. This repository is now being rebuilt into a
 > working system, one milestone at a time. The plan, including every known
@@ -49,6 +49,7 @@ These carry over from the prototype and are what the rebuild implements for real
 | Audit log | Full SHA-256 hash chain; a trigger blocks UPDATE and DELETE; `verify` finds the first tampered row. |
 | Model gateway | Per-role model routing (default `claude-haiku-5-5`) and token budgets. **No model is called yet** (M4). |
 | Prototype modules | Harness loop, agents, safety checks, retrieval and eval from the first version are still in `app/` and are not wired into the API or worker. They are replaced in M3–M7. |
+| Fault lab (M2, in progress) | `make env-up` builds a kind cluster with the OpenTelemetry Demo (trimmed), Loki, Chaos Mesh and SLO burn-rate alerts (promtool-tested); Alertmanager posts to this API. `make fault SCENARIO=…` injects one of 15 faults (feature flags, Chaos Mesh, a bad rollout). The lab is rebuilt from scratch and checked on GitHub Actions ([ADR-0004](docs/adr/0004-fault-lab-on-kind-in-ci.md)). |
 | Engineering | uv, ruff, mypy, pytest (database tests run against a real Postgres via testcontainers), pre-commit, GitHub Actions CI. |
 
 ## Quickstart
@@ -76,13 +77,31 @@ curl -s localhost:8000/api/v1/incidents -H "authorization: Bearer $(make -s toke
 
 To run the API and a worker on the host instead: `make db migrate`, then `make run` and `make worker`.
 
+### Fault lab
+
+Needs kind, kubectl and helm as well, and about 10 GB of memory for Docker.
+
+```bash
+make up                              # the API must be running: Alertmanager posts to it
+make env-up                          # kind cluster + demo + alerting (first run pulls ~3 GB)
+make faults                          # list what can be broken
+make fault SCENARIO=payment-failure  # break something; an alert reaches the API within minutes
+make lab-status                      # active faults and firing alerts
+make recover ALL=1                   # undo everything
+make lab-accept                      # the M2 acceptance run
+make env-down
+```
+
+The demo shop is at http://localhost:18080 (Jaeger under `/jaeger/ui`, feature flags under
+`/feature`), Prometheus at :19090, Alertmanager at :19093, Loki at :13100.
+
 ## Roadmap
 
 | Milestone | Scope | Status |
 |---|---|---|
 | M0 | Cleanup, honest docs, engineering baseline | done (`v0.1.0`) |
 | M1 | Postgres, `SKIP LOCKED` job queue with leases and fencing, stateless API, auth | done |
-| M2 | kind + OpenTelemetry Demo, SLO alerts, fault injection (flagd, Chaos Mesh, bad rollouts) | planned |
+| M2 | kind + OpenTelemetry Demo, SLO alerts, fault injection (flagd, Chaos Mesh, bad rollouts) | in progress |
 | M3 | Read-only tools (Prometheus, Loki, Jaeger, Kubernetes), evidence store, record/replay | planned |
 | M4 | Real agents: hand-written loop, pluggable LLM backends (`claude -p`, Anthropic API, replay) | planned |
 | M5 | Policy engine, authenticated approvals, isolated executor, SLO recovery check, audit chain | planned |
@@ -105,7 +124,8 @@ app/ingest.py   Alertmanager webhook -> alerts, incidents, triage jobs
 app/*.py        prototype harness/agents/safety/rag/eval (being replaced)
 kb/             4 self-written SRE runbooks (retrieval corpus)
 tests/          pytest suite
-scripts/        load test for the M1 acceptance check
+deploy/kind/    fault lab: kind config, pinned versions, chart values, SLO rules and their tests
+scripts/        M1 load test; scripts/lab: fault injection CLI and M2 acceptance
 eval/           prototype eval cases (to be replaced in M7)
 fixtures/       prototype P0 alert fixture
 docs/plan/      rebuild plan (Chinese)
