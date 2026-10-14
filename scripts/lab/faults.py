@@ -166,7 +166,10 @@ CATALOGUE: tuple[Fault, ...] = (
         description="1s of added network latency on product-catalog",
         root_cause="product-catalog",
         fault_type="network-latency",
-        symptoms=("frontend", "checkout", "recommendation"),
+        # Observed: product-catalog's own spans slow down too (every request queries
+        # Postgres, GetProduct also asks flagd, both over the delayed link), and so does
+        # everything above it.
+        symptoms=("product-catalog", "recommendation", "frontend", "frontend-proxy"),
         mechanism=ChaosFault(
             "NetworkChaos",
             {
@@ -208,7 +211,9 @@ CATALOGUE: tuple[Fault, ...] = (
         description="a checkout rollout points its payment client at a port nobody listens on",
         root_cause="checkout",
         fault_type="bad-deploy",
-        symptoms=("checkout", "frontend"),
+        # Observed: only checkout. Orders are ~3% of frontend traffic, below its burn
+        # thresholds, and payment never sees the requests.
+        symptoms=("checkout",),
         mechanism=ReleaseFault(
             deployment="checkout",
             container="checkout",

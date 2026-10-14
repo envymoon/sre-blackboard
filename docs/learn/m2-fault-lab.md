@@ -53,7 +53,7 @@
 
 ### 2.4 Problem Host 与 Event Host
 
-告警响在哪个服务，不等于问题出在哪个服务。例如给 product-catalog 注入网络延迟：product-catalog 自己的 SERVER span 并不变慢（延迟加在它的出口网络上），变慢的是调用它的 frontend。告警会响在 frontend（Event Host），根因却是 product-catalog（Problem Host）。
+告警响在哪个服务，不等于问题出在哪个服务。例如给 product-catalog 注入网络延迟，实测告警响在 4 个服务上：product-catalog 自己，以及调用它的 recommendation、frontend、frontend-proxy（Event Host），根因只有 product-catalog（Problem Host）。反过来，给 checkout 发一个坏版本，告警只响在 checkout 上，调用它的 frontend 并没有响，因为下单只占 frontend 流量的约 3%，到不了燃烧阈值。
 
 故障目录给每个故障同时记录了 `root_cause`（Problem Host）和 `symptoms`（预期告警的服务）。这正是原型的 B10（把告警主机当成根因主机）要修的问题，也是 M4 诊断要解决的核心难点。
 
@@ -90,10 +90,53 @@
 | 验收脚本漏掉恢复期间的 resolved 通知 | 恢复时间点在 `recover()` 之后才取，期间到达的通知被漏掉 | 在恢复前取时间；判断每个指纹"最后一条"通知是否为 resolved，同时处理告警抖动 |
 | 云端读不到 Actions 日志 | 日志和产物在 Azure Blob 上，被代理拦截 | 关键结果写成 annotation，REST API 可读 |
 | `ubuntu-latest` 即将切到新系统 | lab 环境可能无意中改变 | 固定 `ubuntu-24.04` |
+| 第一次运行在建环境时退出 | `getent` 查不到 `host.docker.internal` 时返回非零，在 `pipefail` + `errexit` 下整个脚本退出 | 这一行加 `\|\| true`，失败时退回到网关地址 |
+| annotation 只出来 10 条 | GitHub 每个步骤最多保留 10 条 notice，多出的直接丢弃，不报错；日志全丢了 | 结果、集群状态、日志分三个步骤发布 |
+| cgroup 内存显示 10 GB | `memory.current` 包含页缓存，看起来快用满了 | 以 `docker stats`（工作集）为准，另记录每个容器的工作集 |
+| 预期症状写错了 | 凭直觉写的"网络延迟只影响上游"，实测 product-catalog 自己也告警 | 读源码确认原因，按实测更新故障目录 |
 
 ## 4. 验收结果
 
-（待 GitHub Actions 运行完成后填写。）
+2026-10-14，GitHub Actions 运行机（`ubuntu-24.04`，4 核 16 GB），从零建环境，3 个代表性故障依次运行：
+
+| 故障 | 根因 | 方式 | 首个告警 | 告警（服务） | 恢复后告警解除 |
+|---|---|---|---|---|---|
+| payment-failure | payment | flag，50% 支付失败 | 194 秒 | ErrorBudgetBurn（payment、checkout） | 330 秒 |
+| network-delay | product-catalog | NetworkChaos，出口加 1 秒延迟 | 179 秒 | LatencyP95High（product-catalog、recommendation、frontend、frontend-proxy） | 306 秒 |
+| bad-release | checkout | rollout，payment 地址改成错误端口 | 203 秒 | ErrorBudgetBurn（checkout） | 328 秒 |
+
+三个都满足"5 分钟内告警、恢复后解除"。整个任务约 40 分钟：清理磁盘 2 分钟，建环境 3 分钟，等 SLI 窗口填满约 5 分钟，验收 29 分钟。
+
+**时间都花在哪里**（以支付失败为例，错误比例 50%，快速燃烧阈值 14.4%）：
+
+| 环节 | 大约耗时 |
+|---|---|
+| span 指标刷新（15 秒）+ Prometheus 抓取和规则评估（15 秒） | 0–30 秒 |
+| 5 分钟窗口的错误比例爬过 14.4% | 约 90 秒 |
+| `for: 1m` | 60 秒 |
+| Alertmanager `group_wait` | 10 秒 |
+| 合计 | 约 190 秒，实测 194 秒 |
+
+**恢复为什么要 5 分钟多**：快速燃烧的 1 分钟窗口很快降下来，但快速燃烧一解除，被抑制的慢速燃烧就露出来了。它看的 5 分钟窗口要等故障期间的错误被"挤出"窗口，比例从 50% 降到 6% 以下，大约 4.4 分钟，再加上刷新、评估和 `group_interval`。延迟告警同理：5 分钟内慢请求的占比要降到 5% 以下，p95 才回到阈值下面。这是窗口长度决定的，不是故障没恢复。如果想更快解除，可以缩短慢速燃烧的短窗口，代价是更容易抖动。
+
+**观察到的现象**
+
+- **告警响在哪里**：网络延迟加在 product-catalog 的出口上。我原以为它自己的 SERVER span 不会变慢，实测却变慢了：读源码发现它每个请求都要查 Postgres，GetProduct 还要问 flagd，这些出口请求都被加了延迟。上游的 recommendation、frontend、frontend-proxy 也都响了。4 个告警、4 个事件，根因只有一个，这正是 M4 要做的聚合和定位。故障目录里的预期症状按实测结果做了修正。
+- **支付失败**同时在 payment 和 checkout 上告警：payment 自己返回错误，checkout 的下单请求跟着失败。坏版本发布只在 checkout 上告警，因为 payment 根本没收到请求。两者症状相似，区别在 payment 有没有出错：这是诊断时区分"下游坏了"和"自己配错了"的关键证据。
+- **基线**（无故障）：各服务错误比例都是 0，只有 frontend 和 frontend-proxy 约 0.7%，远低于 6% 的慢速燃烧阈值。这部分错误的来源没有细查，M3 有了链路查询工具后正好拿来练手。recommendation 的 p95 基线是 567 ms，离 1 秒的延迟阈值只有不到 2 倍余量，是最可能误报的服务。
+- **流量门槛**：checkout、payment、email、quote 的流量都是 0.05 次/秒，即 5 分钟约 15 次，刚好过 10 次的门槛。如果把 load-generator 的用户数再调低，这几个服务就会失去告警。
+
+**资源占用**（基线，故障注入前）
+
+| 项 | 实测 |
+|---|---|
+| kind 节点容器（集群里全部组件，`docker stats` 口径，不含可回收的页缓存） | 4.3 GiB |
+| 本服务（Postgres、API、2 个 worker） | 0.3 GiB |
+| 运行机已用内存（`free`） | 4.9 GiB / 15.6 GiB |
+
+kind 节点 cgroup 的 `memory.current` 是 10.2 GiB，但这个数字包括页缓存（镜像层、日志文件），内存紧张时内核会回收，不能当作占用。`docker stats` 用的是"使用量减去非活跃文件缓存"，和 Kubernetes 判断 OOM 用的工作集口径一致。
+
+结论：整个实验环境加本服务约 5 GB，16 GB 的本地机器还能留出约 10 GB 给系统和其他程序。计划里集群部分的估算是 4.6–5.6 GB（Demo 3–4 GB，加 Loki、Prometheus、Jaeger、Alertmanager、Chaos Mesh），实测 4.3 GiB（4.6 GB），落在估算的下限。省下来的主要是 OpenSearch、两个 Kafka 消费者（JVM 和 .NET）和 load-generator 的浏览器流量。
 
 ## 5. 面试问答
 
