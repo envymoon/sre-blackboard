@@ -47,7 +47,7 @@ token="$(cd "$repo" && uv run --quiet python -m app.core.security mint \
 log "Service sre-blackboard -> API on the host"
 # Docker Desktop resolves host.docker.internal inside the node; on Linux the kind
 # network's gateway is the host.
-host_ip="$(docker exec "$CLUSTER-control-plane" getent ahostsv4 host.docker.internal 2>/dev/null | awk 'NR==1 {print $1}')"
+host_ip="$(docker exec "$CLUSTER-control-plane" getent ahostsv4 host.docker.internal 2>/dev/null | awk 'NR==1 {print $1}' || true)"
 if [ -z "$host_ip" ]; then
   host_ip="$(docker network inspect kind -f '{{range .IPAM.Config}}{{.Gateway}} {{end}}' | tr ' ' '\n' | grep -E '^[0-9.]+$' | head -1)"
 fi

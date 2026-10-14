@@ -67,7 +67,10 @@ jobs:
           timeout 120 bash -c 'until curl -fsS localhost:8000/readyz; do sleep 2; done'
 
       - name: Create the lab
-        run: ./deploy/kind/up.sh
+        run: |
+          mkdir -p lab-out
+          set -o pipefail
+          ./deploy/kind/up.sh 2>&1 | tee lab-out/up.log
 
       - name: Wait for span metrics
         run: |
@@ -121,7 +124,7 @@ jobs:
         if: always()
         run: |
           # Readable through the REST API even where logs and artifacts are not (see the script).
-          uv run python -m scripts.lab.annotate lab-out/accept.txt:80 lab-out/baseline-slis.txt \
+          uv run python -m scripts.lab.annotate lab-out/up.log:40 lab-out/accept.txt:80 lab-out/baseline-slis.txt \
             lab-out/docker-stats.txt lab-out/baseline-status.txt lab-out/pods.txt:60 \
             lab-out/span-metric-series.jsonl:12 lab-out/loki-labels.json lab-out/sre-blackboard.log:80 \
             lab-out/alertmanager.log:60 lab-out/prometheus.log:40 lab-out/events.txt:60
