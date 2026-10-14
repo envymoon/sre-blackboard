@@ -99,7 +99,12 @@ jobs:
         run: |
           docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}' | tee lab-out/docker-stats.txt
           free -m | tee -a lab-out/docker-stats.txt
-          docker exec sre-lab-control-plane sh -c 'cat /sys/fs/cgroup/memory.current' | awk '{printf "kind node cgroup memory: %.0f MiB\n", $1/1048576}' | tee -a lab-out/docker-stats.txt
+          docker exec sre-lab-control-plane sh -c 'cat /sys/fs/cgroup/memory.current' | awk '{printf "kind node cgroup memory (includes page cache): %.0f MiB\n", $1/1048576}' | tee -a lab-out/docker-stats.txt
+          # Per container working set inside the node, largest first.
+          # Informational only: never fail the step (it would skip the acceptance run).
+          { docker exec sre-lab-control-plane crictl stats -o json \
+              | jq -r '.stats[] | [.attributes.labels["io.kubernetes.pod.namespace"], .attributes.labels["io.kubernetes.container.name"], ((.memory.workingSetBytes.value // "0") | tonumber / 1048576 | floor)] | @tsv' \
+              | sort -t$'\t' -k3 -rn | awk -F'\t' '{printf "%-12s %-28s %6d MiB\n", $1, $2, $3}' | tee lab-out/container-memory.txt; } || true
 
       - name: Acceptance
         run: |
@@ -120,14 +125,23 @@ jobs:
           docker compose logs --no-color --tail=500 api worker > lab-out/sre-blackboard.log 2>&1 || true
           cat lab-out/pods.txt || true
 
+      # Readable through the REST API even where logs and artifacts are not (see the script).
+      # GitHub keeps 10 notices per step, so the output is spread over three steps.
       - name: Publish results as annotations
         if: always()
         run: |
-          # Readable through the REST API even where logs and artifacts are not (see the script).
-          uv run python -m scripts.lab.annotate lab-out/up.log:40 lab-out/accept.txt:80 lab-out/baseline-slis.txt \
-            lab-out/docker-stats.txt lab-out/baseline-status.txt lab-out/pods.txt:60 \
-            lab-out/span-metric-series.jsonl:12 lab-out/loki-labels.json lab-out/sre-blackboard.log:80 \
-            lab-out/alertmanager.log:60 lab-out/prometheus.log:40 lab-out/events.txt:60
+          uv run python -m scripts.lab.annotate lab-out/accept.txt:80 lab-out/baseline-slis.txt \
+            lab-out/docker-stats.txt lab-out/container-memory.txt lab-out/baseline-status.txt lab-out/up.log:40
+      - name: Publish cluster state as annotations
+        if: always()
+        run: |
+          uv run python -m scripts.lab.annotate lab-out/pods.txt:60 lab-out/events.txt:60 \
+            lab-out/span-metric-series.jsonl:12 lab-out/loki-labels.json
+      - name: Publish logs as annotations
+        if: always()
+        run: |
+          uv run python -m scripts.lab.annotate lab-out/sre-blackboard.log:80 lab-out/alertmanager.log:60 \
+            lab-out/prometheus.log:40
 
       - uses: actions/upload-artifact@v4
         if: always()

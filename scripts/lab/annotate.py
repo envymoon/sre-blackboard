@@ -7,7 +7,8 @@ puts the important lab output where any API client can read it:
     gh api repos/OWNER/REPO/check-runs/JOB_ID/annotations
 
 Usage: python -m scripts.lab.annotate FILE[:TAIL_LINES] ...  (files in priority order)
-GitHub keeps at most 50 annotations per job, so output is cut at MAX_ANNOTATIONS.
+GitHub keeps at most 10 notices per step (and 50 annotations per job) and silently drops the
+rest, so output is cut at MAX_ANNOTATIONS; spread larger output over several steps.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ import sys
 from pathlib import Path
 
 CHUNK = 6000
-MAX_ANNOTATIONS = 40
+MAX_ANNOTATIONS = 10
 
 
 def _escape(text: str) -> str:
