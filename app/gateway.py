@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .settings import get_settings
+from .core.config import get_settings
 
 AGENT_ROLES = {"coordinator", "metrics", "logs", "traces", "changes", "synthesizer"}
 

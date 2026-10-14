@@ -180,7 +180,7 @@ kb/               运行手册与复盘文档（公开、自写）
 | 表 | 关键字段 | 说明 |
 |---|---|---|
 | `alerts` | id, tenant_id, fingerprint, payload, received_at | 原始告警，只追加 |
-| `incidents` | id, tenant_id, fingerprint, dedup_window, priority, state, version, budget_used, created_at | `UNIQUE(tenant_id, fingerprint, dedup_window)` 实现幂等；`version` 做乐观锁 |
+| `incidents` | id, tenant_id, fingerprint, priority, state, version, alert_count, created_at, closed_at | 部分唯一索引 `UNIQUE(tenant_id, fingerprint) WHERE closed_at IS NULL` 实现幂等（M1 实现时由时间窗口改来，见 ADR-0002）；`version` 做乐观锁；`budget_used` 在 M4 加入 |
 | `jobs` | id, incident_id, kind, priority, status, attempts, max_attempts, lease_owner, lease_until, fence, run_after | 队列表；部分索引 `WHERE status='queued'` |
 | `evidence` | id, incident_id, tool, query, window, result_snapshot(jsonb), result_hash, created_at | 证据快照，保证可回放 |
 | `blackboard` | id, incident_id, kind(finding/hypothesis/plan), author_agent, body(jsonb), evidence_ids[], version | 版本化产物 |
@@ -269,19 +269,22 @@ claude -p \
 
 目标：一个无状态、可水平扩展、并发安全的骨架。
 
-- [ ] Postgres + Alembic，建立 2.6 节中的表（先建 incidents / alerts / jobs / audit_log）。
-- [ ] 仓储层（repository）；业务代码中不再有进程内全局状态。
-- [ ] 告警接入：兼容 Alertmanager webhook 格式；基于 fingerprint 加唯一约束实现幂等；在同一事务里写入 incident 和 job（不需要 outbox）。
-- [ ] 队列：
-  - 领取：`SELECT … FOR UPDATE SKIP LOCKED`，排序加入优先级老化（修复 B1）。
+- [x] Postgres + Alembic，建立 2.6 节中的表（先建 incidents / alerts / jobs / audit_log）。
+- [x] 仓储层（repository）；API 和 worker 中不再有进程内状态。原型模块（harness、memory 等）仍有内存状态，但已不在服务路径上，M3–M7 替换。
+- [x] 告警接入：兼容 Alertmanager webhook 格式；基于 fingerprint 加唯一约束实现幂等；在同一事务里写入 incident 和 job（不需要 outbox）。实现时把"时间窗口唯一约束"改成"同一指纹只允许一个未关闭事件"的部分唯一索引，理由见 ADR-0002。
+- [x] 队列：
+  - 领取：`SELECT … FOR UPDATE SKIP LOCKED`，排序加入优先级老化（修复 B1）。另外每个 worker 为 P0 预留一个槽位。
   - 租约：`lease_until` 加心跳续约；过期由回收任务处理，优先级保留（修复 B2）。
   - fencing token：每次领取时 `fence + 1`；写结果时校验 `WHERE fence = :mine`，防止僵尸 worker 写入过期结果。
   - 重试：指数退避写入 `run_after`；超过 `max_attempts` 进入死信（`status='dead'`）。
   - Worker 真正运行：主循环 + SIGTERM 优雅退出（修复 B8）。
-- [ ] 鉴权：JWT + 角色；租户来自 token（修复 B4、B5、B6）。
-- [ ] 测试：testcontainers 起 Postgres；用多进程并发领取验证不会重复领取；kill worker 后任务能被接手；P0 洪峰期间 P3 不会饿死。
+- [x] 鉴权：JWT + 角色；租户来自 token（修复 B4、B5、B6）。审批接口本身在 M5 实现。
+- [x] 测试：testcontainers 起 Postgres。并发领取用 10 个并发连接验证不会重复领取；用真实子进程验证 `kill -9` 后任务被接手、SIGTERM 后任务被交还；验证 P0 洪峰期间 P3 不会饿死。
+- [x] 提前完成：审计日志的完整哈希链、禁止改删的触发器和 `verify` 函数（B9 的核心部分；CLI 和接口留在 M5）；状态转换表和乐观锁。
 
 验收：`docker compose up` 起 2 个 API + 2 个 worker，压测脚本发 1000 条重复告警，只生成预期数量的事件，队列中没有重复领取。
+
+验收记录（2026-10-12，云端开发容器）：因为云端网络策略拦截了 GHCR，没有用 compose 构建镜像，改为在宿主机上直接起 2 个 API 进程、2 个 worker 和 Postgres 容器。`scripts/loadtest.py` 发 1000 条告警（10 个指纹）和 2000 条告警（200 个指纹）两轮，全部检查通过，详见 `docs/learn/m1-postgres-queue.md`。2026-10-14 补充：完整 compose 路径也已验证。云端在镜像构建时额外注入代理 CA（仅限云端，仓库里的 Dockerfile 未改），`docker compose up` 起 2 个 API 进程、2 个 worker，2000 条告警（200 个指纹）全部检查通过，`docker compose down` 1.5 秒内优雅退出。CI 新增 `e2e` job，每个 PR 都用原样的 Dockerfile 重跑这一验收。
 
 面试点：为什么用 SKIP LOCKED；fencing token 解决了什么问题；至少一次投递加幂等如何得到"效果上的恰好一次"；优先级老化与饥饿问题。
 
@@ -549,7 +552,7 @@ claude -p \
 | 里程碑 | 状态 | 完成日期 | 备注 |
 |---|---|---|---|
 | M0 | 已完成 | 2026-10-10 | PR #2，标签 `v0.1.0` |
-| M1 | 未开始 | | |
+| M1 | 已完成，待合并 | 2026-10-12 | 分支 `milestone/m1-core` |
 | M2 | 未开始 | | |
 | M3 | 未开始 | | |
 | M4 | 未开始 | | |

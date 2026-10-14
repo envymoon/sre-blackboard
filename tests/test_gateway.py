@@ -2,8 +2,8 @@
 
 import pytest
 
+from app.core.config import get_settings
 from app.gateway import PER_CALL_TOKEN_LIMIT, ModelGateway, TokenLedger, route
-from app.settings import get_settings
 
 
 def test_routing_uses_configured_model(monkeypatch):
