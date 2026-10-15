@@ -24,7 +24,9 @@ TRANSITIONS: dict[str, frozenset[str]] = {
     "DIAGNOSED": frozenset({"PLANNED", "INVESTIGATING"}),
     "PLANNED": frozenset({"SAFETY_REVIEWED"}),
     "SAFETY_REVIEWED": frozenset({"AWAITING_APPROVAL", "EXECUTING"}),
-    "AWAITING_APPROVAL": frozenset({"EXECUTING"}),
+    # Back to PLANNED: a responder revised the plan; it is reviewed again, and approvals of
+    # the old plan do not carry over (they are bound to its hash).
+    "AWAITING_APPROVAL": frozenset({"EXECUTING", "PLANNED"}),
     "EXECUTING": frozenset({"VERIFYING"}),
     "VERIFYING": frozenset({"RESOLVED"}),
 }

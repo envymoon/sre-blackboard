@@ -193,3 +193,29 @@ def test_backoff_grows_exponentially_and_is_capped():
     for attempt, cap in [(1, 2), (2, 4), (3, 8), (10, 300)]:
         delay = jobs.backoff_delay(attempt, base_s=2, max_s=300)
         assert cap / 2 <= delay <= cap
+
+
+async def test_a_claim_takes_only_the_kinds_the_process_can_run(engine):
+    """The executor alone claims ``execute`` jobs; workers never see them (ADR-0007)."""
+    async with engine.begin() as conn:
+        for kind in ("execute", "investigate"):
+            await jobs.enqueue(conn, tenant_id="t1", kind=kind, priority=1, max_attempts=3, aging_step_s=STEP)
+    async with engine.begin() as conn:
+        worker = await jobs.claim(conn, owner="w", lease_ttl_s=30, kinds=["investigate", "plan"])
+        executor = await jobs.claim(conn, owner="x", lease_ttl_s=30, kinds=["execute"])
+        nothing = await jobs.claim(conn, owner="w", lease_ttl_s=30, kinds=["investigate", "plan"])
+    assert worker is not None and worker.kind == "investigate"
+    assert executor is not None and executor.kind == "execute"
+    assert nothing is None
+
+
+async def test_a_delayed_job_waits_until_its_time(engine):
+    async with engine.begin() as conn:
+        job_id = await jobs.enqueue(
+            conn, tenant_id="t1", kind="noop", priority=0, max_attempts=3, aging_step_s=STEP, delay_s=600
+        )
+    assert await claim(engine) is None
+    async with engine.begin() as conn:
+        await conn.execute(text("UPDATE jobs SET run_after = now() WHERE id = :id"), {"id": job_id})
+    job = await claim(engine)
+    assert job is not None and job.id == job_id
