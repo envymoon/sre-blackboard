@@ -1,0 +1,193 @@
+# M3 学习笔记：只读工具、证据库与录制回放
+
+> 对应里程碑：M3 · 相关决策：[ADR-0005](../adr/0005-tool-layer-evidence-and-replay.md)
+> 这一阶段给 Agent 装上"眼睛"：它能查真实的指标、日志、链路、Kubernetes 状态和 feature flag。看到的每一份数据都存成不可变的证据，并且可以在没有集群的地方逐字节重放。
+
+## 1. 这一阶段做了什么
+
+| 类别 | 内容 |
+|---|---|
+| 工具 | 9 个只读工具：`prom_query`、`prom_range`、`logs_search`、`traces_search`、`trace_get`、`k8s_events`、`rollout_history`、`deploy_diff`、`flag_state` |
+| 形状 | 每个工具 = 严格的入参模型（同时是 Claude tool use 的 `input_schema`）+ `fetch`（取原始数据）+ `summarize`（压成有界摘要） |
+| 调用流程 | `ToolRegistry.call`：校验 → 取数 → 大小上限 → 摘要 → `bound()` 兜底 → 存证据 → 记调用；永远返回结果，不抛异常 |
+| 弹性 | 每次尝试有超时；只重试可能自己好的错误，最多 2 次；每个后端一个熔断器 |
+| 证据 | `evidence` 表存原始结果、sha256、摘要；触发器禁止 UPDATE/DELETE；ID 由内容派生 |
+| 录制回放 | cassette = (工具, 参数) → 原始结果；回放时重新生成摘要，模型看到的内容逐字节相同 |
+| 权限 | Kubernetes 用只读 ServiceAccount，只能读 Demo 命名空间；Chaos Mesh 的对象一律看不到 |
+| 验收 | 实验环境每个故障进行中，调用工具并检查结果；录音推到 git 分支，再导入成契约测试 |
+
+结论：3 个故障共 16 次工具调用，后端返回约 4.9 MB，模型看到的摘要约 21 KB，整体压缩约 230 倍。链路查询一次就有 0.5–2.0 MB，压到 2–3 KB。
+
+## 2. 背景知识
+
+### 2.1 工具调用（tool use）在做什么
+
+LLM 本身不能访问网络。所谓"调用工具"，是模型输出一段结构化的请求：工具名 + 符合 `input_schema` 的 JSON 参数；由我们的程序真正执行，再把结果作为下一轮输入交给模型。所以：
+
+- **schema 就是接口文档**。字段名、描述、取值范围、枚举，模型都会读。`extra="forbid"` 让多余字段直接报错，而不是被悄悄忽略。
+- **工具的输出就是 prompt 的一部分**。输出多大，后面每一轮都要重新付这些 token（transcript 是累积的）。
+- **工具的错误也是 prompt**。错误信息写得好，模型能自己改正；写得差（或者直接抛异常），整个调查就断了。
+
+本项目里入参模型同时承担三件事：校验模型给的参数、生成 `input_schema`、作为录制回放的键（校验后的参数做 canonical JSON）。一份定义，三处使用，不会出现"文档说可以、实际不行"的漂移。
+
+### 2.2 为什么原始结果不能进 prompt
+
+一次 `traces_search` 在网络延迟故障里返回 555 KB，一次支付失败的日志查询 369 KB。直接塞进 prompt 有三个问题：
+
+1. **放不下或者很贵**：几十万 token，而且每一轮都要重发。
+2. **找不到重点**：模型在大段 JSON 里找异常，容易漏，也容易被无关字段带偏（"lost in the middle"）。
+3. **注入面大**：日志内容是外部输入，原样进 prompt 就是把攻击面全部打开（M5 会专门处理）。
+
+所以每个工具都有一个确定性的摘要函数，把原始结果变成"诊断需要的统计"：
+
+| 工具 | 摘要里有什么 |
+|---|---|
+| `prom_query` | 按值排序的前 10 条序列；NaN 变成 null |
+| `prom_range` | 每条序列的首值、末值、最小、最大、均值、峰值时间，和 12 个桶的形状 |
+| `logs_search` | 按模板分组（把 UUID、IP、数字等替换成占位符），每组计数、示例、有用的结构化元数据 |
+| `traces_search` | 出错的 span 按（服务, 操作, 错误信息）分组，耗时 p50/p95/max，最慢的几条链路 |
+| `trace_get` | 按自身耗时（self time = 时长 − 子 span 时长）排序的 span |
+| `k8s_events` | 警告在前，按原因计数，按对象分组 |
+| `rollout_history` / `deploy_diff` | 每个版本的 change-cause；两个版本之间 env、镜像、参数、资源、注解的差异 |
+| `flag_state` | 当前开着的 flag 和它的变体 |
+
+最后还有一个通用的 `bound()`：摘要超过 6000 字符时，把最大的那个列表砍掉后半段，重复直到放得下，并标记 `truncated`。工具作者忘了限制长度也不会把 prompt 撑爆。
+
+### 2.3 证据：快照、哈希、不可变
+
+"Agent 说 checkout 的 PAYMENT_ADDR 被改成了 9999"——怎么证明它没编？原型的做法是返回 `EV-xxxxx` 这样的假 ID，无从核对。M3 的做法：
+
+- 每次成功的调用都写一行 `evidence`：原始结果（jsonb）、原始结果 canonical JSON 的 **sha256**、摘要、来源（live/replay）、取数时间。
+- 数据库**触发器**拒绝对它的 UPDATE 和 DELETE。改数据要么绕过触发器（运维脚本里显式做，有审计），要么做不到。
+- 模型拿到的是摘要 + `evidence_id`。M4 的结论必须引用 ID，引用校验器检查"这个 ID 存在、属于这个事件"；人可以顺着 ID 查到原始数据，并用哈希验证它没被改过。
+
+**canonical JSON** 是关键细节：键排序、无多余空格、禁止 NaN。同一份数据不管从哪条路径序列化，字节都相同，哈希才有意义。Prometheus 会返回 `"NaN"`，摘要里统一变成 null。
+
+### 2.4 证据 ID 为什么要由内容派生
+
+最初的实现用随机 ID，写完测试才发现两个问题：
+
+1. **回放对不上**：M4 要按"transcript 的哈希"回放 LLM 的回答。随机 ID 让每次运行的 transcript 都不一样，回放永远 miss。
+2. **重试会产生重复证据**：任务因为 worker 崩溃被重新执行，同样的查询又写一行。
+
+改成 `ev_` + sha256(范围, 工具, 参数, 结果哈希) 的前 16 位，范围默认是"租户/事件"。同一个事件里同样的数据只会有一行（`INSERT … ON CONFLICT DO NOTHING`）；不同事件即使数据相同也是不同的证据，租户之间不会互相引用。
+
+### 2.5 录制回放：让 LLM 系统可测试
+
+LLM 系统难测有两层原因：模型不确定，外部数据也不确定（指标每秒都在变）。M3 先解决第二层：
+
+- **在哪一层录**：在"工具 + 校验后的参数 → 原始结果"这一层，而不是 HTTP 层。HTTP 请求里带着每次都不同的 start/end 时间戳，按 URL 匹配要做很多特殊处理。工具层的参数里没有"当前时间"（窗口用 `minutes` 表示），天然稳定。
+- **录原始结果，不录摘要**：回放时把原始结果重新交给 `summarize`。改了摘要逻辑，老录音还能用来验证新逻辑；证据表里也始终有原始数据。
+- **同一个调用出现多次**：按录制顺序返回，用完了一直返回最后一个。Agent 隔一会儿再查一次同样的东西，能看到"数据变了"。
+- **错误也录**：录的时候超时了，回放时也超时，Agent 的错误处理路径同样能被测试。
+- **文件格式**：JSON lines，第一行是头（版本、元数据：故障名、根因）。链路数据让文件有几 MB，所以支持 gzip；压缩时把 mtime 设为 0，同一份录音永远是同样的字节，提交到 git 不会产生无意义的差异。
+
+M4 会在同样的思路上录 LLM：键是 transcript 的哈希，值是模型的回答。两层都能回放，整个 Agent 在 CI 里就是确定的。
+
+### 2.6 重试与熔断
+
+- **只重试"可能自己好"的错误**：超时、连接失败、429、5xx。查询写错（400）重试多少次都一样，还会把错误信息延后交给模型。
+- **退避加抖动**：0.25 秒 × 2^n × (1 + 随机 0–0.5)。抖动避免多个 worker 在同一时刻一起重试。
+- **熔断器**：每个后端一个，连续 5 次失败后打开 30 秒，期间立即返回 `circuit_open`；30 秒后放一个请求试探（半开），成功就关闭。Loki 挂了，Agent 得到的是一个快速的、明确的错误，可以改查链路，而不是每次调用都等满超时。查询写错不算后端故障，不计入熔断。
+- **错误要可行动**：`bad_query` 会带上 Prometheus 的原文（例如 `parse error: unexpected identifier`）；结果太大会返回 `too_large` 并提示"缩小时间窗口或加过滤条件"。
+
+### 2.7 最小权限与评测的诚实性
+
+- Kubernetes 访问走 API server，用 ServiceAccount `sre-blackboard-reader` 的 token：只能在 `otel-demo` 命名空间里 get/list events、pods、services、deployments、replicasets。不能读 Secret，不能写，没有集群级权限。token 现签，12 小时过期。
+- **Chaos Mesh 的事件在取数时就过滤掉**。它们写着"对 product-catalog 注入了 1 秒网络延迟"，真实系统里不会有这种东西；Agent 看到它，等于考试时看到了答案，评测分数就没有意义了。RBAC 也不给 Chaos Mesh 对象的读权限，双保险。契约测试检查真实录音里连 "Chaos" 这个词都没有。
+- 坏版本发布的 change-cause（"payment client moved to port 9999"）和 feature flag 状态保留：真实系统里发布说明和 flag 变更都是可以看到的，而且看到变更不等于知道它是根因。M7 可以做"去掉 flag_state"的消融实验。
+
+## 3. 踩过的坑，以及设计时预先规避的坑
+
+| 问题 | 原因 | 处理 |
+|---|---|---|
+| 日志行里看不到错误详情 | OTLP 写入的日志，行本身只有 "API request failed"，异常信息在 Loki 的 structured metadata 里（M2 发现） | 查询时带 `X-Loki-Response-Encoding-Flags: categorize-labels`；摘要里保留 exception、status、url 等元数据 |
+| 坏版本发布时 checkout 查不到错误日志 | checkout 连不上 payment 时自己不打日志，错误作为 gRPC 状态返回给调用方；失败出现在 frontend 的日志里 | 检查改成查 frontend；Agent 的提示词里也要写明"错误日志可能在调用方" |
+| `level="warn"` 漏掉了 error | 参数说明写的是"这个级别或更严重"，实现只匹配了 warn | 修正，并加回归测试 |
+| payment 拒绝支付打的是 warn | Demo 的 payment 服务把"Invalid token"记为警告 | 支付失败的检查按 warn 过滤，正好在真实数据上验证了级别过滤 |
+| 日志模板里同一句话出现两次 | 摘要把"日志行 + 异常信息"拼成模板，而 payment 的日志行本身就是异常信息 | 异常信息已经包含在行里就不再拼接；第 11 次运行的录音暴露了它 |
+| 日志模板把单词也替换了 | 商品 ID 的正则 `[A-Z0-9]{10}` 会匹配 "CONNECTION" | 要求至少包含一个数字 |
+| 证据 ID 随机 | 回放时 transcript 变了；重试产生重复证据 | 由内容派生，`ON CONFLICT DO NOTHING` |
+| Chaos Mesh 事件泄露答案 | 它们和普通事件在同一个 API 里 | 取数时过滤，RBAC 不给权限，测试检查真实录音 |
+| 网络延迟时"最慢的 span"在 frontend-proxy | 代理等满 15 秒超时、返回 504；它下面 frontend 的服务端 span 不在取回的链路里（请求还在跑，或者没导出），子 span 缺失时，父 span 的全部时长都被算成自身耗时 | `trace_get` 的摘要加了 `orphan_spans`（父 span 不在链路里的 span 数），工具说明里告诉模型它意味着什么；检查改成"product-catalog 的 span 在列表里且自身耗时 ≥ 500 ms"（第 9 次 5.8 秒），不要求排第一；第 11 次运行它正好排第一（5.4 秒） |
+| 录音 4.8 MB | 链路查询的原始结果很大 | gzip（mtime=0）后约 390 KB，提交进 `tests/fixtures/lab` |
+| 云端开发容器读不到 Actions 的产物 | 产物要走需要登录的下载，代理不放行 | 工作流把录音推到 `lab-recordings/run-<id>` 分支，容器里 `git fetch` |
+| HTTP 层录制难匹配 | 每个请求都带当前时间 | 在工具层录，参数里只有相对窗口 |
+
+## 4. 验收结果
+
+计划的验收标准："对一次真实故障，手动调用工具能拿到正确的数据；replay 模式下，同样的调用返回逐字节相同的结果"。做法是把它写进实验环境的验收：每个故障告警稳定后、恢复之前，按固定的顺序调用工具并检查结果，任何一项不通过，这个故障就算失败。
+
+2026-10-15，第 11 次运行（GitHub Actions 运行机 `ubuntu-24.04`，4 核 16 GB），从零建环境，基线 10 分钟无告警。每个故障的检查和现场结果：
+
+| 故障 | 检查 | 工具 | 现场看到的 |
+|---|---|---|---|
+| payment-failure | error_ratio | `prom_query` | payment 错误比例 0.371（> 0.1） |
+| | error_trend | `prom_range` | payment 从 0.062 升到 0.371，峰值 03:11:50 |
+| | flags | `flag_state` | 开着的只有 `paymentFailure` |
+| | error_traces | `traces_search` | 20/20 条链路出错；payment `charge`："Payment request failed. Invalid token." |
+| | logs | `logs_search`（warn） | 26 行，全是 "Payment request failed. Invalid token." |
+| network-delay | p95 | `prom_query` | product-catalog p95 9225 ms（> 1000） |
+| | slow_traces | `traces_search`（≥ 900 ms） | 20 条，p95 15.6 秒 |
+| | slow_trace | `trace_get` | 自身耗时最长的是 product-catalog `GetProduct`，5.4 秒 |
+| | events | `k8s_events` | 没有 Chaos Mesh 的对象 |
+| | flags | `flag_state` | 没有开着的 flag |
+| bad-release | error_ratio | `prom_query` | checkout 错误比例 0.690 |
+| | history | `rollout_history` | 当前版本 2："checkout config release: payment client moved to port 9999" |
+| | diff | `deploy_diff` | 1 处变化：`env.PAYMENT_ADDR` payment:8080 → payment:9999 |
+| | events | `k8s_events` | `ScalingReplicaSet`、`SuccessfulCreate`、`Killing` 等一次 rollout 的完整事件 |
+| | error_traces | `traces_search` | checkout `PlaceOrder`："dial tcp …:9999: i/o timeout" |
+| | error_logs | `logs_search`（frontend，warn） | 50 行 "Checkout failed to place order … dial tcp …:9999" |
+
+16 项全部通过；告警部分与 M2 一致（首个告警 131–208 秒，恢复后 290–331 秒解除）。第 9 次运行是 16/17，唯一失败的就是"去 checkout 找错误日志"，见第 3 节。整个任务 53 分钟，工具检查本身每个故障只要几秒。
+
+**回放的验证**分两层：
+
+1. 单元测试里，用假后端录一遍、回放一遍，`for_model()`（模型看到的全部内容，包括证据 ID）逐字节相同；gzip 录音写两次字节也相同。
+2. 契约测试（`tests/test_tool_contracts.py`）用实验环境的真实录音：回放每个故障的检查，得到的检查详情和证据 ID 必须和现场完全一样。证据 ID 包含原始结果的哈希，所以 ID 相同就意味着数据逐字节相同。同时检查每次调用的摘要都在上限内、证据哈希能对上、模型看到的数据量不到原始数据的十分之一、录音里没有 Chaos Mesh。
+
+**压缩效果**（真实录音，模型看到的 = 摘要 + 证据 ID 的 JSON）：
+
+| 调用 | 原始结果 | 模型看到 | 倍数 |
+|---|---|---|---|
+| `traces_search`（支付失败，出错链路） | 2.0 MB | 3.3 KB | 602 |
+| `traces_search`（坏版本发布，出错链路） | 1.9 MB | 3.3 KB | 591 |
+| `traces_search`（网络延迟，慢链路） | 550 KB | 1.6 KB | 337 |
+| `logs_search`（frontend，50 行） | 169 KB | 1.4 KB | 120 |
+| `trace_get`（一条慢链路） | 96 KB | 1.8 KB | 53 |
+| `deploy_diff` | 11 KB | 0.5 KB | 25 |
+| `prom_query` | 0.5–1.8 KB | 0.6–1.3 KB | ≈1 |
+
+小结果几乎不压缩，因为证据 ID 和字段名本身就有开销；省下来的全在链路和日志上，而这恰恰是诊断最常用的两类数据。
+
+## 5. 面试问答
+
+**Q1：工具结果为什么不直接给模型？**
+答：三个原因。一是大小：一次链路查询 0.5–1.9 MB，而 transcript 每一轮都要重发。二是质量：模型在大段 JSON 里找异常容易漏，确定性的统计（错误分组、p95、峰值时间）比模型自己数更可靠。三是安全：日志是外部输入，原样进 prompt 就是把注入面全部打开。原始数据并没有丢，它在证据库里，摘要带着证据 ID，需要时可以缩小范围再查。
+
+**Q2：摘要会丢信息，怎么办？**
+答：摘要里保留计数、Top-N 和"是否被截断"，模型知道自己没看全，可以加过滤条件或缩小时间窗口再查。摘要函数是确定性的、有单元测试的，丢什么、留什么是设计出来的，不是随机的。另外我用真实录音验证了：每个故障需要的关键信息（错误比例、坏版本的 diff、慢 span 所在的服务）都留在了摘要里，这就是实验环境里那些检查的意义。
+
+**Q3：证据为什么要做快照和哈希？**
+答：可追溯和防篡改。Agent 的每条结论要引用证据 ID，人可以查到当时的原始数据，用哈希验证它没被改过；数据库触发器禁止修改和删除。如果只存"查询语句"不存结果，事后再查，指标早就变了，没法复核当时 Agent 看到了什么。
+
+**Q4：证据 ID 为什么不用 UUID？**
+答：因为要可回放。M4 用 transcript 的哈希做 LLM 回放的键，证据 ID 出现在 transcript 里，随机 ID 会让每次运行的 transcript 都不同。由内容派生的 ID（范围 + 工具 + 参数 + 结果哈希）在同样的数据下永远相同，顺带解决了任务重试时的重复写入。范围里包含租户和事件，不同租户的证据不会撞在一起。
+
+**Q5：怎么测试一个依赖外部系统和 LLM 的 Agent？**
+答：分层录制回放。M3 录工具层：(工具, 参数) → 原始结果，回放时重新生成摘要，模型看到的内容逐字节相同。M4 再录 LLM 层：transcript 哈希 → 模型回答。两层都回放时，整个 Agent 在 CI 里是确定的、免费的、不需要集群。录音来自真实实验环境，所以测的是真实数据的形状，而不是我想象中的形状——比如真实的 payment 日志级别是 warn，假数据里我写的是 error。
+
+**Q6：为什么在工具层录制，而不是 HTTP 层（像 vcrpy 那样）？**
+答：HTTP 请求里带着当前时间（start/end），每次都不同，按 URL 匹配要写很多忽略规则；而且一个工具可能发多个请求，录音难读。工具层的参数是模型给的，用相对窗口，天然稳定；录音一行一次调用，人能直接看懂。代价是录音和工具的参数模型绑定，改参数要重新录。
+
+**Q7：重试和熔断怎么设计的？**
+答：只重试超时、连接失败、429、5xx，最多 2 次，指数退避加抖动；查询写错直接返回，带上后端的错误原文，让模型自己改。每个后端一个熔断器，连续 5 次失败打开 30 秒，期间立即失败，30 秒后半开试探。这样一个后端挂了，Agent 很快知道并换一种数据源，而不是每次调用都等满 10 秒超时。
+
+**Q8：Agent 只读，那它能读到多少？**
+答：Kubernetes 用一个专门的 ServiceAccount，只能在 Demo 命名空间里读 events、pods、services、deployments、replicasets，不能读 Secret，不能写，token 12 小时过期。工具本身也没有任何写操作，全部是 R0。写操作要到 M5，走策略引擎、人工审批和独立的执行器，Agent 本身永远拿不到写权限。
+
+**Q9：为什么要过滤 Chaos Mesh 的事件？这不是在隐藏信息吗？**
+答：是为了让评测诚实。Chaos Mesh 的事件直接写着"对 product-catalog 注入了网络延迟"，真实生产环境不存在这种东西。Agent 看到它就能"诊断"正确，但那是在抄答案，评测分数会虚高。反过来，坏版本发布的 change-cause 和 feature flag 的变更在真实环境里都是看得到的，所以保留。
+
+**Q10：工具检查在真实环境里发现了什么问题？**
+答：最有价值的一个：坏版本发布时，我以为 checkout 自己会打错误日志，实际上它不打，错误作为 gRPC 状态返回给 frontend，由 frontend 记录。这件事说明两点：一是"错误日志在调用方"是诊断时必须知道的模式，要写进 M4 的提示词；二是假数据会把我的假设固化进测试，只有真实环境能推翻它。所以契约测试用的是真实录音。

@@ -57,6 +57,8 @@ def settings(migrated_url: str) -> Settings:
 async def engine(settings: Settings) -> AsyncIterator[AsyncEngine]:
     eng = create_async_engine(settings.database_url, pool_size=settings.db_pool_size)
     async with eng.begin() as conn:
-        await conn.execute(text("TRUNCATE jobs, alerts, incidents, audit_log RESTART IDENTITY CASCADE"))
+        await conn.execute(
+            text("TRUNCATE tool_calls, evidence, jobs, alerts, incidents, audit_log RESTART IDENTITY CASCADE")
+        )
     yield eng
     await eng.dispose()

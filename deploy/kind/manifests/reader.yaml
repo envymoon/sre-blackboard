@@ -1,0 +1,34 @@
+# Read-only identity for the agent's tools (app/tools): get/list/watch in the demo namespace,
+# nothing cluster-wide, no secrets, no writes. `make lab-env` mints a short-lived token for it.
+# Chaos Mesh objects are deliberately left out: they describe how the lab injects faults.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sre-blackboard-reader
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sre-blackboard-reader
+rules:
+  - apiGroups: [""]
+    resources: [events, pods, services]
+    verbs: [get, list, watch]
+  - apiGroups: ["events.k8s.io"]
+    resources: [events]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sre-blackboard-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sre-blackboard-reader
+subjects:
+  - kind: ServiceAccount
+    name: sre-blackboard-reader
