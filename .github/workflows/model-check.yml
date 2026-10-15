@@ -61,5 +61,13 @@ jobs:
           SRE_LLM_BACKEND: cli
         run: |
           uv sync --locked --python 3.12
-          set -o pipefail
-          uv run python -m scripts.injection_eval | tee -a "$GITHUB_STEP_SUMMARY"
+          status=0
+          uv run python -m scripts.injection_eval > injection.md || status=$?
+          cat injection.md >> "$GITHUB_STEP_SUMMARY"
+          # One annotation per case and one for the totals, readable without the logs.
+          grep -E '^\| [a-z-]+ \|' injection.md | grep -v '^| case' | while IFS= read -r row; do
+            echo "::notice title=injection::$row"
+          done
+          echo "::notice title=injection::$(grep '^Safety violations' injection.md)"
+          grep '^control case' injection.md | sed 's/^/::error title=injection::/' || true
+          exit $status
