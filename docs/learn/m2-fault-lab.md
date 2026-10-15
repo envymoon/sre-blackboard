@@ -53,7 +53,7 @@
 
 ### 2.4 Problem Host 与 Event Host
 
-告警响在哪个服务，不等于问题出在哪个服务。例如给 product-catalog 注入网络延迟，实测告警响在 4 个服务上：product-catalog 自己，以及调用它的 recommendation、frontend、frontend-proxy（Event Host），根因只有 product-catalog（Problem Host）。反过来，给 checkout 发一个坏版本，告警只响在 checkout 上，调用它的 frontend 并没有响，因为下单只占 frontend 流量的约 3%，到不了燃烧阈值。
+告警响在哪个服务，不等于问题出在哪个服务。例如给 product-catalog 注入网络延迟，实测告警响在 5 个服务上：product-catalog 自己，以及直接或间接调用它的 recommendation、checkout、frontend、frontend-proxy（Event Host），根因只有 product-catalog（Problem Host）。反过来，给 checkout 发一个坏版本，告警只响在 checkout 上，调用它的 frontend 并没有响，因为下单只占 frontend 流量的约 3%，到不了燃烧阈值。
 
 故障目录给每个故障同时记录了 `root_cause`（Problem Host）和 `symptoms`（预期告警的服务）。这正是原型的 B10（把告警主机当成根因主机）要修的问题，也是 M4 诊断要解决的核心难点。
 
@@ -96,19 +96,24 @@
 | 预期症状写错了 | 凭直觉写的"网络延迟只影响上游"，实测 product-catalog 自己也告警 | 读源码确认原因，按实测更新故障目录 |
 | 第 4 次运行"全绿"，其实是错的 | Demo 默认 5 个虚拟用户，checkout、payment 每分钟只有约 3 个请求。1 分钟窗口的错误比例忽高忽低，流量门槛也时过时不过，支付失败的告警在故障期间消失了一次，恢复后又响了，被记到了下一个故障（网络延迟）头上 | 虚拟用户加到 20；验收收紧（见下一行） |
 | 验收脚本太宽松 | 只看"某一刻没有告警"就算安静；不管 pending；不要求告警响在预期的服务上；不检查抖动 | "安静"要求连续 60 秒没有 firing 也没有 pending；告警抖动（故障期间解除、解除后又响）或没有响在预期服务上，都判失败 |
+| 第 5、6 次运行通过了，但基线就在告警 | 故障注入前 frontend 的错误就有 7%–13%，慢速燃烧在响；验收只等"安静下来"再开始，没把它当问题 | 验收先空跑 10 分钟，有任何告警直接失败；根因见第 4 节 |
+| 启动噪声 | Demo 没有 readiness probe，load-generator 在后端开始监听前就发请求，ECONNREFUSED 后 gRPC 客户端进入重连退避，错误持续几分钟，30 分钟窗口又留住了它 | load-generator 加 init 容器，等所有后端能连上再开始 |
+| 日志里看不到错误详情 | Loki 返回的日志行只有消息本身，异常信息在 structured metadata 里 | 查询时加 `categorize-labels` 请求头；同时从 Jaeger 拉错误链路 |
 | 快慢燃烧共用事件指纹 | 本服务按"告警名 + 服务 + 环境"算指纹，快慢两档是同一个；恢复时"快速解除、慢速出现"会被误判成抖动 | 验收脚本按 Alertmanager 的完整标签集区分告警 |
 
 ## 4. 验收结果
 
-2026-10-14，GitHub Actions 运行机（`ubuntu-24.04`，4 核 16 GB），从零建环境，3 个代表性故障依次运行：
+2026-10-15，第 8 次运行（GitHub Actions 运行机 `ubuntu-24.04`，4 核 16 GB），从零建环境。先空跑 10 分钟确认没有任何告警，再依次运行 3 个代表性故障：
 
 | 故障 | 根因 | 方式 | 首个告警 | 告警（服务） | 恢复后告警解除 |
 |---|---|---|---|---|---|
-| payment-failure | payment | flag，50% 支付失败 | 194 秒 | ErrorBudgetBurn（payment、checkout） | 330 秒 |
-| network-delay | product-catalog | NetworkChaos，出口加 1 秒延迟 | 179 秒 | LatencyP95High（product-catalog、recommendation、frontend、frontend-proxy） | 306 秒 |
-| bad-release | checkout | rollout，payment 地址改成错误端口 | 203 秒 | ErrorBudgetBurn（checkout） | 328 秒 |
+| payment-failure | payment | flag，50% 支付失败 | 221 秒 | ErrorBudgetBurn（payment、checkout） | 290 秒 |
+| network-delay | product-catalog | NetworkChaos，出口加 1 秒延迟 | 156 秒 | LatencyP95High（recommendation、product-catalog、frontend、frontend-proxy、checkout） | 331 秒 |
+| bad-release | checkout | rollout，payment 地址改成错误端口 | 130 秒 | ErrorBudgetBurn（checkout） | 308 秒 |
 
-三个都满足"5 分钟内告警、恢复后解除"。整个任务约 40 分钟：清理磁盘 2 分钟，建环境 3 分钟，等 SLI 窗口填满约 5 分钟，验收 29 分钟。
+三个都满足：5 分钟内告警、至少一个告警响在预期的服务上、没有抖动、恢复后全部解除且实验环境重新安静 60 秒。整个任务 54 分钟：清理磁盘 3 分钟，建环境 2.5 分钟，等 SLI 窗口填满 4.5 分钟，验收 43 分钟（其中基线 10 分钟）。
+
+第 5–8 次运行在同样的收紧后的验收下都通过了，首个告警的范围：支付失败 128–221 秒，网络延迟 156–188 秒，坏版本发布 130–149 秒。支付失败波动最大，因为 payment 每秒只有约 0.2 个请求，1 分钟窗口里只有十几个样本。221 秒离 5 分钟的上限还有 79 秒余量，但如果以后它开始超时，首先要看的就是流量。
 
 **时间都花在哪里**（以支付失败为例，错误比例 50%，快速燃烧阈值 14.4%）：
 
@@ -118,28 +123,41 @@
 | 5 分钟窗口的错误比例爬过 14.4% | 约 90 秒 |
 | `for: 1m` | 60 秒 |
 | Alertmanager `group_wait` | 10 秒 |
-| 合计 | 约 190 秒，实测 194 秒 |
+| 合计 | 约 190 秒；流量低时 1 分钟窗口会短暂跌回阈值以下，`for` 重新计时，所以实测 128–221 秒 |
 
-**恢复为什么要 5 分钟多**：快速燃烧的 1 分钟窗口很快降下来，但快速燃烧一解除，被抑制的慢速燃烧就露出来了。它看的 5 分钟窗口要等故障期间的错误被"挤出"窗口，比例从 50% 降到 6% 以下，大约 4.4 分钟，再加上刷新、评估和 `group_interval`。延迟告警同理：5 分钟内慢请求的占比要降到 5% 以下，p95 才回到阈值下面。这是窗口长度决定的，不是故障没恢复。如果想更快解除，可以缩短慢速燃烧的短窗口，代价是更容易抖动。
+**恢复为什么要 5 分钟左右**：快速燃烧的 1 分钟窗口很快降下来，但快速燃烧一解除，被抑制的慢速燃烧就露出来了。它看的 5 分钟窗口要等故障期间的错误被"挤出"窗口，比例从 50% 降到 6% 以下，大约 4.4 分钟，再加上刷新、评估和 `group_interval`。延迟告警同理：5 分钟内慢请求的占比要降到 5% 以下，p95 才回到阈值下面。这是窗口长度决定的，不是故障没恢复。如果想更快解除，可以缩短慢速燃烧的短窗口，代价是更容易抖动。
 
 **观察到的现象**
 
-- **告警响在哪里**：网络延迟加在 product-catalog 的出口上。我原以为它自己的 SERVER span 不会变慢，实测却变慢了：读源码发现它每个请求都要查 Postgres，GetProduct 还要问 flagd，这些出口请求都被加了延迟。上游的 recommendation、frontend、frontend-proxy 也都响了。4 个告警、4 个事件，根因只有一个，这正是 M4 要做的聚合和定位。故障目录里的预期症状按实测结果做了修正。
+- **告警响在哪里**：网络延迟加在 product-catalog 的出口上。我原以为它自己的 SERVER span 不会变慢，实测却变慢了：读源码发现它每个请求都要查 Postgres，GetProduct 还要问 flagd，这些出口请求都被加了延迟。调用它的 recommendation、frontend、frontend-proxy 也响了；流量加到 20 个用户后，checkout 也过了流量门槛（下单时要逐个查购物车里的商品），同样响了。5 个告警、5 个事件，根因只有一个，这正是 M4 要做的聚合和定位。故障目录里的预期症状按实测结果做了修正。
 - **支付失败**同时在 payment 和 checkout 上告警：payment 自己返回错误，checkout 的下单请求跟着失败。坏版本发布只在 checkout 上告警，因为 payment 根本没收到请求。两者症状相似，区别在 payment 有没有出错：这是诊断时区分"下游坏了"和"自己配错了"的关键证据。
-- **基线**（无故障）：各服务错误比例都是 0，只有 frontend 和 frontend-proxy 约 0.7%，远低于 6% 的慢速燃烧阈值。这部分错误的来源没有细查，M3 有了链路查询工具后正好拿来练手。recommendation 的 p95 基线是 567 ms，离 1 秒的延迟阈值只有不到 2 倍余量，是最可能误报的服务。
-- **流量门槛**：checkout、payment、email、quote 的流量都是 0.05 次/秒，即 5 分钟约 15 次，刚好过 10 次的门槛。如果把 load-generator 的用户数再调低，这几个服务就会失去告警。
+- **基线**（无故障）：所有服务的错误比例都是 0，p95 最高的是 product-catalog 17 ms，离 1 秒的阈值很远。之前几次运行里 frontend 有 0.7%–13% 的错误，查下来是启动噪声（见下）；recommendation 的 p95 也到过 580 ms，修复启动噪声后没再出现，没有单独确认原因。
+- **流量**：20 个用户时，流量最小的 checkout、payment、email、quote 每秒约 0.19 次，5 分钟约 56 次，是 10 次门槛的 5 倍多。
+
+**启动噪声是怎么查出来的**
+
+第 5、6 次运行三个故障都通过了，但 `status` 显示：故障还没注入，frontend、frontend-proxy、checkout 的慢速燃烧告警已经在响，frontend 的错误比例在 7%–13%，每次都不一样。排查过程：
+
+1. 按 span 名拆错误：集中在 frontend 的 `GET /api/products/[productId]`，frontend 这一侧 GetProduct 的 CLIENT span 报错，但 product-catalog 的 SERVER span 和它查数据库的 span 都没有错误。所以请求根本没到 product-catalog。
+2. 日志行本身只有 "API request failed"，错误详情在 Loki 的 structured metadata 里，要加 `X-Loki-Response-Encoding-Flags: categorize-labels` 请求头才返回。拿到之后是 `14 UNAVAILABLE: No connection established. Last error: connect ECONNREFUSED`，目标是 product-catalog、cart、checkout、shipping 的 ClusterIP。Jaeger 里的错误链路给出了同样的结论。
+3. 没有 Pod 重启过，所以是启动阶段的问题：Demo 的服务都没有 readiness probe，容器一启动 Service 就把流量转过来，而 Java、.NET 服务和要等 Kafka、Postgres 的服务要几十秒才开始监听。load-generator 一上来就发请求，被拒绝；frontend 的 gRPC 客户端连接失败后进入重连退避（最长 2 分钟），退避期间每个调用都立刻失败，所以错误能持续好几分钟；慢速燃烧看 30 分钟窗口，把这些错误又留了很久。
+4. 修复：给 load-generator 加一个 init 容器，等 frontend 和它背后的所有服务都能建立 TCP 连接后再开始发流量。告警规则和阈值都没有动。第 8 次运行的基线所有服务错误为 0。
+
+同时验收加了一道门：注入任何故障前，先空跑 10 分钟，期间出现任何告警（包括 pending）就直接失败。第 5、6 次运行能"通过"，就是因为验收只等实验环境安静下来再开始，不把基线的告警当问题。
 
 **资源占用**（基线，故障注入前）
 
 | 项 | 实测 |
 |---|---|
-| kind 节点容器（集群里全部组件，`docker stats` 口径，不含可回收的页缓存） | 4.3 GiB |
+| kind 节点容器（集群里全部组件，`docker stats` 口径，不含可回收的页缓存） | 4.4 GiB |
 | 本服务（Postgres、API、2 个 worker） | 0.3 GiB |
-| 运行机已用内存（`free`） | 4.9 GiB / 15.6 GiB |
+| 运行机已用内存（`free`） | 5.0 GiB / 15.6 GiB |
+
+占用最多的容器（工作集）：kube-apiserver 586 MiB、Kafka 494 MiB、ad（Java）273 MiB、Prometheus 246 MiB、flagd-ui 145 MiB、collector 113 MiB、Loki 106 MiB。用户数从 5 加到 20，kind 节点只从 4.2 GiB 涨到 4.4 GiB；CPU 在 4 核里用了约 0.75 核。
 
 kind 节点 cgroup 的 `memory.current` 是 10.2 GiB，但这个数字包括页缓存（镜像层、日志文件），内存紧张时内核会回收，不能当作占用。`docker stats` 用的是"使用量减去非活跃文件缓存"，和 Kubernetes 判断 OOM 用的工作集口径一致。
 
-结论：整个实验环境加本服务约 5 GB，16 GB 的本地机器还能留出约 10 GB 给系统和其他程序。计划里集群部分的估算是 4.6–5.6 GB（Demo 3–4 GB，加 Loki、Prometheus、Jaeger、Alertmanager、Chaos Mesh），实测 4.3 GiB（4.6 GB），落在估算的下限。省下来的主要是 OpenSearch、两个 Kafka 消费者（JVM 和 .NET）和 load-generator 的浏览器流量。
+结论：整个实验环境加本服务约 5 GB，16 GB 的本地机器还能留出约 10 GB 给系统和其他程序。计划里集群部分的估算是 4.6–5.6 GB（Demo 3–4 GB，加 Loki、Prometheus、Jaeger、Alertmanager、Chaos Mesh），实测 4.4 GiB（4.7 GB），落在估算的下限。省下来的主要是 OpenSearch、两个 Kafka 消费者（JVM 和 .NET）和 load-generator 的浏览器流量。
 
 ## 5. 面试问答
 

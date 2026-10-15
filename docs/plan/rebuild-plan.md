@@ -301,19 +301,19 @@ claude -p \
   - Chaos Mesh：网络延迟、pod 被杀、CPU 压力。
   - 坏版本发布：把某个服务的镜像替换为会出错的版本（例如通过环境变量让它返回 5xx），从而产生 rollout 历史，用于验证"回滚"闭环。
   - 偏差：没有 `kafkaQueueProblems`，它的症状主要是消费者积压，而两个 Kafka 消费者为了省内存关掉了。坏版本发布没有换镜像，改的是环境变量（checkout 连错 payment 的端口），一样产生 rollout 历史。
-- [x] 资源预算（你的机器为 16 GB；“预估内存”是计划时的估算，“实测”是 2026-10-14 在 GitHub Actions 运行机上的结果）：
+- [x] 资源预算（你的机器为 16 GB；“预估内存”是计划时的估算，“实测”是 2026-10-15 在 GitHub Actions 运行机上的结果，load-generator 为 20 个用户）：
 
   | 部分 | 预估内存 | 说明 | 实测 |
   |---|---|---|---|
   | 系统、浏览器、编辑器 | 4–5 GB | 演示时尽量关掉不需要的程序 | 不适用（运行机） |
-  | OTel Demo（裁剪后） | 3–4 GB | 关闭 Kafka、fraud-detection、accounting 等 JVM/.NET 重组件；load-generator 降低用户数 | 这五行合计 4.3 GiB（kind 节点的工作集） |
+  | OTel Demo（裁剪后） | 3–4 GB | 关闭 Kafka、fraud-detection、accounting 等 JVM/.NET 重组件；load-generator 降低用户数 | 这五行合计 4.4 GiB（kind 节点的工作集） |
   | 日志后端 | 约 0.3 GB | 用 Loki 替换 OpenSearch（OpenSearch 至少需要 1 GB 以上） | ↑ |
   | Prometheus、Jaeger、Alertmanager | 约 1 GB | 缩短数据保留时间 | ↑ |
   | Chaos Mesh | 约 0.3 GB | 只装 controller 和 daemon | ↑ |
   | 本系统（Postgres、API、worker） | 约 1 GB | 用 docker compose 跑在集群外，通过 NodePort 访问集群 | 0.3 GiB |
   | `claude -p` 进程 | 每个 0.2–0.4 GB | 评测并发为 2 | M4 实测 |
 
-  实测时 Kafka 本身保留（checkout 下单要写），只关了它的两个消费者。运行机上 `free` 显示共用 4.9 GiB。按这个数字，下面建议的 10 GB 留足了余量；注入内存泄漏、CPU 压力这类故障时占用会更高。
+  实测时 Kafka 本身保留（checkout 下单要写），只关了它的两个消费者。运行机上 `free` 显示共用 5.0 GiB。load-generator 没有降低用户数，反而从默认的 5 个加到 20 个：用户太少时低流量服务的告警会抖动，加到 20 个只多占约 0.2 GiB。按这个数字，下面建议的 10 GB 留足了余量；注入内存泄漏、CPU 压力这类故障时占用会更高。
 
   Docker 或 kind 的虚拟机建议分配约 10 GB 内存。如果仍然吃紧，退路是用 Demo 的 docker compose 版本做只读诊断，只在演示回滚时才起 kind。
 - [x] 云端开发环境跑不了集群，在其中靠录制回放开发（见 M3、M4）。
@@ -321,7 +321,7 @@ claude -p \
 
 验收：注入任一故障后 5 分钟内，本服务能收到告警 webhook；恢复后告警自动解除。
 
-验收记录（2026-10-14，GitHub Actions）：支付失败、网络延迟、坏版本发布 3 个代表性故障全部通过，首个告警 179–203 秒，恢复后 306–330 秒解除。详见 `docs/learn/m2-fault-lab.md` 第 4 节。
+验收记录（2026-10-15，GitHub Actions 第 8 次运行）：先空跑 10 分钟无任何告警，然后支付失败、网络延迟、坏版本发布 3 个代表性故障全部通过，首个告警 130–221 秒，恢复后 290–331 秒解除，没有抖动。详见 `docs/learn/m2-fault-lab.md` 第 4 节。
 
 面试点：SLO、错误预算与燃烧率告警；为什么要用可控注入的故障来做评测。
 
