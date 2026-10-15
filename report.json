@@ -1,0 +1,629 @@
+[
+  {
+    "fault": "payment-failure",
+    "root_cause": "payment",
+    "expected_symptoms": [
+      "payment",
+      "checkout"
+    ],
+    "quiet_before": true,
+    "first_alert_s": 223.4,
+    "alerts": [
+      {
+        "alertname": "ErrorBudgetBurn[fast]",
+        "service": "checkout",
+        "labels": {
+          "slo": "availability",
+          "burn": "fast",
+          "severity": "critical",
+          "alertname": "ErrorBudgetBurn",
+          "environment": "lab",
+          "service_name": "checkout"
+        },
+        "seconds_after_injection": 223.4
+      },
+      {
+        "alertname": "ErrorBudgetBurn[fast]",
+        "service": "payment",
+        "labels": {
+          "slo": "availability",
+          "burn": "fast",
+          "severity": "critical",
+          "alertname": "ErrorBudgetBurn",
+          "environment": "lab",
+          "service_name": "payment"
+        },
+        "seconds_after_injection": 223.4
+      }
+    ],
+    "incident_created": true,
+    "resolved_s": 295.3,
+    "unresolved": [],
+    "flapping": [],
+    "probes": [
+      {
+        "name": "error_ratio",
+        "tool": "prom_query",
+        "args": {
+          "query": "service:sli_error_ratio:rate5m",
+          "at": null
+        },
+        "ok": true,
+        "detail": "payment=0.4337 (want > 0.1)",
+        "evidence_id": "ev_f10c80ce4c4f7f9e"
+      },
+      {
+        "name": "error_trend",
+        "tool": "prom_range",
+        "args": {
+          "query": "service:sli_error_ratio:rate5m",
+          "minutes": 15,
+          "step_s": null,
+          "end": null
+        },
+        "ok": true,
+        "detail": "payment: first=0.06319 max=0.4337 peak_at=2026-10-15T19:08:34Z",
+        "evidence_id": "ev_c467efb002e5ab3d"
+      },
+      {
+        "name": "flags",
+        "tool": "flag_state",
+        "args": {
+          "flag": null
+        },
+        "ok": true,
+        "detail": "on: ['paymentFailure']",
+        "evidence_id": "ev_09d5927e1d7a7662"
+      },
+      {
+        "name": "error_traces",
+        "tool": "traces_search",
+        "args": {
+          "service": "payment",
+          "operation": null,
+          "errors_only": true,
+          "min_duration_ms": null,
+          "minutes": 10,
+          "limit": 20,
+          "end": null
+        },
+        "ok": true,
+        "detail": "20/20 traces with errors; payment: charge: Payment request failed. Invalid token. demo.user_context.loyalty_level=gold",
+        "evidence_id": "ev_f955470e05e2d96d"
+      },
+      {
+        "name": "logs",
+        "tool": "logs_search",
+        "args": {
+          "service": "payment",
+          "contains": null,
+          "level": "warn",
+          "minutes": 10,
+          "limit": 200,
+          "end": null
+        },
+        "ok": true,
+        "detail": "24 lines, match: Payment request failed. Invalid token. demo.user_context.loyalty_level=gold, top: Payment request failed. Invalid token. demo.user_context.loyalty_level=gold",
+        "evidence_id": "ev_d7cb824e3b081563"
+      }
+    ],
+    "diagnosed": true,
+    "diagnoses": [
+      {
+        "incident_id": "71cbf7e8-d084-49c0-a9ef-b0307b624810",
+        "title": "ErrorBudgetBurn",
+        "service": "payment",
+        "priority": 1,
+        "state": "DIAGNOSED",
+        "seconds_after_injection": 223.4,
+        "root_causes": [
+          {
+            "service": "payment",
+            "confidence": 0.8,
+            "cause": "The paymentFailure flag (flagd) is enabled at variant 50%, so payment's Charge path throws 'Payment request failed. Invalid token' for roughly half of targeted requests. This produces the ~24-37% error ratio with fast failures and no dependency or pod faults."
+          },
+          {
+            "service": "payment",
+            "confidence": 0.15,
+            "cause": "Less likely: a code-level token-validation fault in payment's charge.js introduced by the 3.1.0-payment image (single revision at 18:45:56Z). The flag evidence makes this unlikely, and the rollout came about 19 minutes before onset."
+          }
+        ],
+        "reason": "root cause candidate: payment (80%): The paymentFailure flag (flagd) is enabled at variant 50%, so payment's Charge path throws 'Payment request failed. Invalid token' for roughly half of targeted requests. This produces the ~24-37% error ratio with fast failures and no dependency or pod faults.",
+        "investigation_s": 122.7,
+        "agents": {
+          "coordinator": "done",
+          "investigator.changes": "done",
+          "investigator.logs_traces": "done",
+          "investigator.metrics": "done",
+          "synthesizer": "done"
+        },
+        "calls": 15,
+        "tokens": 185731,
+        "cost_usd": 0.024963
+      },
+      {
+        "incident_id": "57e8864d-95df-42f8-a4ca-f29793996abe",
+        "title": "ErrorBudgetBurn",
+        "service": "checkout",
+        "priority": 1,
+        "state": "DIAGNOSED",
+        "seconds_after_injection": 223.4,
+        "root_causes": [
+          {
+            "service": "payment",
+            "confidence": 0.8,
+            "cause": "Charge handler fails about 40-50% of requests with 'Payment request failed. Invalid token' (fast errors, flat p95). This is most likely driven by the enabled paymentFailure flag (50% variant), not by a code or rollout change. checkout's 25% failures are propagated from this."
+          }
+        ],
+        "reason": "root cause candidate: payment (80%): Charge handler fails about 40-50% of requests with 'Payment request failed. Invalid token' (fast errors, flat p95). This is most likely driven by the enabled paymentFailure flag (50% variant), not by a code or rollout change. checkout's 25% failures are propagated from this.",
+        "investigation_s": 88.9,
+        "agents": {
+          "coordinator": "done",
+          "investigator.changes": "done",
+          "investigator.logs_traces": "done",
+          "investigator.metrics": "done",
+          "synthesizer": "done"
+        },
+        "calls": 15,
+        "tokens": 165346,
+        "cost_usd": 0.026993
+      }
+    ],
+    "error": null,
+    "ok": true,
+    "symptom_matched": true,
+    "diagnosis_correct": true
+  },
+  {
+    "fault": "network-delay",
+    "root_cause": "product-catalog",
+    "expected_symptoms": [
+      "product-catalog",
+      "recommendation",
+      "checkout",
+      "frontend",
+      "frontend-proxy"
+    ],
+    "quiet_before": true,
+    "first_alert_s": 172.0,
+    "alerts": [
+      {
+        "alertname": "LatencyP95High",
+        "service": "recommendation",
+        "labels": {
+          "slo": "latency",
+          "severity": "warning",
+          "alertname": "LatencyP95High",
+          "environment": "lab",
+          "service_name": "recommendation"
+        },
+        "seconds_after_injection": 172.0
+      },
+      {
+        "alertname": "LatencyP95High",
+        "service": "checkout",
+        "labels": {
+          "slo": "latency",
+          "severity": "warning",
+          "alertname": "LatencyP95High",
+          "environment": "lab",
+          "service_name": "checkout"
+        },
+        "seconds_after_injection": 187.0
+      },
+      {
+        "alertname": "LatencyP95High",
+        "service": "product-catalog",
+        "labels": {
+          "slo": "latency",
+          "severity": "warning",
+          "alertname": "LatencyP95High",
+          "environment": "lab",
+          "service_name": "product-catalog"
+        },
+        "seconds_after_injection": 187.0
+      },
+      {
+        "alertname": "LatencyP95High",
+        "service": "frontend",
+        "labels": {
+          "slo": "latency",
+          "severity": "warning",
+          "alertname": "LatencyP95High",
+          "environment": "lab",
+          "service_name": "frontend"
+        },
+        "seconds_after_injection": 202.0
+      },
+      {
+        "alertname": "LatencyP95High",
+        "service": "frontend-proxy",
+        "labels": {
+          "slo": "latency",
+          "severity": "warning",
+          "alertname": "LatencyP95High",
+          "environment": "lab",
+          "service_name": "frontend-proxy"
+        },
+        "seconds_after_injection": 202.0
+      }
+    ],
+    "incident_created": true,
+    "resolved_s": 315.6,
+    "unresolved": [],
+    "flapping": [],
+    "probes": [
+      {
+        "name": "p95",
+        "tool": "prom_query",
+        "args": {
+          "query": "service:sli_latency_p95_ms:rate5m",
+          "at": null
+        },
+        "ok": true,
+        "detail": "product-catalog=9119.0 (want > 1000)",
+        "evidence_id": "ev_9d6977d087ebe4c9"
+      },
+      {
+        "name": "slow_traces",
+        "tool": "traces_search",
+        "args": {
+          "service": "product-catalog",
+          "operation": null,
+          "errors_only": false,
+          "min_duration_ms": 900,
+          "minutes": 10,
+          "limit": 20,
+          "end": null
+        },
+        "ok": true,
+        "detail": "20 traces, p95=8398.0ms",
+        "evidence_id": "ev_bc5e8ed771668dad"
+      },
+      {
+        "name": "slow_trace",
+        "tool": "trace_get",
+        "args": {
+          "trace_id": "08a59505b9d91970a425bdedc6b92cf8"
+        },
+        "ok": true,
+        "detail": "product-catalog self=4985.0ms; slowest: product-catalog oteldemo.ProductCatalogService/GetProduct self=4985.0ms",
+        "evidence_id": "ev_66dc4869ea5c85d6"
+      },
+      {
+        "name": "events",
+        "tool": "k8s_events",
+        "args": {
+          "object_name": null,
+          "warnings_only": false,
+          "minutes": 30
+        },
+        "ok": true,
+        "detail": "0 events, by reason {}; chaos objects: []",
+        "evidence_id": "ev_c9a686289ca20564"
+      },
+      {
+        "name": "flags",
+        "tool": "flag_state",
+        "args": {
+          "flag": null
+        },
+        "ok": true,
+        "detail": "on: []",
+        "evidence_id": "ev_433615d44fa6bc33"
+      }
+    ],
+    "diagnosed": true,
+    "diagnoses": [
+      {
+        "incident_id": "8ce6f017-65a9-478e-bf19-d617a9b0f82e",
+        "title": "LatencyP95High",
+        "service": "recommendation",
+        "priority": 2,
+        "state": "DIAGNOSED",
+        "seconds_after_injection": 172.0,
+        "root_causes": [
+          {
+            "service": "product-catalog",
+            "confidence": 0.6,
+            "cause": "product-catalog's GetProduct/ListProducts handling slows sharply from about 19:15Z. Its own self time is about 5s per call, and its astronomy-db client spans rise to 2-4s. Possible mechanisms are database-connection or pool waiting inside product-catalog, or an in-process code path. The 10x load increase from about 18:50Z is a plausible trigger."
+          },
+          {
+            "service": "astronomy-db",
+            "confidence": 0.3,
+            "cause": "The PostgreSQL side may be slow (locks, slow queries or connection contention). This is unverified: astronomy-db's own server-side spans and logs were not checked, and its CPU stayed low."
+          }
+        ],
+        "reason": "root cause candidate: product-catalog (60%): product-catalog's GetProduct/ListProducts handling slows sharply from about 19:15Z. Its own self time is about 5s per call, and its astronomy-db client spans rise to 2-4s. Possible mechanisms are database-connection or pool waiting inside product-catalog, or an in-process code path. The 10x load increase from about 18:50Z is a plausible trigger.",
+        "investigation_s": 205.9,
+        "agents": {
+          "coordinator": "done",
+          "investigator.metrics": "done",
+          "investigator.changes": "done",
+          "investigator.logs_traces": "done",
+          "synthesizer": "done"
+        },
+        "calls": 20,
+        "tokens": 356409,
+        "cost_usd": 0.046135
+      },
+      {
+        "incident_id": "8f8a0007-42e5-40ad-a7a5-61224883b651",
+        "title": "LatencyP95High",
+        "service": "checkout",
+        "priority": 2,
+        "state": "DIAGNOSED",
+        "seconds_after_injection": 187.0,
+        "root_causes": [
+          {
+            "service": "product-catalog",
+            "confidence": 0.7,
+            "cause": "GetProduct and ListProducts are slow inside product-catalog, both server-side and in its DB path (about 5s self time per span, plus about 4.6s astronomy-db client p95). The cause is unknown: possibly connection-pool or lock wait, or missing child spans."
+          },
+          {
+            "service": "astronomy-db",
+            "confidence": 0.3,
+            "cause": "Possible slow queries or lock contention in the PostgreSQL database behind product-catalog. Not confirmed: its server spans and DB metrics were not queried, and its CPU is low."
+          }
+        ],
+        "reason": "root cause candidate: product-catalog (70%): GetProduct and ListProducts are slow inside product-catalog, both server-side and in its DB path (about 5s self time per span, plus about 4.6s astronomy-db client p95). The cause is unknown: possibly connection-pool or lock wait, or missing child spans.",
+        "investigation_s": 256.8,
+        "agents": {
+          "coordinator": "done",
+          "investigator.metrics": "done",
+          "investigator.logs_traces": "done",
+          "investigator.changes": "done",
+          "synthesizer": "done"
+        },
+        "calls": 21,
+        "tokens": 261015,
+        "cost_usd": 0.042182
+      },
+      {
+        "incident_id": "6d77a644-bc40-4f2c-8f20-6fd70cfc7e5d",
+        "title": "LatencyP95High",
+        "service": "product-catalog",
+        "priority": 2,
+        "state": "DIAGNOSED",
+        "seconds_after_injection": 187.0,
+        "root_causes": [
+          {
+            "service": "product-catalog",
+            "confidence": 0.5,
+            "cause": "Latency is added inside product-catalog's own request path (about 5.5s self time per GetProduct), on top of slow astronomy-db calls. Likely in-process waits such as connection-pool exhaustion, CPU throttling, or lock/queue waits, starting around 19:19:30 with no deploy or flag trigger."
+          },
+          {
+            "service": "astronomy-db",
+            "confidence": 0.3,
+            "cause": "PostgreSQL is slow for product-catalog's queries (about 1.9ms to about 4.3s p95), plausibly from locks, a missing index, or connection contention. Not confirmed, since no DB-side metrics were checked and the calls return UNSET rather than errors."
+          }
+        ],
+        "reason": "root cause candidate: product-catalog (50%): Latency is added inside product-catalog's own request path (about 5.5s self time per GetProduct), on top of slow astronomy-db calls. Likely in-process waits such as connection-pool exhaustion, CPU throttling, or lock/queue waits, starting around 19:19:30 with no deploy or flag trigger.",
+        "investigation_s": 195.1,
+        "agents": {
+          "coordinator": "done",
+          "investigator.metrics": "done",
+          "investigator.logs_traces": "done",
+          "investigator.changes": "done",
+          "synthesizer": "done"
+        },
+        "calls": 15,
+        "tokens": 192634,
+        "cost_usd": 0.028819
+      },
+      {
+        "incident_id": "8cc337a2-8a4d-4248-9e98-16cfacfca4bf",
+        "title": "LatencyP95High",
+        "service": "frontend-proxy",
+        "priority": 2,
+        "state": "DIAGNOSED",
+        "seconds_after_injection": 202.0,
+        "root_causes": [
+          {
+            "service": "product-catalog",
+            "confidence": 0.5,
+            "cause": "Requests stall on product-catalog's path to astronomy-db (likely connection pool exhaustion, a lock wait, or blocked queries) beginning about 19:19Z. Its DB calls go from about 2ms to about 4.7s and its server spans rise to about 9.5s, with flat request rate and no rollout or flag change."
+          },
+          {
+            "service": "astronomy-db",
+            "confidence": 0.3,
+            "cause": "The PostgreSQL database is slow or contended (locks, I/O wait, or connection limits) and is the origin of the delay product-catalog sees. Not confirmed: no database-side metrics were gathered. Low CPU and the call-rate drop with UNSET status fit a queueing or lock stall better than CPU saturation."
+          }
+        ],
+        "reason": "root cause candidate: product-catalog (50%): Requests stall on product-catalog's path to astronomy-db (likely connection pool exhaustion, a lock wait, or blocked queries) beginning about 19:19Z. Its DB calls go from about 2ms to about 4.7s and its server spans rise to about 9.5s, with flat request rate and no rollout or flag change.",
+        "investigation_s": 255.8,
+        "agents": {
+          "coordinator": "done",
+          "investigator.metrics": "done",
+          "investigator.logs_traces": "done",
+          "investigator.changes": "done",
+          "synthesizer": "done"
+        },
+        "calls": 20,
+        "tokens": 385503,
+        "cost_usd": 0.055162
+      },
+      {
+        "incident_id": "3ec5712f-7485-4465-9e32-ff6905acf292",
+        "title": "LatencyP95High",
+        "service": "frontend",
+        "priority": 2,
+        "state": "DIAGNOSED",
+        "seconds_after_injection": 202.0,
+        "root_causes": [
+          {
+            "service": "product-catalog",
+            "confidence": 0.65,
+            "cause": "Requests stall inside product-catalog, with about 5s of self time per call outside its astronomy-db spans, and its DB-edge latency rose to about 4.7s p95 at 19:19-19:21Z. Likely a DB connection-pool or lock-queue wait, or a runtime stall (CPU/GC), in product-catalog or its database connection path."
+          },
+          {
+            "service": "astronomy-db",
+            "confidence": 0.25,
+            "cause": "The PostgreSQL side may be slowed by lock contention or resource pressure. This would show up as the DB edge slowing and fewer calls completing, which fits the call-rate drop. Not confirmed; no DB-side data was pulled."
+          }
+        ],
+        "reason": "root cause candidate: product-catalog (65%): Requests stall inside product-catalog, with about 5s of self time per call outside its astronomy-db spans, and its DB-edge latency rose to about 4.7s p95 at 19:19-19:21Z. Likely a DB connection-pool or lock-queue wait, or a runtime stall (CPU/GC), in product-catalog or its database connection path.",
+        "investigation_s": 275.5,
+        "agents": {
+          "coordinator": "done",
+          "investigator.metrics": "done",
+          "investigator.logs_traces": "done",
+          "investigator.changes": "done",
+          "synthesizer": "done"
+        },
+        "calls": 18,
+        "tokens": 342093,
+        "cost_usd": 0.0449
+      }
+    ],
+    "error": null,
+    "ok": true,
+    "symptom_matched": true,
+    "diagnosis_correct": true
+  },
+  {
+    "fault": "bad-release",
+    "root_cause": "checkout",
+    "expected_symptoms": [
+      "checkout"
+    ],
+    "quiet_before": true,
+    "first_alert_s": 149.4,
+    "alerts": [
+      {
+        "alertname": "ErrorBudgetBurn[fast]",
+        "service": "checkout",
+        "labels": {
+          "slo": "availability",
+          "burn": "fast",
+          "severity": "critical",
+          "alertname": "ErrorBudgetBurn",
+          "environment": "lab",
+          "service_name": "checkout"
+        },
+        "seconds_after_injection": 149.4
+      }
+    ],
+    "incident_created": true,
+    "resolved_s": 301.9,
+    "unresolved": [],
+    "flapping": [],
+    "probes": [
+      {
+        "name": "error_ratio",
+        "tool": "prom_query",
+        "args": {
+          "query": "service:sli_error_ratio:rate5m",
+          "at": null
+        },
+        "ok": true,
+        "detail": "checkout=0.7233 (want > 0.1)",
+        "evidence_id": "ev_9a294764862a9478"
+      },
+      {
+        "name": "history",
+        "tool": "rollout_history",
+        "args": {
+          "deployment": "checkout"
+        },
+        "ok": true,
+        "detail": "revision 2: 'checkout config release: payment client moved to port 9999'",
+        "evidence_id": "ev_c0dde24c66d12d5c"
+      },
+      {
+        "name": "diff",
+        "tool": "deploy_diff",
+        "args": {
+          "deployment": "checkout",
+          "from_revision": null,
+          "to_revision": null
+        },
+        "ok": true,
+        "detail": "1 changes; {'path': 'containers.checkout.env.PAYMENT_ADDR', 'from': 'payment:8080', 'to': 'payment:9999'}",
+        "evidence_id": "ev_28efbe8c5bef5e3b"
+      },
+      {
+        "name": "events",
+        "tool": "k8s_events",
+        "args": {
+          "object_name": "checkout",
+          "warnings_only": false,
+          "minutes": 30
+        },
+        "ok": true,
+        "detail": "by reason: {'Scheduled': 1, 'Pulling': 1, 'Pulled': 1, 'Created': 1, 'Started': 1, 'SuccessfulCreate': 1, 'Killing': 1, 'SuccessfulDelete': 1, 'ScalingReplicaSet': 1}",
+        "evidence_id": "ev_efce3f500465b56a"
+      },
+      {
+        "name": "error_traces",
+        "tool": "traces_search",
+        "args": {
+          "service": "checkout",
+          "operation": null,
+          "errors_only": true,
+          "min_duration_ms": null,
+          "minutes": 10,
+          "limit": 20,
+          "end": null
+        },
+        "ok": true,
+        "detail": "20/20 traces with errors; checkout: oteldemo.CheckoutService/PlaceOrder: failed to charge card: could not charge the card: rpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing: dial tcp 10.96.197.163:9999: i/o timeout\"",
+        "evidence_id": "ev_28096560cb15840b"
+      },
+      {
+        "name": "error_logs",
+        "tool": "logs_search",
+        "args": {
+          "service": "frontend",
+          "contains": null,
+          "level": "warn",
+          "minutes": 10,
+          "limit": 200,
+          "end": null
+        },
+        "ok": true,
+        "detail": "52 lines, match: Checkout failed to place order <n> INTERNAL: failed to charge card: could not charge the card: rpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing: dial tcp \u2026, top: Checkout failed to place order <n> INTERNAL: failed to charge card: could not charge the card: rpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing: dial tcp \u2026",
+        "evidence_id": "ev_e0bdb168bac000be"
+      }
+    ],
+    "diagnosed": true,
+    "diagnoses": [
+      {
+        "incident_id": "49c7fb85-122a-4623-9516-858381567fd5",
+        "title": "ErrorBudgetBurn",
+        "service": "checkout",
+        "priority": 1,
+        "state": "DIAGNOSED",
+        "seconds_after_injection": 149.4,
+        "root_causes": [
+          {
+            "service": "checkout",
+            "confidence": 0.8,
+            "cause": "Bad config in rollout revision 2 (19:32:03Z): PAYMENT_ADDR changed from payment:8080 to payment:9999. The port is wrong, so every payment Charge dial times out and about 47% of checkout requests fail."
+          },
+          {
+            "service": "payment",
+            "confidence": 0.15,
+            "cause": "Earlier intermittent Charge errors (peak about 0.105 near 19:10Z, cleared by 19:20Z) with no explanation yet. This is separate from the current incident and not the current cause."
+          }
+        ],
+        "reason": "root cause candidate: checkout (80%): Bad config in rollout revision 2 (19:32:03Z): PAYMENT_ADDR changed from payment:8080 to payment:9999. The port is wrong, so every payment Charge dial times out and about 47% of checkout requests fail.",
+        "investigation_s": 149.6,
+        "agents": {
+          "coordinator": "done",
+          "investigator.changes": "done",
+          "investigator.logs_traces": "done",
+          "investigator.metrics": "done",
+          "synthesizer": "done"
+        },
+        "calls": 22,
+        "tokens": 413303,
+        "cost_usd": 0.061243
+      }
+    ],
+    "error": null,
+    "ok": true,
+    "symptom_matched": true,
+    "diagnosis_correct": true
+  }
+]
