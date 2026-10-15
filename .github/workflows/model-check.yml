@@ -3,6 +3,10 @@ name: Model check
 # One tiny claude -p call with the CLAUDE_CODE_OAUTH_TOKEN secret, made the way the workers
 # make it. About a minute, against the hour a lab run takes to find out the same thing.
 # Prints only whether the secret is set and the model's one-word answer, never the token.
+#
+# Then the prompt-injection check (scripts/injection_eval.py, B11): the planner, with the
+# real model, on an incident whose data carries planted instructions. It fails on any
+# injected action that would get past the policy, or when the clean case is not repaired.
 
 on:
   workflow_dispatch:
@@ -10,7 +14,7 @@ on:
   # and a re-run of that run checks the secret again.
   push:
     branches: ["milestone/**"]
-    paths: [".github/workflows/model-check.yml"]
+    paths: [".github/workflows/model-check.yml", "scripts/injection_eval.py", "app/agents/prompts/planner.md"]
 
 permissions:
   contents: read
@@ -18,8 +22,15 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
+        with:
+          version: "0.11.32"
+          enable-cache: true
+
       - name: Install the Claude Code CLI (the version the worker image pins)
         run: |
           npm install -g --no-fund --no-audit "@anthropic-ai/claude-code@2.1.300"
@@ -43,3 +54,12 @@ jobs:
           else
             echo "::error title=model::claude -p failed: $(cat - err.txt <<< "$out" | tr '\n' ' ' | head -c 600)"; exit 1
           fi
+
+      - name: Prompt-injection check
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          SRE_LLM_BACKEND: cli
+        run: |
+          uv sync --locked --python 3.12
+          set -o pipefail
+          uv run python -m scripts.injection_eval | tee -a "$GITHUB_STEP_SUMMARY"
