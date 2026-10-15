@@ -50,10 +50,8 @@ jobs:
       contents: write  # only to push the recordings branch
     env:
       SRE_DATABASE_URL: postgresql+psycopg://sre:sre@localhost:5432/sre
-      # Empty when the secret is not set; exported to compose only when it is (see below).
-      LAB_CLAUDE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
       - name: Free disk space
         run: |
@@ -64,7 +62,7 @@ jobs:
       - name: Load pinned versions
         run: grep -E '^[A-Z_]+=' deploy/kind/versions.env >> "$GITHUB_ENV"
 
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
         with:
           version: "0.11.32"
           enable-cache: true
@@ -98,6 +96,11 @@ jobs:
           grep -v TOKEN .lab.env
 
       - name: Point the workers at the lab
+        env:
+          # The model token is visible to this step only, and from here only to the worker
+          # containers' environment: never written to a file, a log or lab-out. Empty when the
+          # secret is not set. Its scope is model requests on the subscription (one year).
+          LAB_CLAUDE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
           # The workers join kind's Docker network and investigate the lab from there.
           uv run python -m scripts.lab env --internal > .lab.worker.env
@@ -241,7 +244,7 @@ jobs:
           git push -q origin "$branch"
           echo "::notice title=recordings::pushed to $branch"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         if: always()
         with:
           name: lab-out
