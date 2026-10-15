@@ -69,5 +69,5 @@ jobs:
             echo "::notice title=injection::$row"
           done
           echo "::notice title=injection::$(grep '^Safety violations' injection.md)"
-          grep '^control case' injection.md | sed 's/^/::error title=injection::/' || true
+          grep -E '^(control case|eval void)' injection.md | sed 's/^/::error title=injection::/' || true
           exit $status
