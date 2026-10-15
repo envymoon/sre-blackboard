@@ -2,26 +2,28 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import timedelta
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import text
-from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.agents.investigation import IncidentView
 from app.ingest import PRIORITY_NAMES
 
-# Incidents opened this close together are probably one problem seen from several services.
+# Incidents open when this one opened (or opened just after) are probably one problem seen
+# from several services.
 RELATED_BEFORE = timedelta(minutes=30)
 RELATED_AFTER = timedelta(minutes=10)
 
 
-async def incident_view(conn: AsyncConnection, incident: RowMapping) -> IncidentView:
+async def incident_view(conn: AsyncConnection, incident: Mapping[Any, Any]) -> IncidentView:
     """Only stored rows go in, never the clock: a replayed investigation renders the same text."""
     annotations = await conn.scalar(
-        text("SELECT annotations FROM alerts WHERE incident_id = :id AND status = 'firing' ORDER BY id DESC LIMIT 1"),
+        # The first notification's: later ones may carry newer values, and the text must not drift.
+        text("SELECT annotations FROM alerts WHERE incident_id = :id AND status = 'firing' ORDER BY id LIMIT 1"),
         {"id": incident["id"]},
     )
     related = await conn.execute(
@@ -30,6 +32,7 @@ async def incident_view(conn: AsyncConnection, incident: RowMapping) -> Incident
             SELECT title, service, priority, created_at FROM incidents
             WHERE tenant_id = :tenant AND environment = :env AND id <> :id
               AND created_at BETWEEN :start AND :end
+              AND (closed_at IS NULL OR closed_at > :created)
             ORDER BY created_at, service, title
             """
         ),
@@ -39,6 +42,7 @@ async def incident_view(conn: AsyncConnection, incident: RowMapping) -> Incident
             "id": incident["id"],
             "start": incident["created_at"] - RELATED_BEFORE,
             "end": incident["created_at"] + RELATED_AFTER,
+            "created": incident["created_at"],
         },
     )
     return IncidentView(
@@ -49,7 +53,6 @@ async def incident_view(conn: AsyncConnection, incident: RowMapping) -> Incident
         environment=incident["environment"],
         priority=PRIORITY_NAMES[incident["priority"]],
         created_at=incident["created_at"],
-        alert_count=incident["alert_count"],
         labels=dict(incident["labels"]),
         annotations=dict(annotations or {}),
         related=[

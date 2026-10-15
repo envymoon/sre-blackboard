@@ -69,8 +69,9 @@ class ReplayBackend:
     def __init__(self, cassette: LLMCassette) -> None:
         self.entries: dict[str, dict[str, Any]] = {}
         for e in cassette.entries:
-            # The same request twice (a retried job) was answered the same way; keep the first.
-            self.entries.setdefault(replay_key(e["agent"], e["prompt_version"], e["request_hash"]), e)
+            # The same request twice: an agent interrupted and run again by a retried job. The
+            # later answer is the one the finished run built on.
+            self.entries[replay_key(e["agent"], e["prompt_version"], e["request_hash"])] = e
 
     async def step(self, request: LLMRequest) -> LLMResult:
         request_hash = request.hash()

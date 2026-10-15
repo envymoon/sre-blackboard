@@ -50,7 +50,6 @@ class IncidentView:
     environment: str
     priority: str
     created_at: datetime
-    alert_count: int
     labels: dict[str, str]
     annotations: dict[str, str] = field(default_factory=dict)
     # Other incidents open in the same environment around the same time.
@@ -60,7 +59,7 @@ class IncidentView:
         lines = [
             f"Incident: {self.title} on service {self.service} (priority {self.priority}, "
             f"environment {self.environment}).",
-            f"Opened at {iso(self.created_at)}; {self.alert_count} alert notification(s) so far.",
+            f"Opened at {iso(self.created_at)}.",
             f"Alert labels: {json.dumps(self.labels, sort_keys=True)}",
         ]
         if self.annotations:
@@ -119,7 +118,7 @@ async def investigate(incident: IncidentView, deps: Deps, config: AgentConfig) -
             raise
         except LLMError as e:
             await deps.store.fail_run(incident.id, spec.name, 0, str(e))
-            if e.retryable:
+            if e.retryable and e.code != "invalid_output":
                 raise  # rate limit or outage: the whole job retries later, with backoff
             outcome.agents[spec.name] = "failed"
             log.warning("%s failed: %s", spec.name, e)

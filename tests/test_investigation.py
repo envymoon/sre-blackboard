@@ -20,6 +20,8 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from app.agents import recording
+from app.agents.investigation import AgentConfig
 from app.api.app import create_app
 from app.core.config import Settings
 from app.core.security import mint_token
@@ -225,3 +227,35 @@ async def test_a_worker_killed_mid_investigation_is_taken_over_without_asking_fi
         findings = await conn.scalar(text("SELECT count(*) FROM blackboard WHERE kind = 'finding'"))
         attempts = await conn.scalar(text("SELECT attempts FROM jobs WHERE kind = 'investigate'"))
     assert findings == 4 and attempts == 2
+
+
+async def test_an_exported_investigation_replays_to_the_same_diagnosis(engine, settings, client, tmp_path):
+    ids = await fire(client, settings, "checkout", "payment")
+    await run_until(engine, fast(settings), ScriptedLLM(payment_scripts()), done={"DIAGNOSED"})
+    rec = await recording.export(engine, list(ids.values()), meta={"test": True})
+    rec.dump(tmp_path / "rec")
+    rec = recording.Recording.load(tmp_path / "rec")
+    assert {r["service"] for r in rec.incidents} == {"checkout", "payment"}
+    assert {e["agent"] for e in rec.tools.entries} == {
+        "investigator.metrics",
+        "investigator.logs_traces",
+        "investigator.changes",
+    }
+
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "TRUNCATE blackboard, agent_runs, llm_calls, tool_calls, evidence, jobs, alerts, incidents, audit_log CASCADE"
+            )
+        )
+    await recording.load_incidents(engine, rec)
+    config = AgentConfig(model_for=lambda role: "claude-haiku-5-5", max_steps=settings.agent_max_steps)
+    for service, incident_id in ids.items():
+        outcome = await recording.replay(engine, rec, incident_id, config)
+        expected = rec.expected[str(incident_id)]
+        assert outcome.diagnosis is not None and outcome.diagnosis.model_dump() == expected["diagnosis"], service
+        assert {a: "done" for a in outcome.agents} == expected["agents"]
+    # Nothing was asked that the recording could not answer.
+    async with engine.connect() as conn:
+        assert await conn.scalar(text("SELECT count(*) FROM tool_calls WHERE error_code = 'replay_miss'")) == 0
+        assert await conn.scalar(text("SELECT count(DISTINCT source) FROM evidence")) == 1

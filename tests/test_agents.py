@@ -214,7 +214,6 @@ def incident() -> IncidentView:
         environment="lab",
         priority="P1",
         created_at=datetime(2026, 10, 15, 4, 5, tzinfo=UTC),
-        alert_count=1,
         labels={"alertname": "ErrorBudgetBurn", "service_name": "checkout", "burn": "fast"},
         related=[
             {
