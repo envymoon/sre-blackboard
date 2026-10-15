@@ -20,6 +20,9 @@ Then, for each fault:
 An alert that resolves while its fault is still active, or fires again after resolving,
 is flapping: it would page twice or close an incident early, so it fails the fault.
 
+With a probe (M3, scripts/lab/probes.py), step 3 also calls the read-only tools while the
+fault is active; every tool check must pass.
+
 Timestamps come from the database clock, so host and container clocks need not agree.
 """
 
@@ -37,8 +40,10 @@ from sqlalchemy import Engine, text
 
 from scripts.lab.cluster import Lab
 from scripts.lab.faults import Fault
+from scripts.lab.probes import ProbeResult
 
 Log = Callable[[str], None]
+Probe = Callable[[Fault], list[ProbeResult]]
 
 
 @dataclass
@@ -61,6 +66,7 @@ class ScenarioResult:
     resolved_s: float | None = None
     unresolved: list[str] = field(default_factory=list)
     flapping: list[str] = field(default_factory=list)
+    probes: list[ProbeResult] = field(default_factory=list)
     error: str | None = None
 
     @property
@@ -76,6 +82,7 @@ class ScenarioResult:
             and self.incident_created
             and self.symptom_matched
             and not self.flapping
+            and all(p.ok for p in self.probes)
             and self.resolved_s is not None
         )
 
@@ -184,6 +191,7 @@ def run_scenario(
     quiet_timeout: float = 600,
     hold_s: float = 60,
     poll_s: float = 5,
+    probe: Probe | None = None,
 ) -> ScenarioResult:
     result = ScenarioResult(fault.name, fault.root_cause, list(fault.symptoms))
     result.quiet_before = wait_quiet(lab, quiet_timeout, log, hold_s=hold_s, poll_s=poll_s)
@@ -224,6 +232,10 @@ def run_scenario(
                 log(f"[{fault.name}] no alert within {alert_timeout:.0f}s")
                 break
             time.sleep(poll_s)
+        if probe is not None and seen:
+            result.probes = probe(fault)
+            for p in result.probes:
+                log(f"[{fault.name}] tool {p.tool} ({p.name}): {'ok' if p.ok else 'FAIL'} - {p.detail}")
     except Exception as exc:  # report and still try to recover; one broken fault should not stop the run
         result.error = f"{type(exc).__name__}: {exc}"
         log(f"[{fault.name}] error: {result.error}")
@@ -285,17 +297,22 @@ def to_json(results: Sequence[ScenarioResult], alert_timeout: float) -> str:
 
 def to_markdown(results: Sequence[ScenarioResult], alert_timeout: float) -> str:
     lines = [
-        "| fault | root cause | first alert | alerts (service) | expected symptom seen | flapping | resolved after recovery | result |",
-        "|---|---|---|---|---|---|---|---|",
+        "| fault | root cause | first alert | alerts (service) | expected symptom seen | flapping | tool checks "
+        "| resolved after recovery | result |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for r in results:
         alerts = ", ".join(f"{a.alertname} ({a.service}, {a.seconds_after_injection:.0f}s)" for a in r.alerts) or "-"
         first = f"{r.first_alert_s:.0f}s" if r.first_alert_s is not None else "none"
         resolved = f"{r.resolved_s:.0f}s" if r.resolved_s is not None else f"no ({', '.join(r.unresolved)})"
         flapping = ", ".join(r.flapping) or "-"
+        failed = [p.name for p in r.probes if not p.ok]
+        tools = "-" if not r.probes else f"{len(r.probes) - len(failed)}/{len(r.probes)}"
+        if failed:
+            tools += f" (failed: {', '.join(failed)})"
         verdict = "ok" if r.ok(alert_timeout) else f"FAIL{': ' + r.error if r.error else ''}"
         lines.append(
             f"| {r.fault} | {r.root_cause} | {first} | {alerts} | {'yes' if r.symptom_matched else 'no'} "
-            f"| {flapping} | {resolved} | {verdict} |"
+            f"| {flapping} | {tools} | {resolved} | {verdict} |"
         )
     return "\n".join(lines) + "\n"

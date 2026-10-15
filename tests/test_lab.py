@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,7 @@ import httpx
 import pytest
 from sqlalchemy import Engine, create_engine, text
 
+from app.tools.sources import Cassette
 from scripts.lab import accept
 from scripts.lab.cluster import Kubectl, Lab
 from scripts.lab.faults import (
@@ -25,6 +27,9 @@ from scripts.lab.faults import (
     release_patch,
     with_flag,
 )
+from scripts.lab.probes import ProbeResult, ProbeRunner
+from tests.helpers.fake_backends import NOW, FakeBackends
+from tests.helpers.fake_backends import settings as fake_settings
 
 # The flag file shipped with the pinned demo chart (deploy/kind/versions.env).
 DEMO_FLAGS = json.loads(Path("tests/fixtures/otel-demo-0.42.4-flagd.json").read_text())["flags"]
@@ -258,6 +263,7 @@ def sync_engine(migrated_url: str) -> Any:
     eng.dispose()
 
 
+FAKE_NOW = datetime.fromtimestamp(NOW, UTC)
 FAST = {"settle_s": 0.2, "poll_s": 0.05, "quiet_timeout": 1, "hold_s": 0.1}
 
 
@@ -384,3 +390,52 @@ def test_annotations_escape_chunk_and_cap(tmp_path: Path) -> None:
     assert notes == ["::notice title=x.log [1/1]::line 97 100%25%0Aline 98 100%25%0Aline 99 100%25"]
     many = build([str(log)], chunk=50, limit=4)
     assert len(many) == 4 and many[0].startswith("::notice title=x.log [1/")
+
+
+# --- M3: tool checks during a fault ----------------------------------------------------------
+
+
+def test_a_failed_tool_check_fails_the_fault(sync_engine: Engine) -> None:
+    calls: list[str] = []
+
+    def probe(fault: Any) -> list[ProbeResult]:
+        calls.append(fault.name)
+        return [
+            ProbeResult("error_ratio", "prom_query", {}, True, "payment=0.5"),
+            ProbeResult("flags", "flag_state", {}, False, "on: []"),
+        ]
+
+    result = _accept_one(SimulatedLab(sync_engine), sync_engine, probe=probe)
+    assert calls == ["payment-failure"]
+    assert result.resolved_s is not None and result.symptom_matched
+    assert not result.ok(alert_timeout=300)
+    assert "| 1/2 (failed: flags) |" in accept.to_markdown([result], 300)
+
+
+def test_probes_check_live_answers_and_record_a_replayable_cassette(tmp_path: Path) -> None:
+    fake = FakeBackends(flag_variants={"paymentFailure": "50%"})
+    runner = ProbeRunner(fake_settings(), tmp_path, transport=httpx.MockTransport(fake.handler), now=lambda: FAKE_NOW)
+    payment = runner(get("payment-failure"))
+    assert [(p.name, p.ok) for p in payment] == [
+        ("error_ratio", True),
+        ("error_trend", True),
+        ("flags", True),
+        ("error_traces", True),
+        ("logs", True),
+    ], [p.detail for p in payment]
+    assert all(p.evidence_id and p.evidence_id.startswith("ev_") for p in payment)
+
+    # The fake's error spans are in payment, not checkout: that check must notice.
+    release = {p.name: p for p in runner(get("bad-release"))}
+    assert not release["error_traces"].ok
+    assert all(p.ok for name, p in release.items() if name != "error_traces"), [p.detail for p in release.values()]
+
+    cassette = Cassette.load(tmp_path / "payment-failure.jsonl")
+    assert cassette.meta["root_cause"] == "payment"
+    assert [e["tool"] for e in cassette.entries] == [
+        "prom_query",
+        "prom_range",
+        "flag_state",
+        "traces_search",
+        "logs_search",
+    ]

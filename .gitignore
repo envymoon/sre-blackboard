@@ -20,5 +20,8 @@ eval/report.json
 *.db
 *.sqlite3
 .env
+# Lab tool settings with a Kubernetes token (make lab-env)
+.lab.env
+.lab-ca.crt
 *.pem
 *.key

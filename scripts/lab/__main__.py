@@ -5,17 +5,24 @@ inject NAME / recover NAME break or repair one thing (recover --all undoes every
 status                     active faults and firing alerts
 probe                      per-service SLIs right now, to tune alert thresholds
 accept [--tag T | NAMES]   the M2 acceptance run (see scripts/lab/accept.py)
+env                        settings for the read-only tools (make lab-env writes them to .lab.env)
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
+import json
 import os
 import sys
+from pathlib import Path
 
 from scripts.lab import accept
 from scripts.lab.cluster import Lab
 from scripts.lab.faults import CATALOGUE, get
+
+# The read-only ServiceAccount for the tools (deploy/kind/manifests/reader.yaml).
+READER = "sre-blackboard-reader"
 
 
 def _lab(args: argparse.Namespace) -> Lab:
@@ -95,6 +102,11 @@ def cmd_accept(args: argparse.Namespace) -> int:
                     fh.write("### Fault lab acceptance\n\n" + message)
             return 1
         print("[baseline] quiet")
+    probe = None
+    if args.probe_dir:
+        from scripts.lab.probes import ProbeRunner
+
+        probe = ProbeRunner(get_settings(), Path(args.probe_dir), tenant=args.tenant)
     results = accept.run(
         lab,
         engine,
@@ -104,6 +116,7 @@ def cmd_accept(args: argparse.Namespace) -> int:
         settle_s=args.settle,
         resolve_timeout=args.resolve_timeout,
         hold_s=args.hold,
+        probe=probe,
     )
     markdown = accept.to_markdown(results, args.alert_timeout)
     print("\n" + markdown)
@@ -114,6 +127,32 @@ def cmd_accept(args: argparse.Namespace) -> int:
         with open(summary, "a") as fh:
             fh.write("### Fault lab acceptance\n\n" + markdown)
     return 0 if all(r.ok(args.alert_timeout) for r in results) else 1
+
+
+def cmd_env(args: argparse.Namespace) -> int:
+    """Settings for the read-only tools (app/tools): print them as .lab.env lines.
+
+    The Kubernetes token belongs to the reader ServiceAccount (deploy/kind/manifests/reader.yaml),
+    which can only get and list in the demo namespace, and expires after --ttl.
+    """
+    kubectl = _lab(args).kubectl
+    config = json.loads(kubectl("config", "view", "--minify", "--raw", "-o", "json"))
+    cluster = config["clusters"][0]["cluster"]
+    ca = Path(args.ca_file)
+    ca.write_bytes(base64.b64decode(cluster["certificate-authority-data"]))
+    token = kubectl("create", "token", READER, f"--duration={args.ttl}").strip()
+    lines = {
+        "SRE_PROMETHEUS_URL": args.prometheus_url,
+        "SRE_LOKI_URL": "http://localhost:13100",
+        "SRE_JAEGER_URL": f"{args.lab_url}/jaeger/ui",
+        "SRE_FLAGD_UI_URL": f"{args.lab_url}/feature",
+        "SRE_K8S_API_URL": cluster["server"],
+        "SRE_K8S_CA_FILE": str(ca.resolve()),
+        "SRE_K8S_NAMESPACE": kubectl.namespace,
+        "SRE_K8S_TOKEN": token,
+    }
+    print("\n".join(f"{k}={v}" for k, v in lines.items()))
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -133,6 +172,10 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(func=cmd_recover)
     sub.add_parser("status").set_defaults(func=cmd_status)
     sub.add_parser("probe").set_defaults(func=cmd_probe)
+    p = sub.add_parser("env", help="settings for the read-only tools, as .lab.env lines")
+    p.add_argument("--ca-file", default=".lab-ca.crt")
+    p.add_argument("--ttl", default="12h")
+    p.set_defaults(func=cmd_env)
     p = sub.add_parser("accept")
     p.add_argument("names", nargs="*", help="faults to run (default: those tagged --tag)")
     p.add_argument("--tag", default="acceptance")
@@ -145,6 +188,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--hold", type=float, default=60, help="seconds the lab must stay quiet to count as quiet")
     p.add_argument("--report", help="write results as JSON here")
+    p.add_argument(
+        "--probe-dir", help="call the read-only tools during each fault, check them, record cassettes here (M3)"
+    )
     p.set_defaults(func=cmd_accept)
 
     args = parser.parse_args(argv)

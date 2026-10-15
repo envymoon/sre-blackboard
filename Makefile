@@ -1,5 +1,5 @@
 .PHONY: install fmt lint typecheck test check db migrate run worker up down token loadtest \
-	env-up env-down faults fault recover lab-status lab-probe lab-accept rules-test
+	env-up env-down faults fault recover lab-status lab-probe lab-accept lab-env rules-test
 
 install:  ## Install runtime + dev dependencies and git hooks
 	uv sync
@@ -71,6 +71,9 @@ lab-probe:  ## Per-service request rate, error ratio and p95 right now
 
 lab-accept:  ## M2 acceptance: inject, alert within 5 min, recover, resolve
 	uv run python -m scripts.lab accept
+
+lab-env:  ## Endpoints and a 12h read-only token for the tools (python -m app.tools), into .lab.env
+	uv run python -m scripts.lab env > .lab.env
 
 rules-test:  ## promtool unit tests for the SLO alert rules (needs Docker)
 	docker run --rm -v $(CURDIR)/deploy/kind/rules:/rules -w /rules/tests --entrypoint promtool $(PROMTOOL_IMAGE) test rules slo_test.yml

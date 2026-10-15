@@ -4,6 +4,10 @@ name: Fault lab
 # cluster with the OpenTelemetry Demo, the sre-blackboard stack from docker compose, and the
 # acceptance run (inject -> alert within 5 min -> recover -> resolved). Nothing is reused
 # between runs, so every run also proves `make env-up` works from scratch.
+#
+# Since M3 the acceptance run also calls the read-only tools during each fault, checks what
+# they return, and records the answers. The recordings are pushed to a branch
+# lab-recordings/run-<id>, because the cloud dev container can read git but not artifacts.
 
 on:
   workflow_dispatch:
@@ -13,10 +17,11 @@ on:
         required: false
         default: ""
   push:
-    branches: ["milestone/m2-*"]
+    branches: ["milestone/**"]
     paths:
       - "deploy/kind/**"
       - "scripts/lab/**"
+      - "app/tools/**"
       - ".github/workflows/lab.yml"
 
 permissions:
@@ -31,6 +36,8 @@ jobs:
     # Pinned: ubuntu-latest moves to a new release, and the lab should only change on purpose.
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    permissions:
+      contents: write  # only to push the recordings branch
     env:
       SRE_DATABASE_URL: postgresql+psycopg://sre:sre@localhost:5432/sre
     steps:
@@ -71,6 +78,12 @@ jobs:
           mkdir -p lab-out
           set -o pipefail
           ./deploy/kind/up.sh 2>&1 | tee lab-out/up.log
+
+      - name: Tool settings
+        run: |
+          # Endpoints and a short-lived read-only Kubernetes token. Not in lab-out: that is uploaded.
+          uv run python -m scripts.lab env > .lab.env
+          grep -v TOKEN .lab.env
 
       - name: Wait for span metrics
         run: |
@@ -131,7 +144,8 @@ jobs:
       - name: Acceptance
         run: |
           set -o pipefail
-          uv run python -m scripts.lab accept ${{ inputs.faults }} --report lab-out/report.json | tee lab-out/accept.txt
+          uv run python -m scripts.lab accept ${{ inputs.faults }} --report lab-out/report.json \
+            --probe-dir lab-out/cassettes | tee lab-out/accept.txt
 
       - name: Diagnostics
         if: always()
@@ -152,7 +166,7 @@ jobs:
       - name: Publish results as annotations
         if: always()
         run: |
-          uv run python -m scripts.lab.annotate lab-out/accept.txt:80 lab-out/baseline-slis.txt \
+          uv run python -m scripts.lab.annotate lab-out/accept.txt:150 lab-out/baseline-slis.txt \
             lab-out/docker-stats.txt lab-out/container-memory.txt lab-out/baseline-status.txt lab-out/up.log:40
       - name: Publish cluster state as annotations
         if: always()
@@ -164,6 +178,21 @@ jobs:
         run: |
           uv run python -m scripts.lab.annotate lab-out/sre-blackboard.log:80 lab-out/alertmanager.log:60 \
             lab-out/prometheus.log:40
+
+      - name: Push recordings
+        if: always() && hashFiles('lab-out/cassettes/*.jsonl') != ''
+        run: |
+          branch="lab-recordings/run-${{ github.run_id }}"
+          keep=$(mktemp -d)
+          cp -r lab-out/cassettes lab-out/accept.txt lab-out/report.json "$keep"/ 2>/dev/null || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch --orphan "$branch"
+          cp -r "$keep"/. .
+          git add cassettes accept.txt report.json 2>/dev/null || git add cassettes
+          git commit -q -m "lab recordings from run ${{ github.run_id }} (${{ github.sha }})"
+          git push -q origin "$branch"
+          echo "::notice title=recordings::pushed to $branch"
 
       - uses: actions/upload-artifact@v4
         if: always()

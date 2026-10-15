@@ -74,6 +74,9 @@ endpoints:
   - addresses: ["$host_ip"]
 EOF
 
+log "read-only ServiceAccount for the tools (make lab-env mints its token)"
+"${kctl[@]}" -n "$NS" apply -f "$here/manifests/reader.yaml"
+
 log "Loki"
 sed "s#image: LOKI_IMAGE.*#image: $LOKI_IMAGE#" "$here/manifests/loki.yaml" | "${kctl[@]}" -n "$NS" apply -f -
 
