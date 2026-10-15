@@ -119,14 +119,17 @@ jobs:
           # Lab run 13 had no token: every investigation escalated with "Not logged in".
           if [ -z "$LAB_CLAUDE_TOKEN" ]; then
             echo "[agents] skipped: the CLAUDE_CODE_OAUTH_TOKEN secret is not set" | tee lab-out/agents.txt
+          # The JSON answer is on stdout; the CLI may print warnings on stderr, which the backend
+          # reads only to explain a failure. So the same here.
           elif out=$(echo "Reply with the word ok." | docker compose exec -T worker sh -c 'cd /tmp && claude -p \
                 --model claude-haiku-5-5 --tools "" --strict-mcp-config --setting-sources "" \
-                --output-format json --no-session-persistence' 2>&1) \
+                --output-format json --no-session-persistence' 2>/tmp/claude-check.err) \
                && echo "$out" | jq -e '.is_error == false' > /dev/null; then
             echo "[agents] model reachable: $(echo "$out" | jq -c '{result, total_cost_usd}')" | tee lab-out/agents.txt
             echo "enabled" > lab-out/agents.enabled
           else
-            echo "[agents] skipped: claude -p in the worker failed: $(echo "$out" | head -c 400)" | tee lab-out/agents.txt
+            why=$(cat - /tmp/claude-check.err <<< "$out" | tr '\n' ' ' | head -c 400)
+            echo "[agents] skipped: claude -p in the worker failed: $why" | tee lab-out/agents.txt
           fi
           echo "::notice title=agents::$(cat lab-out/agents.txt)"
 

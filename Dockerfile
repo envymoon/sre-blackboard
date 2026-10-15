@@ -3,7 +3,7 @@
 
 FROM node:22-bookworm-slim AS claude-cli
 # Pinned. The npm package installs a native binary (about 250 MB); only that is kept.
-ARG CLAUDE_CODE_VERSION=2.1.292
+ARG CLAUDE_CODE_VERSION=2.1.300
 RUN npm install -g --no-fund --no-audit "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
  && cp "$(npm root -g)/@anthropic-ai/claude-code/bin/claude.exe" /claude \
  && /claude --version

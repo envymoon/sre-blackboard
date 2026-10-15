@@ -22,7 +22,7 @@ jobs:
     steps:
       - name: Install the Claude Code CLI (the version the worker image pins)
         run: |
-          npm install -g --no-fund --no-audit "@anthropic-ai/claude-code@2.1.292"
+          npm install -g --no-fund --no-audit "@anthropic-ai/claude-code@2.1.300"
           claude --version
 
       - name: One claude -p call
@@ -34,10 +34,12 @@ jobs:
             echo "::error title=model::$msg"; exit 1
           fi
           cd "$(mktemp -d)"
+          # The answer is the JSON on stdout. stderr may carry warnings; it is shown only on failure,
+          # on one line (a workflow annotation ends at the first newline).
           out=$(echo "Reply with the word ok." | claude -p --model claude-haiku-5-5 --tools "" \
-                --strict-mcp-config --setting-sources "" --output-format json --no-session-persistence 2>&1) || true
+                --strict-mcp-config --setting-sources "" --output-format json --no-session-persistence 2>err.txt) || true
           if echo "$out" | jq -e '.is_error == false' > /dev/null 2>&1; then
-            echo "::notice title=model::reachable: $(echo "$out" | jq -c '{result, total_cost_usd}')"
+            echo "::notice title=model::reachable: $(echo "$out" | jq -c '{result, total_cost_usd, models: (.modelUsage | keys)}')"
           else
-            echo "::error title=model::claude -p failed: $(echo "$out" | head -c 400)"; exit 1
+            echo "::error title=model::claude -p failed: $(cat - err.txt <<< "$out" | tr '\n' ' ' | head -c 600)"; exit 1
           fi
