@@ -1,0 +1,227 @@
+"""The investigation end to end on Postgres: alert -> triage -> investigate -> DIAGNOSED.
+
+The model is scripted and the tools replay the lab's payment-failure recording, so this runs
+the real worker, queue, state machine, evidence store, checkpoints and API.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+import signal
+import subprocess
+import sys
+from collections.abc import AsyncIterator
+from typing import Any
+from uuid import UUID
+
+import httpx
+import pytest
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from app.api.app import create_app
+from app.core.config import Settings
+from app.core.security import mint_token
+from app.db import audit
+from app.llm.types import LLMError
+from app.tools.sources import ReplaySource
+from app.worker.handlers import default_handlers
+from app.worker.investigate import AgentServices
+from app.worker.runner import Worker
+from tests.helpers.payment_scripts import payment_cassette, payment_scripts
+from tests.helpers.scripted_llm import ScriptedLLM
+from tests.test_worker import ROOT, fast, wait_for
+
+TENANT = "lab"
+
+
+def auth(settings: Settings, role: str, tenant: str = TENANT) -> dict[str, str]:
+    return {"Authorization": f"Bearer {mint_token(settings, subject=role, tenant_id=tenant, roles=[role])}"}
+
+
+def alert(service: str) -> dict[str, Any]:
+    return {
+        "status": "firing",
+        "labels": {
+            "alertname": "ErrorBudgetBurn",
+            "service_name": service,
+            "environment": "lab",
+            "severity": "critical",
+            "burn": "fast",
+        },
+        "annotations": {"summary": f"{service} is burning its error budget"},
+        "startsAt": "2026-10-15T04:05:00Z",
+    }
+
+
+@pytest.fixture
+async def client(engine: AsyncEngine, settings: Settings) -> AsyncIterator[httpx.AsyncClient]:
+    app = create_app(settings)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c,
+    ):
+        yield c
+
+
+async def fire(client: httpx.AsyncClient, settings: Settings, *services: str) -> dict[str, UUID]:
+    body = {"version": "4", "status": "firing", "receiver": "sre", "alerts": [alert(s) for s in services]}
+    resp = await client.post("/api/v1/alerts", json=body, headers=auth(settings, "ingest"))
+    assert resp.status_code == 202, resp.text
+    incidents = (await client.get("/api/v1/incidents", headers=auth(settings, "viewer"))).json()
+    return {i["service"]: UUID(i["id"]) for i in incidents}
+
+
+async def states(engine: AsyncEngine) -> dict[str, str]:
+    async with engine.connect() as conn:
+        return {r.service: r.state for r in await conn.execute(text("SELECT service, state FROM incidents"))}
+
+
+async def run_until(engine: AsyncEngine, settings: Settings, llm: ScriptedLLM, *, done: set[str]) -> None:
+    services = AgentServices(llm, ReplaySource(payment_cassette()))
+    stop = asyncio.Event()
+    task = asyncio.create_task(Worker(engine, settings, default_handlers(services), worker_id="test").run(stop))
+
+    async def finished() -> bool:
+        return set((await states(engine)).values()) <= done
+
+    try:
+        await wait_for(finished, timeout=30)
+    finally:
+        stop.set()
+        await task
+
+
+async def test_an_alert_ends_in_a_diagnosis_with_openable_evidence(engine, settings, client):
+    ids = await fire(client, settings, "checkout", "payment")
+    llm = ScriptedLLM(payment_scripts())
+    await run_until(engine, fast(settings), llm, done={"DIAGNOSED"})
+    checkout = ids["checkout"]
+
+    dx = (await client.get(f"/api/v1/incidents/{checkout}/diagnosis", headers=auth(settings, "viewer"))).json()
+    assert dx["state"] == "DIAGNOSED"
+    assert dx["diagnosis"]["root_causes"][0]["service"] == "payment"
+    assert {a: r["status"] for a, r in dx["agents"].items()} == dict.fromkeys(
+        ["coordinator", "investigator.metrics", "investigator.logs_traces", "investigator.changes", "synthesizer"],
+        "done",
+    )
+    assert len(dx["findings"]) == 4
+    # One investigation: coordinator 1, three investigators 2 steps each, synthesizer 1.
+    assert dx["usage"]["calls"] == 8 and dx["usage"]["errors"] == 0 and dx["usage"]["tokens"] == 8000
+    assert all(r["prompt_version"].startswith(name) for name, r in dx["agents"].items())
+
+    # Every cited evidence id opens, belongs to this incident, and its hash checks out.
+    for ev in {e for rc in dx["diagnosis"]["root_causes"] for e in rc["evidence_ids"]}:
+        row = (await client.get(f"/api/v1/evidence/{ev}", headers=auth(settings, "viewer"))).json()
+        assert row["incident_id"] == str(checkout) and row["source"] == "replay" and row["result"] is not None
+        # ... and is invisible to another tenant.
+        other = await client.get(f"/api/v1/evidence/{ev}", headers=auth(settings, "viewer", tenant="other"))
+        assert other.status_code == 404
+
+    report = await client.get(f"/api/v1/incidents/{checkout}/report", headers=auth(settings, "viewer"))
+    assert report.headers["content-type"].startswith("text/markdown")
+    assert "# ErrorBudgetBurn on checkout" in report.text and "| 1 | payment |" in report.text
+
+    # The coordinator was told about the payment incident opened alongside.
+    coordinator_task = next(
+        r for r in llm.requests if r.agent == "coordinator" and "on service checkout" in r.turns[0]["text"]
+    )
+    assert "ErrorBudgetBurn on payment (P1)" in coordinator_task.turns[0]["text"]
+
+    async with engine.connect() as conn:
+        moves = [
+            (r.payload["from"], r.payload["to"])
+            for r in await conn.execute(
+                text("SELECT payload FROM audit_log WHERE event = 'incident.transition' AND subject = :s ORDER BY seq"),
+                {"s": str(checkout)},
+            )
+        ]
+        assert moves == [("RECEIVED", "TRIAGED"), ("TRIAGED", "INVESTIGATING"), ("INVESTIGATING", "DIAGNOSED")]
+        assert (await audit.verify(conn)).ok
+
+
+async def test_diagnosis_of_another_tenants_incident_is_not_found(engine, settings, client):
+    ids = await fire(client, settings, "checkout")
+    resp = await client.get(
+        f"/api/v1/incidents/{ids['checkout']}/diagnosis", headers=auth(settings, "viewer", tenant="other")
+    )
+    assert resp.status_code == 404
+
+
+async def test_an_exhausted_budget_escalates(engine, settings, client):
+    await fire(client, settings, "checkout")
+    await run_until(
+        engine, fast(settings, llm_incident_token_budget=2500), ScriptedLLM(payment_scripts()), done={"ESCALATED"}
+    )
+    async with engine.connect() as conn:
+        reason = await conn.scalar(text("SELECT payload->>'reason' FROM audit_log WHERE payload->>'to' = 'ESCALATED'"))
+    assert reason.startswith("token budget exhausted")
+
+
+async def test_a_model_that_stays_down_escalates_after_the_last_attempt(engine, settings, client):
+    await fire(client, settings, "checkout")
+    llm = ScriptedLLM(payment_scripts())
+    llm.fail["coordinator"] = LLMError("overloaded", "529", retryable=True)
+    await run_until(engine, fast(settings, queue_max_attempts=2), llm, done={"ESCALATED"})
+    assert llm.calls("coordinator") == 2  # one per job attempt; the job retried once
+
+
+def start_agent_worker(settings: Settings, **env: str) -> subprocess.Popen[bytes]:
+    return subprocess.Popen(
+        [sys.executable, "-m", "tests.helpers.agent_worker"],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "PYTHONPATH": str(ROOT),
+            "SRE_DATABASE_URL": settings.database_url,
+            "SRE_WORKER_POLL_INTERVAL_S": "0.05",
+            "SRE_QUEUE_LEASE_TTL_S": "1",
+            **env,
+        },
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+
+
+async def llm_calls_by_agent(engine: AsyncEngine) -> dict[str, int]:
+    async with engine.connect() as conn:
+        rows = await conn.execute(text("SELECT agent, count(*) AS n FROM llm_calls GROUP BY agent"))
+        return {r.agent: r.n for r in rows}
+
+
+async def test_a_worker_killed_mid_investigation_is_taken_over_without_asking_finished_agents_again(
+    engine, settings, client
+):
+    """M4 acceptance: kill the worker while the synthesizer runs; another worker finishes the
+    incident, and no finished agent is asked again."""
+    await fire(client, settings, "checkout")
+    proc = start_agent_worker(settings, AGENT_WORKER_HANG="synthesizer")
+    try:
+
+        async def synthesizer_running() -> bool:
+            async with engine.connect() as conn:
+                return bool(await conn.scalar(text("SELECT count(*) FROM agent_runs WHERE agent = 'synthesizer'")))
+
+        await wait_for(synthesizer_running, timeout=30)
+        proc.send_signal(signal.SIGKILL)
+        proc.wait(timeout=5)
+    finally:
+        proc.kill()
+    assert (await states(engine)) == {"checkout": "INVESTIGATING"}
+    before = await llm_calls_by_agent(engine)
+    assert before == {
+        "coordinator": 1,
+        "investigator.metrics": 2,
+        "investigator.logs_traces": 2,
+        "investigator.changes": 2,
+    }
+
+    llm = ScriptedLLM(payment_scripts())
+    await run_until(engine, fast(settings), llm, done={"DIAGNOSED"})
+    assert {r.agent for r in llm.requests} == {"synthesizer"}
+    assert await llm_calls_by_agent(engine) == {**before, "synthesizer": 1}
+    async with engine.connect() as conn:
+        findings = await conn.scalar(text("SELECT count(*) FROM blackboard WHERE kind = 'finding'"))
+        attempts = await conn.scalar(text("SELECT attempts FROM jobs WHERE kind = 'investigate'"))
+    assert findings == 4 and attempts == 2

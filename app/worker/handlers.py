@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from app.db import incidents
+from app.queue import jobs
 
+from .investigate import AgentServices, make_investigate
 from .runner import Handler, JobContext, PermanentJobError
 
 
 async def triage(ctx: JobContext) -> None:
-    """RECEIVED -> TRIAGED. Investigation (M4) will be enqueued from here."""
+    """RECEIVED -> TRIAGED, and queue the investigation (same transaction, so never one without the other)."""
     if ctx.job.incident_id is None:
         raise PermanentJobError("triage job without incident_id")
     async with ctx.transaction() as conn:
@@ -26,7 +28,17 @@ async def triage(ctx: JobContext) -> None:
             actor=f"worker:{ctx.worker_id}",
             reason="accepted for investigation",
         )
+        await jobs.enqueue(
+            conn,
+            tenant_id=incident["tenant_id"],
+            incident_id=incident["id"],
+            kind="investigate",
+            priority=incident["priority"],
+            max_attempts=ctx.settings.queue_max_attempts,
+            aging_step_s=ctx.settings.queue_aging_step_s,
+            idempotency_key=f"{incident['id']}:investigate",
+        )
 
 
-def default_handlers() -> dict[str, Handler]:
-    return {"triage": triage}
+def default_handlers(services: AgentServices) -> dict[str, Handler]:
+    return {"triage": triage, "investigate": make_investigate(services)}
