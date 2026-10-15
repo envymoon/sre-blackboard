@@ -1,5 +1,5 @@
 .PHONY: install fmt lint typecheck test check db migrate run worker up down token loadtest \
-	env-up env-down faults fault recover lab-status lab-probe lab-accept lab-env rules-test
+	llm-smoke llm-probe env-up env-down faults fault recover lab-status lab-probe lab-accept lab-env rules-test
 
 install:  ## Install runtime + dev dependencies and git hooks
 	uv sync
@@ -44,6 +44,12 @@ token:  ## Print a token, e.g. make token ROLES=ingest TENANT=t1
 
 loadtest:  ## 1000 duplicate alerts against a running stack (see scripts/loadtest.py)
 	uv run python -m scripts.loadtest
+
+llm-smoke:  ## One real agent step through claude -p (needs a logged-in Claude Code); prints usage
+	uv run python -m scripts.llm_probe
+
+llm-probe:  ## Everything the M4 probe checks: final answers, tool isolation, error shapes
+	uv run python -m scripts.llm_probe --all
 
 # --- Fault lab (M2): kind + OpenTelemetry Demo; see deploy/kind/ and docs/learn/m2-fault-lab.md ---
 PROMTOOL_IMAGE ?= prom/prometheus:v3.14.0
