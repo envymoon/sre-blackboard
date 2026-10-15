@@ -112,9 +112,20 @@ jobs:
             echo "# Kubernetes API with the reader token"
             docker compose exec -T worker python -m app.tools call rollout_history '{"deployment": "checkout"}' | head -c 600
           } 2>&1 | tee lab-out/worker-check.txt
+          # Can the workers reach the model? One tiny claude -p call, as the backend makes it.
+          # Lab run 13 had no token: every investigation escalated with "Not logged in".
           if [ -z "$LAB_CLAUDE_TOKEN" ]; then
-            echo "::warning title=agents::CLAUDE_CODE_OAUTH_TOKEN is not set; the acceptance run skips the agents"
+            echo "[agents] skipped: the CLAUDE_CODE_OAUTH_TOKEN secret is not set" | tee lab-out/agents.txt
+          elif out=$(echo "Reply with the word ok." | docker compose exec -T worker sh -c 'cd /tmp && claude -p \
+                --model claude-haiku-5-5 --tools "" --strict-mcp-config --setting-sources "" \
+                --output-format json --no-session-persistence' 2>&1) \
+               && echo "$out" | jq -e '.is_error == false' > /dev/null; then
+            echo "[agents] model reachable: $(echo "$out" | jq -c '{result, total_cost_usd}')" | tee lab-out/agents.txt
+            echo "enabled" > lab-out/agents.enabled
+          else
+            echo "[agents] skipped: claude -p in the worker failed: $(echo "$out" | head -c 400)" | tee lab-out/agents.txt
           fi
+          echo "::notice title=agents::$(cat lab-out/agents.txt)"
 
       - name: Wait for span metrics
         run: |
@@ -176,9 +187,9 @@ jobs:
         run: |
           set -o pipefail
           agents=()
-          if [ -n "$LAB_CLAUDE_TOKEN" ]; then agents=(--diagnose --record-agents lab-out/agent); fi
-          uv run python -m scripts.lab accept ${{ inputs.faults }} --report lab-out/report.json \
-            --probe-dir lab-out/cassettes "${agents[@]}" | tee lab-out/accept.txt
+          if [ -f lab-out/agents.enabled ]; then agents=(--diagnose --record-agents lab-out/agent); fi
+          { cat lab-out/agents.txt; uv run python -m scripts.lab accept ${{ inputs.faults }} --report lab-out/report.json \
+            --probe-dir lab-out/cassettes "${agents[@]}"; } | tee lab-out/accept.txt
 
       - name: Diagnostics
         if: always()
