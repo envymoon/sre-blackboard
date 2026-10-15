@@ -16,7 +16,7 @@
 | 权限 | Kubernetes 用只读 ServiceAccount，只能读 Demo 命名空间；Chaos Mesh 的对象一律看不到 |
 | 验收 | 实验环境每个故障进行中，调用工具并检查结果；录音推到 git 分支，再导入成契约测试 |
 
-结论：3 个故障共 16 次工具调用，后端返回约 4.8 MB，模型看到的摘要约 25 KB，平均压缩约 190 倍。链路查询一次就有 0.5–1.9 MB，压到 2–3 KB。
+结论：3 个故障共 16 次工具调用，后端返回约 4.9 MB，模型看到的摘要约 21 KB，整体压缩约 230 倍。链路查询一次就有 0.5–2.0 MB，压到 2–3 KB。
 
 ## 2. 背景知识
 
@@ -105,10 +105,11 @@ M4 会在同样的思路上录 LLM：键是 transcript 的哈希，值是模型�
 | 坏版本发布时 checkout 查不到错误日志 | checkout 连不上 payment 时自己不打日志，错误作为 gRPC 状态返回给调用方；失败出现在 frontend 的日志里 | 检查改成查 frontend；Agent 的提示词里也要写明"错误日志可能在调用方" |
 | `level="warn"` 漏掉了 error | 参数说明写的是"这个级别或更严重"，实现只匹配了 warn | 修正，并加回归测试 |
 | payment 拒绝支付打的是 warn | Demo 的 payment 服务把"Invalid token"记为警告 | 支付失败的检查按 warn 过滤，正好在真实数据上验证了级别过滤 |
+| 日志模板里同一句话出现两次 | 摘要把"日志行 + 异常信息"拼成模板，而 payment 的日志行本身就是异常信息 | 异常信息已经包含在行里就不再拼接；第 11 次运行的录音暴露了它 |
 | 日志模板把单词也替换了 | 商品 ID 的正则 `[A-Z0-9]{10}` 会匹配 "CONNECTION" | 要求至少包含一个数字 |
 | 证据 ID 随机 | 回放时 transcript 变了；重试产生重复证据 | 由内容派生，`ON CONFLICT DO NOTHING` |
 | Chaos Mesh 事件泄露答案 | 它们和普通事件在同一个 API 里 | 取数时过滤，RBAC 不给权限，测试检查真实录音 |
-| 网络延迟时"最慢的 span"在 frontend-proxy | 代理等满 15 秒超时、返回 504；它下面 frontend 的服务端 span 不在取回的链路里（请求还在跑，或者没导出），子 span 缺失时，父 span 的全部时长都被算成自身耗时 | `trace_get` 的摘要加了 `orphan_spans`（父 span 不在链路里的 span 数），工具说明里告诉模型它意味着什么；检查改成"product-catalog 的 span 在列表里且自身耗时 ≥ 500 ms"（实测 5.8 秒），不要求排第一 |
+| 网络延迟时"最慢的 span"在 frontend-proxy | 代理等满 15 秒超时、返回 504；它下面 frontend 的服务端 span 不在取回的链路里（请求还在跑，或者没导出），子 span 缺失时，父 span 的全部时长都被算成自身耗时 | `trace_get` 的摘要加了 `orphan_spans`（父 span 不在链路里的 span 数），工具说明里告诉模型它意味着什么；检查改成"product-catalog 的 span 在列表里且自身耗时 ≥ 500 ms"（第 9 次 5.8 秒），不要求排第一；第 11 次运行它正好排第一（5.4 秒） |
 | 录音 4.8 MB | 链路查询的原始结果很大 | gzip（mtime=0）后约 390 KB，提交进 `tests/fixtures/lab` |
 | 云端开发容器读不到 Actions 的产物 | 产物要走需要登录的下载，代理不放行 | 工作流把录音推到 `lab-recordings/run-<id>` 分支，容器里 `git fetch` |
 | HTTP 层录制难匹配 | 每个请求都带当前时间 | 在工具层录，参数里只有相对窗口 |
@@ -117,7 +118,28 @@ M4 会在同样的思路上录 LLM：键是 transcript 的哈希，值是模型�
 
 计划的验收标准："对一次真实故障，手动调用工具能拿到正确的数据；replay 模式下，同样的调用返回逐字节相同的结果"。做法是把它写进实验环境的验收：每个故障告警稳定后、恢复之前，按固定的顺序调用工具并检查结果，任何一项不通过，这个故障就算失败。
 
-RUN10_RESULTS
+2026-10-15，第 11 次运行（GitHub Actions 运行机 `ubuntu-24.04`，4 核 16 GB），从零建环境，基线 10 分钟无告警。每个故障的检查和现场结果：
+
+| 故障 | 检查 | 工具 | 现场看到的 |
+|---|---|---|---|
+| payment-failure | error_ratio | `prom_query` | payment 错误比例 0.371（> 0.1） |
+| | error_trend | `prom_range` | payment 从 0.062 升到 0.371，峰值 03:11:50 |
+| | flags | `flag_state` | 开着的只有 `paymentFailure` |
+| | error_traces | `traces_search` | 20/20 条链路出错；payment `charge`："Payment request failed. Invalid token." |
+| | logs | `logs_search`（warn） | 26 行，全是 "Payment request failed. Invalid token." |
+| network-delay | p95 | `prom_query` | product-catalog p95 9225 ms（> 1000） |
+| | slow_traces | `traces_search`（≥ 900 ms） | 20 条，p95 15.6 秒 |
+| | slow_trace | `trace_get` | 自身耗时最长的是 product-catalog `GetProduct`，5.4 秒 |
+| | events | `k8s_events` | 没有 Chaos Mesh 的对象 |
+| | flags | `flag_state` | 没有开着的 flag |
+| bad-release | error_ratio | `prom_query` | checkout 错误比例 0.690 |
+| | history | `rollout_history` | 当前版本 2："checkout config release: payment client moved to port 9999" |
+| | diff | `deploy_diff` | 1 处变化：`env.PAYMENT_ADDR` payment:8080 → payment:9999 |
+| | events | `k8s_events` | `ScalingReplicaSet`、`SuccessfulCreate`、`Killing` 等一次 rollout 的完整事件 |
+| | error_traces | `traces_search` | checkout `PlaceOrder`："dial tcp …:9999: i/o timeout" |
+| | error_logs | `logs_search`（frontend，warn） | 50 行 "Checkout failed to place order … dial tcp …:9999" |
+
+16 项全部通过；告警部分与 M2 一致（首个告警 131–208 秒，恢复后 290–331 秒解除）。第 9 次运行是 16/17，唯一失败的就是"去 checkout 找错误日志"，见第 3 节。整个任务 53 分钟，工具检查本身每个故障只要几秒。
 
 **回放的验证**分两层：
 
@@ -128,13 +150,13 @@ RUN10_RESULTS
 
 | 调用 | 原始结果 | 模型看到 | 倍数 |
 |---|---|---|---|
-| `traces_search`（支付失败，出错链路） | 1.8 MB | 3.3 KB | 545 |
-| `traces_search`（坏版本发布，出错链路） | 1.9 MB | 3.3 KB | 570 |
-| `traces_search`（网络延迟，慢链路） | 555 KB | 1.6 KB | 339 |
-| `logs_search`（payment，200 行） | 369 KB | 1.7 KB | 222 |
-| `trace_get`（一条慢链路） | 143 KB | 2.0 KB | 70 |
+| `traces_search`（支付失败，出错链路） | 2.0 MB | 3.3 KB | 602 |
+| `traces_search`（坏版本发布，出错链路） | 1.9 MB | 3.3 KB | 591 |
+| `traces_search`（网络延迟，慢链路） | 550 KB | 1.6 KB | 337 |
+| `logs_search`（frontend，50 行） | 169 KB | 1.4 KB | 120 |
+| `trace_get`（一条慢链路） | 96 KB | 1.8 KB | 53 |
 | `deploy_diff` | 11 KB | 0.5 KB | 25 |
-| `prom_query` | 0.6–1.8 KB | 0.7–1.3 KB | ≈1 |
+| `prom_query` | 0.5–1.8 KB | 0.6–1.3 KB | ≈1 |
 
 小结果几乎不压缩，因为证据 ID 和字段名本身就有开销；省下来的全在链路和日志上，而这恰恰是诊断最常用的两类数据。
 

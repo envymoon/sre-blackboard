@@ -1,20 +1,23 @@
 {
-  "run": "38666985589",
+  "run": "38672622429",
+  "notes": [
+    "payment-failure/logs: detail updated after the lab run, when log templates stopped repeating an exception message that is already the line. The evidence id is still the live one."
+  ],
   "faults": {
     "payment-failure": [
       {
         "name": "error_ratio",
         "tool": "prom_query",
         "ok": true,
-        "detail": "payment=0.4613 (want > 0.1)",
-        "evidence_id": "ev_b10b7bccbf3c81b0"
+        "detail": "payment=0.371 (want > 0.1)",
+        "evidence_id": "ev_d2d87f7cdba7773f"
       },
       {
         "name": "error_trend",
         "tool": "prom_range",
         "ok": true,
-        "detail": "payment: first=0.08615 max=0.4613 peak_at=2026-10-15T02:06:51Z",
-        "evidence_id": "ev_7aff8e9e0d0cdc73"
+        "detail": "payment: first=0.06177 max=0.371 peak_at=2026-10-15T03:11:50Z",
+        "evidence_id": "ev_7e8812248bdb86d5"
       },
       {
         "name": "flags",
@@ -28,14 +31,14 @@
         "tool": "traces_search",
         "ok": true,
         "detail": "20/20 traces with errors; payment: charge: Payment request failed. Invalid token. demo.user_context.loyalty_level=gold",
-        "evidence_id": "ev_81fb7efcc743bf35"
+        "evidence_id": "ev_a8f4a9b18b090837"
       },
       {
         "name": "logs",
         "tool": "logs_search",
         "ok": true,
-        "detail": "200 lines, top: Charge request received.",
-        "evidence_id": "ev_55db3ec78d305a38"
+        "detail": "26 lines, match: Payment request failed. Invalid token. demo.user_context.loyalty_level=gold, top: Payment request failed. Invalid token. demo.user_context.loyalty_level=gold",
+        "evidence_id": "ev_ae2127f95a5e23b2"
       }
     ],
     "network-delay": [
@@ -43,29 +46,29 @@
         "name": "p95",
         "tool": "prom_query",
         "ok": true,
-        "detail": "product-catalog=9213.0 (want > 1000)",
-        "evidence_id": "ev_a2ab99cb3bcb6897"
+        "detail": "product-catalog=9225.0 (want > 1000)",
+        "evidence_id": "ev_2cc7329efa4a8c08"
       },
       {
         "name": "slow_traces",
         "tool": "traces_search",
         "ok": true,
-        "detail": "20 traces, p95=11729.0ms",
-        "evidence_id": "ev_3faf703ef05ef6a3"
+        "detail": "20 traces, p95=15635.0ms",
+        "evidence_id": "ev_fb2850bf713908f7"
       },
       {
         "name": "slow_trace",
         "tool": "trace_get",
         "ok": true,
-        "detail": "slowest: frontend-proxy router frontend egress self=15000.0ms",
-        "evidence_id": "ev_dff09655a1f63ffb"
+        "detail": "product-catalog self=5438.0ms; slowest: product-catalog oteldemo.ProductCatalogService/GetProduct self=5438.0ms",
+        "evidence_id": "ev_30e864aafc1114b6"
       },
       {
         "name": "events",
         "tool": "k8s_events",
         "ok": true,
-        "detail": "5 events, by reason {'Created': 1, 'Started': 1, 'Pulled': 1}; chaos objects: []",
-        "evidence_id": "ev_11b99b5b4c504460"
+        "detail": "0 events, by reason {}; chaos objects: []",
+        "evidence_id": "ev_c9a686289ca20564"
       },
       {
         "name": "flags",
@@ -80,43 +83,43 @@
         "name": "error_ratio",
         "tool": "prom_query",
         "ok": true,
-        "detail": "checkout=0.6122 (want > 0.1)",
-        "evidence_id": "ev_e94b0b196092d9e1"
+        "detail": "checkout=0.6897 (want > 0.1)",
+        "evidence_id": "ev_96e3442cb1c347e3"
       },
       {
         "name": "history",
         "tool": "rollout_history",
         "ok": true,
         "detail": "revision 2: 'checkout config release: payment client moved to port 9999'",
-        "evidence_id": "ev_0be5a5aa256ec132"
+        "evidence_id": "ev_0bfc7beda3a75a1b"
       },
       {
         "name": "diff",
         "tool": "deploy_diff",
         "ok": true,
         "detail": "1 changes; {'path': 'containers.checkout.env.PAYMENT_ADDR', 'from': 'payment:8080', 'to': 'payment:9999'}",
-        "evidence_id": "ev_186ba0b1946c200d"
+        "evidence_id": "ev_46a1833fa0a35713"
       },
       {
         "name": "events",
         "tool": "k8s_events",
         "ok": true,
         "detail": "by reason: {'Scheduled': 1, 'Pulling': 1, 'Pulled': 1, 'Created': 1, 'Started': 1, 'SuccessfulCreate': 1, 'Killing': 1, 'SuccessfulDelete': 1, 'ScalingReplicaSet': 1}",
-        "evidence_id": "ev_8959398cf7a921af"
+        "evidence_id": "ev_b51787398010c855"
       },
       {
         "name": "error_traces",
         "tool": "traces_search",
         "ok": true,
-        "detail": "20/20 traces with errors; checkout: oteldemo.CheckoutService/PlaceOrder: failed to charge card: could not charge the card: rpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing: dial tcp 10.96.83.243:9999: i/o timeout\"",
-        "evidence_id": "ev_767333ef6ccbdfb6"
+        "detail": "20/20 traces with errors; checkout: oteldemo.CheckoutService/PlaceOrder: failed to charge card: could not charge the card: rpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing: dial tcp 10.96.201.161:9999: i/o timeout\"",
+        "evidence_id": "ev_dcdaedb7fd625f1d"
       },
       {
         "name": "error_logs",
         "tool": "logs_search",
-        "ok": false,
-        "detail": "0 lines, match: None, top: None",
-        "evidence_id": "ev_e455a63b43e43c2f"
+        "ok": true,
+        "detail": "50 lines, match: Checkout failed to place order <n> INTERNAL: failed to charge card: could not charge the card: rpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing: dial tcp …, top: Checkout failed to place order <n> INTERNAL: failed to charge card: could not charge the card: rpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing: dial tcp …",
+        "evidence_id": "ev_4a20025a13ecac1c"
       }
     ]
   }

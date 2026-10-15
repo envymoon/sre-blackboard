@@ -5,7 +5,8 @@
 without a cluster, must reproduce the live results exactly: the same check details and the
 same evidence IDs. An evidence ID hashes the raw result, so equal IDs mean equal data.
 
-When the probes or a summary change on purpose, these fail until a new lab run is imported.
+When the probes or a summary change on purpose, these fail until a new lab run is imported, or
+the changed detail is edited in expected.json with a note saying why (evidence IDs stay the live ones).
 """
 
 from __future__ import annotations

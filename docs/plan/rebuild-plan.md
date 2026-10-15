@@ -334,7 +334,7 @@ claude -p \
 - [x] 工具实现：`prom_query` / `prom_range`、`logs_search`（Loki LogQL）、`traces_search` / `trace_get`（Jaeger HTTP API）、`k8s_events`、`rollout_history`、`deploy_diff`、`flag_state`。
   - 补充：Kubernetes 走 API server + 只读 ServiceAccount 的 token（`deploy/kind/manifests/reader.yaml`），不用 kubectl。Chaos Mesh 的事件在取数时过滤掉，否则 Agent 直接读到答案（ADR-0005 第 12 条）。
 - [x] 结果压缩：原始结果入库保存，交给 LLM 的是摘要（统计、Top-N、异常点），附带 `evidence_id`。这是原设计中"原始日志不进 prompt"的真正落地。
-  - 补充：实测 3 个故障的 16 次调用，后端返回 4.8 MB，模型看到约 25 KB；链路查询压缩 340–570 倍。证据 ID 由内容派生，回放时 transcript 逐字节不变。
+  - 补充：实测 3 个故障的 16 次调用，后端返回约 4.9 MB，模型看到约 21 KB；链路查询压缩 340–600 倍。证据 ID 由内容派生，回放时 transcript 逐字节不变。
 - [x] 弹性：超时、有限重试、简单熔断；工具失败时返回结构化错误，让 Agent 能够理解并换一种查法。
 - [x] 录制/回放：live 模式下把每次工具调用的 `(tool, args) → result` 录成 cassette；replay 模式下从 cassette 读取。这让 CI 和云端开发环境都能在没有集群的情况下确定性地运行。
   - 补充：录制在 GitHub Actions 的实验环境里做，推到 `lab-recordings/run-<id>` 分支；选定的一次运行导入 `tests/fixtures/lab`，契约测试回放它，必须得到和现场完全相同的检查结果和证据 ID。
@@ -568,7 +568,7 @@ claude -p \
 | M0 | 已完成 | 2026-10-10 | PR #2，标签 `v0.1.0` |
 | M1 | 已完成 | 2026-10-12 | PR #3，2026-10-14 合并；compose 全栈验收在 CI 的 `e2e` job 里 |
 | M2 | 已完成 | 2026-10-14 | PR #4，2026-10-15 合并；实验环境在 GitHub Actions 上运行（ADR-0004），3 个代表性故障验收通过，基线 10 分钟无告警 |
-| M3 | 已完成 | 2026-10-15 | 分支 `milestone/m3-tools`；9 个只读工具 + 证据库 + 录制回放（ADR-0005）；实验环境里 3 个故障的工具检查全部通过，录音进契约测试 |
+| M3 | 已完成 | 2026-10-15 | 分支 `milestone/m3-tools`；9 个只读工具 + 证据库 + 录制回放（ADR-0005）；第 11 次实验环境运行中 3 个故障的 16 项工具检查全部通过，录音进契约测试 |
 | M4 | 未开始 | | |
 | M5 | 未开始 | | |
 | M6 | 未开始 | | |

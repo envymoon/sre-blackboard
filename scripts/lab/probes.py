@@ -213,8 +213,8 @@ PROBES: dict[str, list[Probe]] = {
             {"service": "checkout", "errors_only": True, "minutes": 10},
             error_spans_in("checkout"),
         ),
-        # Checkout does not log the failed charge (run 9: no warn/error lines); it surfaces in the
-        # frontend's "API request failed" lines, with the gRPC error in structured metadata.
+        # Checkout does not log the failed charge (run 9: no warn/error lines); the frontend does
+        # ("Checkout failed to place order ... dial tcp ...:9999", run 11).
         Probe(
             "error_logs",
             "logs_search",

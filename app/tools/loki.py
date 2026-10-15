@@ -98,7 +98,8 @@ def summarize(raw: dict[str, Any], args: LogsSearchArgs) -> dict[str, Any]:
         level = _level(meta, labels)
         levels[level] += 1
         detail = meta.get("exception_message") or meta.get("exception.message") or ""
-        key = template(f"{line} {detail}".strip())
+        # Some services log the exception message as the line itself (payment does): don't repeat it.
+        key = template(line if detail in line else f"{line} {detail}")
         g = groups.get(key)
         if g is None:
             useful = {k: clip(v, 200) for k, v in sorted(meta.items()) if _USEFUL.search(k)}
