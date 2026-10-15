@@ -430,7 +430,7 @@ def test_probes_check_live_answers_and_record_a_replayable_cassette(tmp_path: Pa
     assert not release["error_traces"].ok
     assert all(p.ok for name, p in release.items() if name != "error_traces"), [p.detail for p in release.values()]
 
-    cassette = Cassette.load(tmp_path / "payment-failure.jsonl")
+    cassette = Cassette.load(tmp_path / "payment-failure.jsonl.gz")
     assert cassette.meta["root_cause"] == "payment"
     assert [e["tool"] for e in cassette.entries] == [
         "prom_query",

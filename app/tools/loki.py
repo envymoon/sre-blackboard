@@ -23,10 +23,9 @@ TOP = 10
 CATEGORIZE = {"X-Loki-Response-Encoding-Flags": "categorize-labels"}
 # Metadata worth showing next to an example line.
 _USEFUL = re.compile(r"exception|error|status|code|url|path|rpc|http_|db_|peer|server_address", re.I)
-_LEVELS = {
-    "error": "error|fatal|critical|crit|emergency|alert",
-    "warn": "warn|warning",
-}
+_ERROR = "error|fatal|critical|crit|emergency|alert"
+# "At this level or worse": warn includes the error levels.
+_LEVELS = {"error": _ERROR, "warn": f"warn|warning|{_ERROR}"}
 _RE2_SPECIAL = re.compile(r"([\\.+*?()|\[\]{}^$])")
 
 

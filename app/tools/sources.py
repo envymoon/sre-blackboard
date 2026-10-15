@@ -5,14 +5,16 @@ errors that may go away, and a circuit breaker per backend so a dead Loki costs 
 error instead of a timeout on every call.
 
 A cassette is a JSON-lines file of ``(tool, args) -> raw result or error``, keyed on the
-validated arguments. Replaying it returns the same raw data, so the summary and its hash
-come out byte for byte the same; this is what lets CI and the cloud dev container run the
+validated arguments, optionally gzipped (``.jsonl.gz``: traces make them a few MB raw).
+Replaying it returns the same raw data, so the summary and its hash come out byte for byte
+the same; this is what lets CI and the cloud dev container run the
 agent without a cluster.
 """
 
 from __future__ import annotations
 
 import asyncio
+import gzip
 import json
 import random
 import time
@@ -119,7 +121,9 @@ class Cassette:
 
     @classmethod
     def load(cls, path: Path) -> Cassette:
-        lines = [line for line in path.read_text().splitlines() if line.strip()]
+        data = path.read_bytes()
+        text = (gzip.decompress(data) if path.suffix == ".gz" else data).decode()
+        lines = [line for line in text.splitlines() if line.strip()]
         header = json.loads(lines[0])
         if header.get("cassette") != 1:
             raise ValueError(f"{path}: not a version 1 cassette")
@@ -129,7 +133,9 @@ class Cassette:
         path.parent.mkdir(parents=True, exist_ok=True)
         lines = [canonical_json({"cassette": 1, "meta": self.meta})]
         lines += [canonical_json(e) for e in self.entries]
-        path.write_text("\n".join(lines) + "\n")
+        data = ("\n".join(lines) + "\n").encode()
+        # mtime=0 so the same recording always gives the same bytes.
+        path.write_bytes(gzip.compress(data, mtime=0) if path.suffix == ".gz" else data)
 
 
 @dataclass

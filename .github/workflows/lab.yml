@@ -180,7 +180,7 @@ jobs:
             lab-out/prometheus.log:40
 
       - name: Push recordings
-        if: always() && hashFiles('lab-out/cassettes/*.jsonl') != ''
+        if: always() && hashFiles('lab-out/cassettes/*.jsonl.gz') != ''
         run: |
           branch="lab-recordings/run-${{ github.run_id }}"
           keep=$(mktemp -d)

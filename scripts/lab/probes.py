@@ -127,7 +127,8 @@ def self_time_in(service: str, min_ms: float) -> Check:
         top = s.get("slowest_spans", [{}])[0]
         mine = [r for r in s.get("slowest_spans", []) if r["service"] == service]
         ok = bool(mine) and (mine[0]["self_ms"] or 0) >= min_ms
-        return ok, f"slowest: {top.get('service')} {top.get('operation')} self={top.get('self_ms')}ms"
+        best = f"{service} self={mine[0]['self_ms']}ms" if mine else f"no {service} span"
+        return ok, f"{best}; slowest: {top.get('service')} {top.get('operation')} self={top.get('self_ms')}ms"
 
     return check
 
@@ -181,7 +182,13 @@ PROBES: dict[str, list[Probe]] = {
             {"service": "payment", "errors_only": True, "minutes": 10},
             error_spans_in("payment"),
         ),
-        Probe("logs", "logs_search", {"service": "payment", "minutes": 10}, has_lines()),
+        # The demo's payment service logs a rejected charge at warn, with the reason in the line.
+        Probe(
+            "logs",
+            "logs_search",
+            {"service": "payment", "level": "warn", "minutes": 10},
+            has_lines(r"invalid token"),
+        ),
     ],
     "network-delay": [
         Probe("p95", "prom_query", {"query": P95}, above("product-catalog", 1000)),
@@ -206,10 +213,12 @@ PROBES: dict[str, list[Probe]] = {
             {"service": "checkout", "errors_only": True, "minutes": 10},
             error_spans_in("checkout"),
         ),
+        # Checkout does not log the failed charge (run 9: no warn/error lines); it surfaces in the
+        # frontend's "API request failed" lines, with the gRPC error in structured metadata.
         Probe(
             "error_logs",
             "logs_search",
-            {"service": "checkout", "level": "error", "minutes": 10},
+            {"service": "frontend", "level": "warn", "minutes": 10},
             has_lines(r"9999|refused|unavailable"),
         ),
     ],
@@ -257,5 +266,5 @@ class ProbeRunner:
                 results.append(ProbeResult(probe.name, probe.tool, outcome.args, ok, detail, outcome.evidence_id))
         finally:
             await clients.aclose()
-            cassette.dump(self.out_dir / f"{fault.name}.jsonl")
+            cassette.dump(self.out_dir / f"{fault.name}.jsonl.gz")
         return results

@@ -41,8 +41,14 @@ def prom_matrix(series: list[tuple[dict[str, str], list[str]]], step: int = 15) 
     return {"status": "success", "data": {"resultType": "matrix", "result": result}}
 
 
-def loki_streams() -> dict[str, Any]:
+def loki_streams(service: str = "frontend") -> dict[str, Any]:
     ns = NOW * 10**9
+    if service == "payment":  # as in the lab: the reason is in the line, logged at warn
+        line = "Payment request failed. Invalid token. demo.user_context.loyalty_level=gold"
+        meta = {"structuredMetadata": {"detected_level": "warn", "exception_message": line}}
+        values = [[str(ns - i * 10**9), line, meta] for i in range(1, 3)]
+        stream = {"stream": {"service_name": "payment"}, "values": values}
+        return {"status": "success", "data": {"resultType": "streams", "result": [stream]}}
     failed = {
         "structuredMetadata": {
             "detected_level": "error",
@@ -247,7 +253,7 @@ class FakeBackends:
             values = ["0"] * 20 + ["0.5"] * 10 + ["0.1"] * 10
             return _json(prom_matrix([({"service_name": "payment"}, values), ({"service_name": "cart"}, ["0"] * 40)]))
         if host == "loki.test" and path == "/loki/api/v1/query_range":
-            return _json(loki_streams())
+            return _json(loki_streams("payment" if 'service_name="payment"' in q["query"] else "frontend"))
         if host == "jaeger.test" and path == "/jaeger/ui/api/traces":
             return _json({"data": [jaeger_trace(), jaeger_trace("0af7651916cd43dd8448eb211c80319c", error=False)]})
         if host == "jaeger.test" and path.startswith("/jaeger/ui/api/traces/"):

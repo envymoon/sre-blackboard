@@ -96,6 +96,8 @@ def test_logql_escapes_text_and_rejects_injection() -> None:
         LogsSearchArgs(service='x"} or {job=~".+', contains=None)
     with pytest.raises(ValueError):
         LogsSearchArgs(service="x", contains="`")
+    # "This level or worse": a warn search must not miss the errors.
+    assert "error" in logql(LogsSearchArgs(service="x", level="warn"))
 
 
 async def test_traces_search_groups_error_spans() -> None:
@@ -281,13 +283,16 @@ CALLS = [
 ]
 
 
-async def test_replay_is_byte_identical_to_the_recording(tmp_path: Path) -> None:
+@pytest.mark.parametrize("name", ["lab.jsonl", "lab.jsonl.gz"])
+async def test_replay_is_byte_identical_to_the_recording(tmp_path: Path, name: str) -> None:
     cassette = Cassette(meta={"scenario": "test"})
     live = LiveSource(FakeBackends().clients(), now=lambda: FIXED_NOW, sleep=_no_sleep)
     recorder = ToolRegistry(ALL_TOOLS, RecordingSource(live, cassette), MemoryEvidenceStore())
     recorded = [await recorder.call(name, args, CTX) for name, args in CALLS]
-    path = tmp_path / "lab.jsonl"
+    path = tmp_path / name
     cassette.dump(path)
+    cassette.dump(tmp_path / f"again-{name}")
+    assert path.read_bytes() == (tmp_path / f"again-{name}").read_bytes()  # gzip without a timestamp
 
     replay_store = MemoryEvidenceStore()
     replayer = ToolRegistry(ALL_TOOLS, ReplaySource(Cassette.load(path)), replay_store)
