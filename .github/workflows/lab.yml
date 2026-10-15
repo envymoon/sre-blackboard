@@ -1,0 +1,173 @@
+name: Fault lab
+
+# The M2 lab on a GitHub-hosted runner (4 vCPU, 16 GB for public repositories): a fresh kind
+# cluster with the OpenTelemetry Demo, the sre-blackboard stack from docker compose, and the
+# acceptance run (inject -> alert within 5 min -> recover -> resolved). Nothing is reused
+# between runs, so every run also proves `make env-up` works from scratch.
+
+on:
+  workflow_dispatch:
+    inputs:
+      faults:
+        description: "Faults to run, space separated (empty: the acceptance set)"
+        required: false
+        default: ""
+  push:
+    branches: ["milestone/m2-*"]
+    paths:
+      - "deploy/kind/**"
+      - "scripts/lab/**"
+      - ".github/workflows/lab.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lab-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lab:
+    # Pinned: ubuntu-latest moves to a new release, and the lab should only change on purpose.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      SRE_DATABASE_URL: postgresql+psycopg://sre:sre@localhost:5432/sre
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
+
+      - name: Load pinned versions
+        run: grep -E '^[A-Z_]+=' deploy/kind/versions.env >> "$GITHUB_ENV"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.32"
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --locked --python 3.12
+
+      - name: Install kind and helm
+        run: |
+          curl -sSLo /tmp/kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+          sudo install /tmp/kind /usr/local/bin/kind
+          curl -sSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" | tar -xz -C /tmp
+          sudo install /tmp/linux-amd64/helm /usr/local/bin/helm
+          kind version && helm version --short && kubectl version --client
+
+      - name: Start sre-blackboard
+        run: |
+          echo "SRE_JWT_SECRET=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')" > .env
+          docker compose up --build -d
+          timeout 120 bash -c 'until curl -fsS localhost:8000/readyz; do sleep 2; done'
+
+      - name: Create the lab
+        run: |
+          mkdir -p lab-out
+          set -o pipefail
+          ./deploy/kind/up.sh 2>&1 | tee lab-out/up.log
+
+      - name: Wait for span metrics
+        run: |
+          # Every service needs a few minutes of traffic before the 5m SLI windows mean anything.
+          for i in $(seq 1 60); do
+            n=$(curl -fsS 'localhost:19090/api/v1/query' --data-urlencode 'query=count(service:sli_requests:rate5m > 0)' \
+                | jq -r '.data.result[0].value[1] // 0')
+            echo "services with traffic: $n"
+            [ "$n" -ge 8 ] && break
+            sleep 15
+          done
+          sleep 240
+
+      - name: Baseline
+        run: |
+          mkdir -p lab-out
+          uv run python -m scripts.lab probe | tee lab-out/baseline-slis.txt
+          uv run python -m scripts.lab status | tee lab-out/baseline-status.txt
+          curl -fsS localhost:19090/api/v1/label/__name__/values | jq -r '.data[]' > lab-out/metric-names.txt
+          curl -fsS 'localhost:19090/api/v1/series' --data-urlencode 'match[]=traces_span_metrics_calls_total' \
+            | jq -c '.data[:40][]' > lab-out/span-metric-series.jsonl
+          curl -fsSG localhost:13100/loki/api/v1/labels | jq -c . > lab-out/loki-labels.json
+          # Where the baseline errors come from (frontend sat near the slow-burn threshold in run 5).
+          {
+            echo "# error spans/s by service, kind, span (5m)"
+            curl -fsS 'localhost:19090/api/v1/query' --data-urlencode 'query=sort_desc(sum by (service_name, span_kind, span_name) (rate(traces_span_metrics_calls_total{status_code="STATUS_CODE_ERROR"}[5m])) > 0)' \
+              | jq -r '.data.result[] | [.metric.service_name, .metric.span_kind, .metric.span_name, (.value[1] | tonumber * 1000 | round / 1000)] | @tsv'
+            echo "# frontend server spans/s by span and status (5m)"
+            curl -fsS 'localhost:19090/api/v1/query' --data-urlencode 'query=sort_desc(sum by (span_name, status_code) (rate(traces_span_metrics_calls_total{service_name="frontend", span_kind="SPAN_KIND_SERVER"}[5m])) > 0)' \
+              | jq -r '.data.result[] | [.metric.span_name, .metric.status_code, (.value[1] | tonumber * 1000 | round / 1000)] | @tsv'
+          } > lab-out/baseline-errors.txt 2>&1 || true
+          # The log line is only the message; the error details are in structured metadata.
+          curl -fsSG -H 'X-Loki-Response-Encoding-Flags: categorize-labels' localhost:13100/loki/api/v1/query_range \
+              --data-urlencode 'query={service_name="frontend"} |~ "(?i)(error|fail|exception)"' --data-urlencode limit=30 \
+              | jq -c '.data.result[].values[] | [.[1], (.[2].structuredMetadata // {} | with_entries(select(.key | test("err|code|status|message|path"))))]' \
+              | cut -c1-600 > lab-out/frontend-error-logs.txt 2>&1 || true
+          # Error spans from Jaeger, grouped: service, operation, status/peer tags, exception message.
+          curl -fsSG localhost:18080/jaeger/ui/api/traces --data-urlencode service=frontend --data-urlencode 'tags={"error":"true"}' \
+              --data-urlencode limit=200 --data-urlencode lookback=1h \
+            | jq -r '.data[] | . as $t | .spans[] | select(any(.tags[]; .key == "error" and .value == true))
+                | [$t.processes[.processID].serviceName, .operationName,
+                   ([.tags[] | select(.key | test("status|grpc|error.type|peer|server.address")) | "\(.key)=\(.value)"] | join(" ")),
+                   ([.logs[]?.fields[]? | select(.key | test("exception.message|exception.type")) | "\(.value)"] | join(" | "))] | @tsv' \
+            | cut -c1-400 | sort | uniq -c | sort -rn > lab-out/error-traces.txt 2>&1 || true
+          wc -l lab-out/*.txt
+
+      - name: Resource usage
+        run: |
+          docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}' | tee lab-out/docker-stats.txt
+          free -m | tee -a lab-out/docker-stats.txt
+          docker exec sre-lab-control-plane sh -c 'cat /sys/fs/cgroup/memory.current' | awk '{printf "kind node cgroup memory (includes page cache): %.0f MiB\n", $1/1048576}' | tee -a lab-out/docker-stats.txt
+          # Per container working set inside the node, largest first.
+          # Informational only: never fail the step (it would skip the acceptance run).
+          { docker exec sre-lab-control-plane crictl stats -o json \
+              | jq -r '.stats[] | [.attributes.labels["io.kubernetes.pod.namespace"], .attributes.labels["io.kubernetes.container.name"], ((.memory.workingSetBytes.value // "0") | tonumber / 1048576 | floor)] | @tsv' \
+              | sort -t$'\t' -k3 -rn | awk -F'\t' '{printf "%-12s %-28s %6d MiB\n", $1, $2, $3}' | tee lab-out/container-memory.txt; } || true
+
+      - name: Acceptance
+        run: |
+          set -o pipefail
+          uv run python -m scripts.lab accept ${{ inputs.faults }} --report lab-out/report.json | tee lab-out/accept.txt
+
+      - name: Diagnostics
+        if: always()
+        run: |
+          mkdir -p lab-out
+          ctx=(--context kind-sre-lab)
+          kubectl "${ctx[@]}" get pods -A -o wide > lab-out/pods.txt 2>&1 || true
+          kubectl "${ctx[@]}" -n otel-demo get events --sort-by=.lastTimestamp > lab-out/events.txt 2>&1 || true
+          kubectl "${ctx[@]}" -n otel-demo logs statefulset/otel-demo-alertmanager --tail=300 > lab-out/alertmanager.log 2>&1 || true
+          kubectl "${ctx[@]}" -n otel-demo logs deployment/prometheus -c prometheus-server --tail=300 > lab-out/prometheus.log 2>&1 || true
+          curl -fsS localhost:19090/api/v1/rules | jq . > lab-out/rules.json 2>&1 || true
+          curl -fsS localhost:19090/api/v1/alerts | jq . > lab-out/alerts.json 2>&1 || true
+          docker compose logs --no-color --tail=500 api worker > lab-out/sre-blackboard.log 2>&1 || true
+          cat lab-out/pods.txt || true
+
+      # Readable through the REST API even where logs and artifacts are not (see the script).
+      # GitHub keeps 10 notices per step, so the output is spread over three steps.
+      - name: Publish results as annotations
+        if: always()
+        run: |
+          uv run python -m scripts.lab.annotate lab-out/accept.txt:80 lab-out/baseline-slis.txt \
+            lab-out/docker-stats.txt lab-out/container-memory.txt lab-out/baseline-status.txt lab-out/up.log:40
+      - name: Publish cluster state as annotations
+        if: always()
+        run: |
+          uv run python -m scripts.lab.annotate lab-out/error-traces.txt:50 lab-out/frontend-error-logs.txt:30 \
+            lab-out/baseline-errors.txt:40 lab-out/pods.txt:40
+      - name: Publish logs as annotations
+        if: always()
+        run: |
+          uv run python -m scripts.lab.annotate lab-out/sre-blackboard.log:80 lab-out/alertmanager.log:60 \
+            lab-out/prometheus.log:40
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lab-out
+          path: lab-out/
+          retention-days: 14

@@ -1,4 +1,5 @@
-.PHONY: install fmt lint typecheck test check db migrate run worker up down token loadtest
+.PHONY: install fmt lint typecheck test check db migrate run worker up down token loadtest \
+	env-up env-down faults fault recover lab-status lab-probe lab-accept rules-test
 
 install:  ## Install runtime + dev dependencies and git hooks
 	uv sync
@@ -43,3 +44,33 @@ token:  ## Print a token, e.g. make token ROLES=ingest TENANT=t1
 
 loadtest:  ## 1000 duplicate alerts against a running stack (see scripts/loadtest.py)
 	uv run python -m scripts.loadtest
+
+# --- Fault lab (M2): kind + OpenTelemetry Demo; see deploy/kind/ and docs/learn/m2-fault-lab.md ---
+PROMTOOL_IMAGE ?= prom/prometheus:v3.14.0
+
+env-up:  ## Create or update the lab; start the API first (make up)
+	./deploy/kind/up.sh
+
+env-down:
+	./deploy/kind/down.sh
+
+faults:  ## List injectable faults
+	uv run python -m scripts.lab list
+
+fault:  ## Inject one, e.g. make fault SCENARIO=payment-failure
+	uv run python -m scripts.lab inject $(SCENARIO)
+
+recover:  ## Undo one (SCENARIO=...) or everything (ALL=1)
+	uv run python -m scripts.lab recover $(if $(ALL),--all,$(SCENARIO))
+
+lab-status:  ## Active faults and firing alerts
+	uv run python -m scripts.lab status
+
+lab-probe:  ## Per-service request rate, error ratio and p95 right now
+	uv run python -m scripts.lab probe
+
+lab-accept:  ## M2 acceptance: inject, alert within 5 min, recover, resolve
+	uv run python -m scripts.lab accept
+
+rules-test:  ## promtool unit tests for the SLO alert rules (needs Docker)
+	docker run --rm -v $(CURDIR)/deploy/kind/rules:/rules -w /rules/tests --entrypoint promtool $(PROMTOOL_IMAGE) test rules slo_test.yml
