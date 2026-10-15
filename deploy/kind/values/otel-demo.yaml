@@ -29,6 +29,23 @@ components:
       # (lab run 4). 20 users give them ~12 a minute.
       - name: LOCUST_USERS
         value: "20"
+    # Start the load only once everything it reaches is listening. The demo has no readiness
+    # probes, so a Service routes to a pod before its app listens; early requests got
+    # ECONNREFUSED, the frontend's gRPC channels then sat in reconnect backoff (up to 2 min)
+    # failing every call, and the 30m slow burn window kept that startup noise firing
+    # (lab runs 5-7: frontend at 2-13% errors before any fault).
+    initContainers:
+      - name: wait-for-backends
+        image: busybox:1.37.0
+        command:
+          - sh
+          - -c
+          - |
+            for target in frontend-proxy:8080 frontend:8080 ad:8080 cart:8080 checkout:8080 currency:8080 \
+                email:8080 payment:8080 product-catalog:8080 quote:8080 recommendation:8080 shipping:8080 flagd:8013; do
+              until nc -z -w 2 "${target%:*}" "${target#*:}"; do echo "waiting for $target"; sleep 2; done
+            done
+            echo "all backends listening"
     resources:
       limits:
         memory: 600Mi
