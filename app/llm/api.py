@@ -57,7 +57,7 @@ class AnthropicAPIBackend:
         tools[-1] = {**tools[-1], "cache_control": _CACHE}
         tool_choice: dict[str, Any] = (
             {"type": "any", "disable_parallel_tool_use": False}
-            if request.tools
+            if request.tools and not request.force_final
             else {"type": "tool", "name": FINAL_TOOL}
         )
         messages = render_messages(request.turns)

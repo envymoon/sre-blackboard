@@ -39,6 +39,8 @@ class LLMRequest:
     # JSON schema of the final answer.
     final_schema: dict[str, Any]
     max_actions: int = 3
+    # The last step an agent may take: no more data, the final answer now.
+    force_final: bool = False
 
     def hash(self) -> str:
         """Identifies the request for replay: everything the model sees, nothing else."""
@@ -51,6 +53,7 @@ class LLMRequest:
                     "tools": list(self.tools),
                     "final_schema": self.final_schema,
                     "max_actions": self.max_actions,
+                    "force_final": self.force_final,
                 }
             )
         )

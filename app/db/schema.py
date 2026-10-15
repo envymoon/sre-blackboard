@@ -12,13 +12,14 @@ from sqlalchemy import (
     Index,
     Integer,
     MetaData,
+    Numeric,
     SmallInteger,
     Table,
     Text,
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TIMESTAMP, UUID
 
 metadata = MetaData(
     naming_convention={
@@ -194,4 +195,82 @@ tool_calls = Table(
     Column("created_at", TS, nullable=False, server_default=func.now()),
     CheckConstraint(_in("status", TOOL_CALL_STATUSES), name="status_valid"),
     Index("ix_tool_calls_incident_id", "incident_id"),
+)
+
+LLM_CALL_STATUSES = ("ok", "error")
+AGENT_RUN_STATUSES = ("running", "done", "failed")
+BLACKBOARD_KINDS = ("plan", "finding", "diagnosis")
+
+# Every model step, failed ones included: the usage ledger (token budget, equivalent cost)
+# and, with ``step``, a recording of the run that replays without the model.
+llm_calls = Table(
+    "llm_calls",
+    metadata,
+    Column("id", BigInteger, Identity(), primary_key=True),
+    Column("tenant_id", Text, nullable=False),
+    Column("incident_id", UUID(as_uuid=True), ForeignKey("incidents.id")),
+    Column("agent", Text, nullable=False),
+    Column("step_no", SmallInteger, nullable=False),
+    Column("backend", Text, nullable=False),
+    Column("model", Text, nullable=False),
+    Column("prompt_version", Text, nullable=False),
+    # sha256 of everything the model saw (app/llm/types.py LLMRequest.hash).
+    Column("request_hash", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("error_code", Text),
+    Column("error", Text),
+    Column("attempts", SmallInteger, nullable=False, server_default="1"),
+    Column("input_tokens", Integer, nullable=False, server_default="0"),
+    Column("output_tokens", Integer, nullable=False, server_default="0"),
+    Column("cache_read_tokens", Integer, nullable=False, server_default="0"),
+    Column("cache_creation_tokens", Integer, nullable=False, server_default="0"),
+    # What the same tokens would cost on the API, as the backend reported it (the CLI does).
+    Column("cost_usd", Numeric(12, 6)),
+    Column("latency_ms", Integer, nullable=False),
+    # The step the model returned: {"reasoning", "actions", "final"}.
+    Column("step", JSONB),
+    Column("created_at", TS, nullable=False, server_default=func.now()),
+    CheckConstraint(_in("status", LLM_CALL_STATUSES), name="status_valid"),
+    Index("ix_llm_calls_incident_id", "incident_id"),
+)
+
+# One row per agent per incident: the checkpoint. A job that runs again (after a crash or a
+# lost lease) skips every agent whose run is done and reads its output from the blackboard.
+agent_runs = Table(
+    "agent_runs",
+    metadata,
+    Column("id", BigInteger, Identity(), primary_key=True),
+    Column("tenant_id", Text, nullable=False),
+    Column("incident_id", UUID(as_uuid=True), ForeignKey("incidents.id"), nullable=False),
+    Column("agent", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("model", Text, nullable=False),
+    Column("prompt_version", Text, nullable=False),
+    Column("steps", SmallInteger, nullable=False, server_default="0"),
+    # Counts and notes about the run (tool calls, findings dropped by the citation check, ...).
+    Column("result", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("error", Text),
+    Column("started_at", TS, nullable=False, server_default=func.now()),
+    Column("finished_at", TS),
+    CheckConstraint(_in("status", AGENT_RUN_STATUSES), name="status_valid"),
+    Index("ux_agent_runs_incident_agent", "incident_id", "agent", unique=True),
+)
+
+# What the agents share: the coordinator's plan, each investigator's findings, the diagnosis.
+# Append-only, and every row belongs to the agent that wrote it, so agents running in
+# parallel never overwrite each other. Rows are written in the same transaction that marks
+# the agent's run done, so a run's output is either all there or not there at all.
+blackboard = Table(
+    "blackboard",
+    metadata,
+    Column("id", BigInteger, Identity(), primary_key=True),
+    Column("tenant_id", Text, nullable=False),
+    Column("incident_id", UUID(as_uuid=True), ForeignKey("incidents.id"), nullable=False),
+    Column("kind", Text, nullable=False),
+    Column("author", Text, nullable=False),
+    Column("body", JSONB, nullable=False),
+    Column("evidence_ids", ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")),
+    Column("created_at", TS, nullable=False, server_default=func.now()),
+    CheckConstraint(_in("kind", BLACKBOARD_KINDS), name="kind_valid"),
+    Index("ix_blackboard_incident_id", "incident_id"),
 )

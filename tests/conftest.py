@@ -58,7 +58,9 @@ async def engine(settings: Settings) -> AsyncIterator[AsyncEngine]:
     eng = create_async_engine(settings.database_url, pool_size=settings.db_pool_size)
     async with eng.begin() as conn:
         await conn.execute(
-            text("TRUNCATE tool_calls, evidence, jobs, alerts, incidents, audit_log RESTART IDENTITY CASCADE")
+            text(
+                "TRUNCATE blackboard, agent_runs, llm_calls, tool_calls, evidence, jobs, alerts, incidents, audit_log RESTART IDENTITY CASCADE"
+            )
         )
     yield eng
     await eng.dispose()

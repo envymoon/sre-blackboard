@@ -63,7 +63,7 @@ def step_schema(request: LLMRequest) -> dict[str, Any]:
         },
     }
     required = ["reasoning"]
-    if request.tools:
+    if request.tools and not request.force_final:
         props["actions"] = {
             "type": "array",
             "maxItems": request.max_actions,
