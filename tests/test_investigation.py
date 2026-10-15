@@ -27,7 +27,8 @@ from app.agents.investigation import AgentConfig
 from app.api.app import create_app
 from app.core.config import Settings
 from app.core.security import mint_token
-from app.db import audit
+from app.db import audit, investigations
+from app.db import incidents as incidents_repo
 from app.llm.types import LLMError
 from app.tools.sources import ReplaySource
 from app.worker.handlers import default_handlers
@@ -294,3 +295,17 @@ def test_each_incident_replays_with_its_own_tool_answers():
     ]
     assert [e["raw"] for e in recording.incident_tools(rec, a).entries] == [1, 3]
     assert [e["raw"] for e in recording.incident_tools(rec, b).entries] == [2, 3]
+
+
+async def test_an_incident_is_told_only_about_incidents_open_before_it(engine, settings, client):
+    """A later incident may not exist yet when this one is investigated: never mention it, replay or not."""
+    first = await fire(client, settings, "payment")
+    second = await fire(client, settings, "checkout")
+    async with engine.connect() as conn:
+        views = {
+            s: await investigations.incident_view(conn, await incidents_repo.get(conn, second[s], tenant_id=None))
+            for s in ("payment", "checkout")
+        }
+    assert first["payment"] == second["payment"]
+    assert [r["service"] for r in views["checkout"].related] == ["payment"]
+    assert views["payment"].related == []

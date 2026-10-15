@@ -13,10 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from app.agents.investigation import IncidentView
 from app.ingest import PRIORITY_NAMES
 
-# Incidents open when this one opened (or opened just after) are probably one problem seen
-# from several services.
+# Incidents already open when this one opened are probably one problem seen from several
+# services. Only those: one opened later may or may not exist yet when the investigation
+# starts (each alert group is its own webhook), and what the agents are told must not depend
+# on that race, or a replay is told something else. The later one is told about this one.
 RELATED_BEFORE = timedelta(minutes=30)
-RELATED_AFTER = timedelta(minutes=10)
 
 
 async def incident_view(conn: AsyncConnection, incident: Mapping[Any, Any]) -> IncidentView:
@@ -31,7 +32,7 @@ async def incident_view(conn: AsyncConnection, incident: Mapping[Any, Any]) -> I
             """
             SELECT title, service, priority, created_at FROM incidents
             WHERE tenant_id = :tenant AND environment = :env AND id <> :id
-              AND created_at BETWEEN :start AND :end
+              AND created_at BETWEEN :start AND :created
               AND (closed_at IS NULL OR closed_at > :created)
             ORDER BY created_at, service, title
             """
@@ -41,7 +42,6 @@ async def incident_view(conn: AsyncConnection, incident: Mapping[Any, Any]) -> I
             "env": incident["environment"],
             "id": incident["id"],
             "start": incident["created_at"] - RELATED_BEFORE,
-            "end": incident["created_at"] + RELATED_AFTER,
             "created": incident["created_at"],
         },
     )

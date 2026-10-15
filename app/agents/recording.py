@@ -81,14 +81,13 @@ async def export(engine: AsyncEngine, incident_ids: list[UUID], meta: dict[str, 
             more = await conn.execute(
                 text(
                     f"SELECT {_INCIDENT_COLUMNS} FROM incidents WHERE tenant_id = :t AND environment = :e AND id <> :id "
-                    "AND created_at BETWEEN :start AND :end AND (closed_at IS NULL OR closed_at > :created)"
+                    "AND created_at BETWEEN :start AND :created AND (closed_at IS NULL OR closed_at > :created)"
                 ),
                 {
                     "t": inc["tenant_id"],
                     "e": inc["environment"],
                     "id": inc["id"],
                     "start": inc["created_at"] - investigations.RELATED_BEFORE,
-                    "end": inc["created_at"] + investigations.RELATED_AFTER,
                     "created": inc["created_at"],
                 },
             )
