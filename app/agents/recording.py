@@ -31,7 +31,8 @@ from app.tools.evidence import PgEvidenceStore
 from app.tools.sources import Cassette, ReplaySource
 
 # Errors the registry produces itself, before any backend is asked: they replay without a cassette.
-_LOCAL_ERRORS = ("invalid_args", "unknown_tool", "too_large")
+# (too_large is not one of them: the registry raises it after the backend answered.)
+_LOCAL_ERRORS = ("invalid_args", "unknown_tool")
 _INCIDENT_COLUMNS = (
     "id, tenant_id, fingerprint, title, service, environment, priority, state, labels, created_at, closed_at"
 )
@@ -136,7 +137,7 @@ async def export(engine: AsyncEngine, incident_ids: list[UUID], meta: dict[str, 
         tool_rows = await conn.execute(
             text(
                 """
-                SELECT t.agent, t.tool, t.args, t.status, t.error_code, t.error, t.created_at,
+                SELECT t.incident_id, t.agent, t.tool, t.args, t.status, t.error_code, t.error, t.created_at,
                        e.result, e.fetched_at
                 FROM tool_calls t LEFT JOIN evidence e ON e.id = t.evidence_id
                 WHERE t.incident_id = ANY(:ids) ORDER BY t.id
@@ -144,17 +145,7 @@ async def export(engine: AsyncEngine, incident_ids: list[UUID], meta: dict[str, 
             ),
             {"ids": incident_ids},
         )
-        for t in tool_rows:
-            entry: dict[str, Any] = {"tool": t.tool, "args": t.args}
-            if t.agent:
-                entry["agent"] = t.agent
-            if t.status == "ok":
-                entry |= {"at": t.fetched_at.isoformat(), "raw": t.result}
-            elif t.error_code not in _LOCAL_ERRORS:
-                entry |= {"at": t.created_at.isoformat(), "error": {"code": t.error_code, "message": t.error}}
-            else:
-                continue
-            rec.tools.entries.append(entry)
+        rec.tools.entries += [e for t in tool_rows if (e := tool_entry(t)) is not None]
 
         for inc_id in incident_ids:
             board = await PgAgentStore(engine).entries(inc_id)
@@ -168,6 +159,26 @@ async def export(engine: AsyncEngine, incident_ids: list[UUID], meta: dict[str, 
                 "findings": sum(1 for e in board if e.kind == "finding"),
             }
     return rec
+
+
+def tool_entry(t: Any) -> dict[str, Any] | None:
+    """One tool_calls row (joined with its evidence) as a cassette entry; None if it replays without one."""
+    # Tagged with the incident: several incidents of one fault ask the same agent the same
+    # question minutes apart, and each must get back its own answer (``incident_tools``).
+    entry: dict[str, Any] = {"incident": str(t.incident_id), "tool": t.tool, "args": t.args}
+    if t.agent:
+        entry["agent"] = t.agent
+    if t.status == "ok":
+        return entry | {"at": t.fetched_at.isoformat(), "raw": t.result}
+    if t.error_code in _LOCAL_ERRORS:
+        return None
+    return entry | {"at": t.created_at.isoformat(), "error": {"code": t.error_code, "message": t.error}}
+
+
+def incident_tools(rec: Recording, incident_id: UUID) -> Cassette:
+    """The tool answers one incident's investigation got (all of them in an untagged recording)."""
+    mine = [e for e in rec.tools.entries if e.get("incident", str(incident_id)) == str(incident_id)]
+    return Cassette(mine, rec.tools.meta)
 
 
 async def load_incidents(engine: AsyncEngine, rec: Recording) -> None:
@@ -210,7 +221,7 @@ async def replay(engine: AsyncEngine, rec: Recording, incident_id: UUID, config:
         view = await investigations.incident_view(conn, row)
     deps = Deps(
         backend=ReplayBackend(rec.llm),
-        registry=ToolRegistry(ALL_TOOLS, ReplaySource(rec.tools), PgEvidenceStore(engine)),
+        registry=ToolRegistry(ALL_TOOLS, ReplaySource(incident_tools(rec, incident_id)), PgEvidenceStore(engine)),
         store=PgAgentStore(engine),
         tenant_id=view.tenant_id,
         incident_id=view.id,

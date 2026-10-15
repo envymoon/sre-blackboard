@@ -1,4 +1,4 @@
-version: 1
+version: 2
 
 ## The system you are investigating
 
@@ -8,6 +8,7 @@ service is a Deployment of the same name. Services and who calls whom:
 - `frontend-proxy` (Envoy, the entry point) -> `frontend`, `image-provider`, `flagd`
 - `frontend` -> `ad`, `cart`, `checkout`, `currency`, `product-catalog`, `recommendation`, `shipping`
 - `checkout` -> `cart`, `currency`, `email`, `payment`, `product-catalog`, `shipping`, `kafka`
+- `product-catalog` -> its PostgreSQL database (`astronomy-db` in its client spans)
 - `recommendation` -> `product-catalog`; `shipping` -> `quote`; `cart` -> `valkey-cart`
 - `kafka` -> `accounting`, `fraud-detection`; every service reads feature flags from `flagd`
 

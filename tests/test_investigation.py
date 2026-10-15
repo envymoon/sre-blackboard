@@ -12,8 +12,10 @@ import signal
 import subprocess
 import sys
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -241,6 +243,7 @@ async def test_an_exported_investigation_replays_to_the_same_diagnosis(engine, s
         "investigator.logs_traces",
         "investigator.changes",
     }
+    assert {e["incident"] for e in rec.tools.entries} == {str(i) for i in ids.values()}
 
     async with engine.begin() as conn:
         await conn.execute(
@@ -259,3 +262,35 @@ async def test_an_exported_investigation_replays_to_the_same_diagnosis(engine, s
     async with engine.connect() as conn:
         assert await conn.scalar(text("SELECT count(*) FROM tool_calls WHERE error_code = 'replay_miss'")) == 0
         assert await conn.scalar(text("SELECT count(DISTINCT source) FROM evidence")) == 1
+
+
+def test_a_too_large_answer_is_recorded_and_a_local_error_is_not():
+    """too_large is raised after the backend answered: the replay must be told it again."""
+    row = SimpleNamespace(
+        incident_id=uuid4(),
+        agent="investigator.logs_traces",
+        tool="traces_search",
+        args={"service": "checkout"},
+        status="error",
+        error_code="too_large",
+        error="the result is 300 KiB, over the 256 KiB limit; narrow the query",
+        created_at=datetime(2026, 10, 15, tzinfo=UTC),
+        result=None,
+        fetched_at=None,
+    )
+    entry = recording.tool_entry(row)
+    assert entry is not None and entry["error"] == {"code": "too_large", "message": row.error}
+    assert entry["incident"] == str(row.incident_id)
+    assert recording.tool_entry(SimpleNamespace(**{**vars(row), "error_code": "invalid_args"})) is None
+
+
+def test_each_incident_replays_with_its_own_tool_answers():
+    a, b = UUID(int=1), UUID(int=2)
+    rec = recording.Recording()
+    rec.tools.entries = [
+        {"incident": str(a), "tool": "prom_query", "args": {}, "raw": 1},
+        {"incident": str(b), "tool": "prom_query", "args": {}, "raw": 2},
+        {"tool": "prom_query", "args": {}, "raw": 3},  # recorded before entries were tagged
+    ]
+    assert [e["raw"] for e in recording.incident_tools(rec, a).entries] == [1, 3]
+    assert [e["raw"] for e in recording.incident_tools(rec, b).entries] == [2, 3]
