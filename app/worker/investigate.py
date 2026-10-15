@@ -1,4 +1,4 @@
-"""The investigate job: TRIAGED -> INVESTIGATING -> DIAGNOSED, or ESCALATED.
+"""The investigate job: TRIAGED -> INVESTIGATING -> DIAGNOSED (and queue the plan job), or ESCALATED.
 
 Like every handler it may run more than once for the same incident. INVESTIGATING is the
 resume point: a rerun finds the incident already there and picks up from the agent
@@ -17,8 +17,10 @@ from app.agents.loop import Deps
 from app.agents.store import PgAgentStore
 from app.core.config import Settings
 from app.db import incidents, investigations
+from app.ingest import PRIORITY_NAMES
 from app.llm.router import build_backend, model_for
 from app.llm.types import LLMBackend, LLMError
+from app.queue import jobs
 from app.tools import ALL_TOOLS, ToolRegistry
 from app.tools.clients import Clients
 from app.tools.evidence import PgEvidenceStore
@@ -103,6 +105,17 @@ def make_investigate(services: AgentServices) -> Callable[[JobContext], Awaitabl
                     actor=actor,
                     reason=f"root cause candidate: {top.service} ({top.confidence:.0%}): {top.cause}"[:500],
                 )
+                if settings.auto_remediate:
+                    await jobs.enqueue(
+                        conn,
+                        tenant_id=view.tenant_id,
+                        incident_id=view.id,
+                        kind="plan",
+                        priority=PRIORITY_NAMES.index(view.priority),
+                        max_attempts=settings.queue_max_attempts,
+                        aging_step_s=settings.queue_aging_step_s,
+                        idempotency_key=f"{view.id}:plan",
+                    )
             else:
                 await incidents.transition(
                     conn,

@@ -11,20 +11,17 @@ import os
 import signal
 import subprocess
 import sys
-from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 from uuid import UUID, uuid4
 
 import httpx
-import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.agents import recording
 from app.agents.investigation import AgentConfig
-from app.api.app import create_app
 from app.core.config import Settings
 from app.core.security import mint_token
 from app.db import audit, investigations
@@ -60,16 +57,6 @@ def alert(service: str) -> dict[str, Any]:
     }
 
 
-@pytest.fixture
-async def client(engine: AsyncEngine, settings: Settings) -> AsyncIterator[httpx.AsyncClient]:
-    app = create_app(settings)
-    async with (
-        app.router.lifespan_context(app),
-        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c,
-    ):
-        yield c
-
-
 async def fire(client: httpx.AsyncClient, settings: Settings, *services: str) -> dict[str, UUID]:
     body = {"version": "4", "status": "firing", "receiver": "sre", "alerts": [alert(s) for s in services]}
     resp = await client.post("/api/v1/alerts", json=body, headers=auth(settings, "ingest"))
@@ -84,6 +71,8 @@ async def states(engine: AsyncEngine) -> dict[str, str]:
 
 
 async def run_until(engine: AsyncEngine, settings: Settings, llm: ScriptedLLM, *, done: set[str]) -> None:
+    """Run a worker until every incident is in one of ``done``. Diagnosis only: no repair planning."""
+    settings = settings.model_copy(update={"auto_remediate": False})
     services = AgentServices(llm, ReplaySource(payment_cassette()))
     stop = asyncio.Event()
     task = asyncio.create_task(Worker(engine, settings, default_handlers(services), worker_id="test").run(stop))
