@@ -329,11 +329,15 @@ claude -p \
 
 目标：Agent 能查到真实数据，每条证据都可追溯、可回放。
 
-- [ ] 工具注册表：每个工具有 Pydantic 入参/出参 schema、风险等级（只读工具全部为 R0）、超时、结果大小上限。这些 schema 会自动生成 Claude tool use 的 `input_schema`。
-- [ ] 工具实现：`prom_query` / `prom_range`、`logs_search`（Loki LogQL）、`traces_search` / `trace_get`（Jaeger HTTP API）、`k8s_events`、`rollout_history`、`deploy_diff`、`flag_state`。
-- [ ] 结果压缩：原始结果入库保存，交给 LLM 的是摘要（统计、Top-N、异常点），附带 `evidence_id`。这是原设计中"原始日志不进 prompt"的真正落地。
-- [ ] 弹性：超时、有限重试、简单熔断；工具失败时返回结构化错误，让 Agent 能够理解并换一种查法。
-- [ ] 录制/回放：live 模式下把每次工具调用的 `(tool, args) → result` 录成 cassette；replay 模式下从 cassette 读取。这让 CI 和云端开发环境都能在没有集群的情况下确定性地运行。
+- [x] 工具注册表：每个工具有 Pydantic 入参/出参 schema、风险等级（只读工具全部为 R0）、超时、结果大小上限。这些 schema 会自动生成 Claude tool use 的 `input_schema`。
+  - 补充：入参是 Pydantic 模型（`extra="forbid"`），直接生成 `input_schema`；出参没有做成 Pydantic 模型，而是每个工具一个摘要函数，再由通用的 `bound()` 兜底到 6000 字符。9 个工具的摘要形状各不相同，模型拿到的是 JSON，额外的出参模型只会重复一遍字段。
+- [x] 工具实现：`prom_query` / `prom_range`、`logs_search`（Loki LogQL）、`traces_search` / `trace_get`（Jaeger HTTP API）、`k8s_events`、`rollout_history`、`deploy_diff`、`flag_state`。
+  - 补充：Kubernetes 走 API server + 只读 ServiceAccount 的 token（`deploy/kind/manifests/reader.yaml`），不用 kubectl。Chaos Mesh 的事件在取数时过滤掉，否则 Agent 直接读到答案（ADR-0005 第 12 条）。
+- [x] 结果压缩：原始结果入库保存，交给 LLM 的是摘要（统计、Top-N、异常点），附带 `evidence_id`。这是原设计中"原始日志不进 prompt"的真正落地。
+  - 补充：实测 3 个故障的 16 次调用，后端返回 4.8 MB，模型看到约 25 KB；链路查询压缩 340–570 倍。证据 ID 由内容派生，回放时 transcript 逐字节不变。
+- [x] 弹性：超时、有限重试、简单熔断；工具失败时返回结构化错误，让 Agent 能够理解并换一种查法。
+- [x] 录制/回放：live 模式下把每次工具调用的 `(tool, args) → result` 录成 cassette；replay 模式下从 cassette 读取。这让 CI 和云端开发环境都能在没有集群的情况下确定性地运行。
+  - 补充：录制在 GitHub Actions 的实验环境里做，推到 `lab-recordings/run-<id>` 分支；选定的一次运行导入 `tests/fixtures/lab`，契约测试回放它，必须得到和现场完全相同的检查结果和证据 ID。
 
 验收：对一次真实故障，手动调用工具能拿到正确的数据；replay 模式下，同样的调用返回逐字节相同的结果。
 
@@ -555,14 +559,16 @@ claude -p \
 | ADR-0013 | 可插拔 LLM 后端：用 `claude -p` 订阅额度做单步推理引擎 |
 | ADR-0014 | 前端设计系统与性能预算 |
 
+上表是初稿。实际编号按写成的顺序分配：ADR-0004 是"故障实验环境放在 GitHub Actions 的 kind 上"，ADR-0005 是"工具层只读、证据快照、录制回放"（覆盖初稿的 0006 和 0010 的一部分）。之后的 ADR 依次往后编号，标题以文件为准。
+
 ## 附录 B：进度
 
 | 里程碑 | 状态 | 完成日期 | 备注 |
 |---|---|---|---|
 | M0 | 已完成 | 2026-10-10 | PR #2，标签 `v0.1.0` |
 | M1 | 已完成 | 2026-10-12 | PR #3，2026-10-14 合并；compose 全栈验收在 CI 的 `e2e` job 里 |
-| M2 | 已完成 | 2026-10-14 | 分支 `milestone/m2-env`；实验环境在 GitHub Actions 上运行（ADR-0004），3 个代表性故障验收通过 |
-| M3 | 未开始 | | |
+| M2 | 已完成 | 2026-10-14 | PR #4，2026-10-15 合并；实验环境在 GitHub Actions 上运行（ADR-0004），3 个代表性故障验收通过，基线 10 分钟无告警 |
+| M3 | 已完成 | 2026-10-15 | 分支 `milestone/m3-tools`；9 个只读工具 + 证据库 + 录制回放（ADR-0005）；实验环境里 3 个故障的工具检查全部通过，录音进契约测试 |
 | M4 | 未开始 | | |
 | M5 | 未开始 | | |
 | M6 | 未开始 | | |

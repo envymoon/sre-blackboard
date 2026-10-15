@@ -115,6 +115,7 @@ async def test_traces_search_groups_error_spans() -> None:
 async def test_trace_get_ranks_spans_by_self_time() -> None:
     s = await _call("trace_get", {"trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"})
     assert s["services"] == ["checkout", "frontend", "payment"]
+    assert s["orphan_spans"] == 0
     slow = s["slowest_spans"][0]
     # PlaceOrder took 850 ms, of which 100 ms in its child: 750 ms of its own.
     assert (slow["operation"], slow["self_ms"]) == ("oteldemo.CheckoutService/PlaceOrder", 750.0)

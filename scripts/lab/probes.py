@@ -251,20 +251,25 @@ class ProbeRunner:
         clients = Clients.from_settings(self.settings, transport=self.transport)
         live = LiveSource(clients, now=self.now)
         registry = ToolRegistry(ALL_TOOLS, RecordingSource(live, cassette), MemoryEvidenceStore())
-        ctx = ToolContext(tenant_id=self.tenant, scope=f"lab/{fault.name}")
-        prior: dict[str, ToolOutcome] = {}
-        results = []
         try:
-            for probe in probes:
-                args = probe.args(prior) if callable(probe.args) else probe.args
-                outcome = await registry.call(probe.tool, args, ctx)
-                prior[probe.name] = outcome
-                if outcome.error is not None:
-                    ok, detail = False, f"error {outcome.error.code}: {outcome.error.message}"
-                else:
-                    ok, detail = probe.check(outcome.summary or {})
-                results.append(ProbeResult(probe.name, probe.tool, outcome.args, ok, detail, outcome.evidence_id))
+            return await run_probes(registry, probes, self.tenant, fault.name)
         finally:
             await clients.aclose()
             cassette.dump(self.out_dir / f"{fault.name}.jsonl.gz")
-        return results
+
+
+async def run_probes(registry: ToolRegistry, probes: list[Probe], tenant: str, fault: str) -> list[ProbeResult]:
+    """Call and check each probe in order. Live in the lab; from a cassette in the contract tests."""
+    ctx = ToolContext(tenant_id=tenant, scope=f"lab/{fault}")
+    prior: dict[str, ToolOutcome] = {}
+    results = []
+    for probe in probes:
+        args = probe.args(prior) if callable(probe.args) else probe.args
+        outcome = await registry.call(probe.tool, args, ctx)
+        prior[probe.name] = outcome
+        if outcome.error is not None:
+            ok, detail = False, f"error {outcome.error.code}: {outcome.error.message}"
+        else:
+            ok, detail = probe.check(outcome.summary or {})
+        results.append(ProbeResult(probe.name, probe.tool, outcome.args, ok, detail, outcome.evidence_id))
+    return results

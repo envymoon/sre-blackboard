@@ -186,9 +186,19 @@ def summarize_trace(raw: dict[str, Any], args: TraceGetArgs) -> dict[str, Any]:
             }
         )
     rows.sort(key=lambda r: -(r["self_ms"] or 0))
+    # Spans whose parent is not in the trace (still running, dropped or not exported yet). Their
+    # parents' time then counts as self time: in the lab, a proxy span that waited out a 15 s
+    # timeout looked like the slowest work in the trace because the server span under it was missing.
+    ids = {s["spanID"] for s in spans}
+    orphans = sum(
+        1
+        for s in spans
+        if any(r.get("refType") == "CHILD_OF" and r["spanID"] not in ids for r in s.get("references", []))
+    )
     return {
         "trace_id": raw["traceID"],
         "spans": len(spans),
+        "orphan_spans": orphans,
         "duration_ms": num(_duration_ms(raw)),
         "root": _root(raw),
         "services": sorted({_service(raw, s) for s in spans}),
@@ -215,7 +225,8 @@ TRACE_GET = Tool(
     name="trace_get",
     description=(
         "One trace by id: its services, error spans with messages, and the spans that took the most time "
-        "themselves (excluding their children)."
+        "themselves (excluding their children). If orphan_spans > 0, some spans are missing and a parent of "
+        "a missing span shows its whole wait as its own time."
     ),
     args=TraceGetArgs,
     backend="jaeger",

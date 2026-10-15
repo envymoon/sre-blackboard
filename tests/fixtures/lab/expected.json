@@ -1,0 +1,123 @@
+{
+  "run": "38666985589",
+  "faults": {
+    "payment-failure": [
+      {
+        "name": "error_ratio",
+        "tool": "prom_query",
+        "ok": true,
+        "detail": "payment=0.4613 (want > 0.1)",
+        "evidence_id": "ev_b10b7bccbf3c81b0"
+      },
+      {
+        "name": "error_trend",
+        "tool": "prom_range",
+        "ok": true,
+        "detail": "payment: first=0.08615 max=0.4613 peak_at=2026-10-15T02:06:51Z",
+        "evidence_id": "ev_7aff8e9e0d0cdc73"
+      },
+      {
+        "name": "flags",
+        "tool": "flag_state",
+        "ok": true,
+        "detail": "on: ['paymentFailure']",
+        "evidence_id": "ev_09d5927e1d7a7662"
+      },
+      {
+        "name": "error_traces",
+        "tool": "traces_search",
+        "ok": true,
+        "detail": "20/20 traces with errors; payment: charge: Payment request failed. Invalid token. demo.user_context.loyalty_level=gold",
+        "evidence_id": "ev_81fb7efcc743bf35"
+      },
+      {
+        "name": "logs",
+        "tool": "logs_search",
+        "ok": true,
+        "detail": "200 lines, top: Charge request received.",
+        "evidence_id": "ev_55db3ec78d305a38"
+      }
+    ],
+    "network-delay": [
+      {
+        "name": "p95",
+        "tool": "prom_query",
+        "ok": true,
+        "detail": "product-catalog=9213.0 (want > 1000)",
+        "evidence_id": "ev_a2ab99cb3bcb6897"
+      },
+      {
+        "name": "slow_traces",
+        "tool": "traces_search",
+        "ok": true,
+        "detail": "20 traces, p95=11729.0ms",
+        "evidence_id": "ev_3faf703ef05ef6a3"
+      },
+      {
+        "name": "slow_trace",
+        "tool": "trace_get",
+        "ok": true,
+        "detail": "slowest: frontend-proxy router frontend egress self=15000.0ms",
+        "evidence_id": "ev_dff09655a1f63ffb"
+      },
+      {
+        "name": "events",
+        "tool": "k8s_events",
+        "ok": true,
+        "detail": "5 events, by reason {'Created': 1, 'Started': 1, 'Pulled': 1}; chaos objects: []",
+        "evidence_id": "ev_11b99b5b4c504460"
+      },
+      {
+        "name": "flags",
+        "tool": "flag_state",
+        "ok": true,
+        "detail": "on: []",
+        "evidence_id": "ev_433615d44fa6bc33"
+      }
+    ],
+    "bad-release": [
+      {
+        "name": "error_ratio",
+        "tool": "prom_query",
+        "ok": true,
+        "detail": "checkout=0.6122 (want > 0.1)",
+        "evidence_id": "ev_e94b0b196092d9e1"
+      },
+      {
+        "name": "history",
+        "tool": "rollout_history",
+        "ok": true,
+        "detail": "revision 2: 'checkout config release: payment client moved to port 9999'",
+        "evidence_id": "ev_0be5a5aa256ec132"
+      },
+      {
+        "name": "diff",
+        "tool": "deploy_diff",
+        "ok": true,
+        "detail": "1 changes; {'path': 'containers.checkout.env.PAYMENT_ADDR', 'from': 'payment:8080', 'to': 'payment:9999'}",
+        "evidence_id": "ev_186ba0b1946c200d"
+      },
+      {
+        "name": "events",
+        "tool": "k8s_events",
+        "ok": true,
+        "detail": "by reason: {'Scheduled': 1, 'Pulling': 1, 'Pulled': 1, 'Created': 1, 'Started': 1, 'SuccessfulCreate': 1, 'Killing': 1, 'SuccessfulDelete': 1, 'ScalingReplicaSet': 1}",
+        "evidence_id": "ev_8959398cf7a921af"
+      },
+      {
+        "name": "error_traces",
+        "tool": "traces_search",
+        "ok": true,
+        "detail": "20/20 traces with errors; checkout: oteldemo.CheckoutService/PlaceOrder: failed to charge card: could not charge the card: rpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing: dial tcp 10.96.83.243:9999: i/o timeout\"",
+        "evidence_id": "ev_767333ef6ccbdfb6"
+      },
+      {
+        "name": "error_logs",
+        "tool": "logs_search",
+        "ok": false,
+        "detail": "0 lines, match: None, top: None",
+        "evidence_id": "ev_e455a63b43e43c2f"
+      }
+    ]
+  }
+}

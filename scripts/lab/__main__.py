@@ -6,12 +6,14 @@ status                     active faults and firing alerts
 probe                      per-service SLIs right now, to tune alert thresholds
 accept [--tag T | NAMES]   the M2 acceptance run (see scripts/lab/accept.py)
 env                        settings for the read-only tools (make lab-env writes them to .lab.env)
+fixtures DIR --run ID      turn a lab-recordings branch checkout into the contract test fixtures
 """
 
 from __future__ import annotations
 
 import argparse
 import base64
+import gzip
 import json
 import os
 import sys
@@ -155,6 +157,31 @@ def cmd_env(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_fixtures(args: argparse.Namespace) -> int:
+    """Copy a run's cassettes and what each probe saw live into tests/fixtures/lab.
+
+    The contract tests replay the cassettes and must reproduce the live results exactly.
+    """
+    src, out = Path(args.dir), Path(args.out)
+    report = json.loads((src / "report.json").read_text())
+    out.mkdir(parents=True, exist_ok=True)
+    expected: dict[str, list[dict[str, object]]] = {}
+    for result in report:
+        fault = result["fault"]
+        cassette = next((src / "cassettes").glob(f"{fault}.jsonl*"), None)
+        if cassette is None or not result["probes"]:
+            continue
+        data = cassette.read_bytes()
+        if cassette.suffix != ".gz":
+            data = gzip.compress(data, mtime=0)
+        (out / f"{fault}.jsonl.gz").write_bytes(data)
+        expected[fault] = [{k: p[k] for k in ("name", "tool", "ok", "detail", "evidence_id")} for p in result["probes"]]
+        print(f"{fault}: {len(data)} bytes, {sum(p['ok'] for p in result['probes'])}/{len(result['probes'])} ok")
+    manifest = {"run": args.run, "faults": expected}
+    (out / "expected.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m scripts.lab", description=__doc__.split("\n")[0])
     parser.add_argument("--lab-url", default=os.environ.get("LAB_URL", "http://localhost:18080"))
@@ -192,6 +219,11 @@ def main(argv: list[str] | None = None) -> int:
         "--probe-dir", help="call the read-only tools during each fault, check them, record cassettes here (M3)"
     )
     p.set_defaults(func=cmd_accept)
+    p = sub.add_parser("fixtures", help="contract test fixtures from a lab-recordings checkout")
+    p.add_argument("dir")
+    p.add_argument("--run", required=True, help="the Actions run id, kept in the manifest")
+    p.add_argument("--out", default="tests/fixtures/lab")
+    p.set_defaults(func=cmd_fixtures)
 
     args = parser.parse_args(argv)
     code: int = args.func(args)
