@@ -1,0 +1,68 @@
+[agents] model reachable: {"result":"ok","total_cost_usd":0.00053329}
+[baseline] watching for 600s with no fault injected
+[baseline] quiet
+[payment-failure] inject: payment rejects half of all charges
+[payment-failure] alert ErrorBudgetBurn[fast] on payment after 201.4s
+[payment-failure] alert ErrorBudgetBurn[fast] on checkout after 201.4s
+[payment-failure] tool prom_query (error_ratio): ok - payment=0.3585 (want > 0.1)
+[payment-failure] tool prom_range (error_trend): ok - payment: first=0.03842 max=0.3585 peak_at=2026-10-15T18:01:51Z
+[payment-failure] tool flag_state (flags): ok - on: ['paymentFailure']
+[payment-failure] tool traces_search (error_traces): ok - 20/20 traces with errors; payment: charge: Payment request failed. Invalid token. demo.user_context.loyalty_level=gold
+[payment-failure] tool logs_search (logs): ok - 28 lines, match: Payment request failed. Invalid token. demo.user_context.loyalty_level=gold, top: Payment request failed. Invalid token. demo.user_context.loyalty_level=gold
+[payment-failure] diagnosed ErrorBudgetBurn/payment: root causes payment 80%, payment 20%; 15 model calls, 169,958 tokens, $0.030
+[payment-failure] diagnosed ErrorBudgetBurn/checkout: root causes payment 70%, payment 20%; 15 model calls, 182,636 tokens, $0.028
+[payment-failure] recorded 30 model steps, 53 tool answers
+[payment-failure] answer: payment - correct
+[payment-failure] recover
+[payment-failure] all alerts resolved 285.3s after recovery
+[payment-failure] closed 2 incident(s)
+[network-delay] inject: 1s of added network latency on product-catalog
+[network-delay] alert LatencyP95High on recommendation after 189.5s
+[network-delay] alert LatencyP95High on product-catalog after 189.5s
+[network-delay] alert LatencyP95High on checkout after 204.5s
+[network-delay] alert LatencyP95High on frontend-proxy after 204.5s
+[network-delay] alert LatencyP95High on frontend after 204.5s
+[network-delay] tool prom_query (p95): ok - product-catalog=9253.0 (want > 1000)
+[network-delay] tool traces_search (slow_traces): ok - 20 traces, p95=12003.0ms
+[network-delay] tool trace_get (slow_trace): ok - product-catalog self=5502.0ms; slowest: product-catalog oteldemo.ProductCatalogService/GetProduct self=5502.0ms
+[network-delay] tool k8s_events (events): ok - 0 events, by reason {}; chaos objects: []
+[network-delay] tool flag_state (flags): ok - on: []
+[network-delay] diagnosed LatencyP95High/recommendation: root causes product-catalog 75%, product-catalog 30%; 18 model calls, 225,176 tokens, $0.035
+[network-delay] diagnosed LatencyP95High/product-catalog: root causes astronomy-db 60%, product-catalog 25%; 19 model calls, 294,181 tokens, $0.043
+[network-delay] diagnosed LatencyP95High/checkout: root causes product-catalog 60%, product-catalog 30%; 17 model calls, 267,291 tokens, $0.039
+[network-delay] diagnosed LatencyP95High/frontend-proxy: root causes product-catalog 70%, astronomy-db 25%; 20 model calls, 347,132 tokens, $0.044
+[network-delay] diagnosed LatencyP95High/frontend: root causes product-catalog 60%, product-catalog 25%; 17 model calls, 227,946 tokens, $0.035
+[network-delay] recorded 91 model steps, 187 tool answers
+[network-delay] answer: astronomy-db - wrong (expected product-catalog)
+[network-delay] recover
+[network-delay] all alerts resolved 320.7s after recovery
+[network-delay] closed 5 incident(s)
+[bad-release] inject: a checkout rollout points its payment client at a port nobody listens on
+[bad-release] alert ErrorBudgetBurn[fast] on checkout after 132.1s
+[bad-release] tool prom_query (error_ratio): ok - checkout=0.6462 (want > 0.1)
+[bad-release] tool rollout_history (history): ok - revision 2: 'checkout config release: payment client moved to port 9999'
+[bad-release] tool deploy_diff (diff): ok - 1 changes; {'path': 'containers.checkout.env.PAYMENT_ADDR', 'from': 'payment:8080', 'to': 'payment:9999'}
+[bad-release] tool k8s_events (events): ok - by reason: {'Scheduled': 1, 'Pulling': 1, 'Pulled': 1, 'Created': 1, 'Started': 1, 'SuccessfulCreate': 1, 'Killing': 1, 'SuccessfulDelete': 1, 'ScalingReplicaSet': 1}
+[bad-release] tool traces_search (error_traces): ok - 20/20 traces with errors; checkout: oteldemo.CheckoutService/PlaceOrder: failed to charge card: could not charge the card: rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: dial tcp 10.96.168.114:9999: i/o timeout"
+[bad-release] tool logs_search (error_logs): ok - 56 lines, match: Checkout failed to place order <n> INTERNAL: failed to charge card: could not charge the card: rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: dial tcp …, top: Checkout failed to place order <n> INTERNAL: failed to charge card: could not charge the card: rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: dial tcp …
+[bad-release] diagnosed ErrorBudgetBurn/checkout: root causes checkout 80%, payment 15%; 20 model calls, 397,180 tokens, $0.048
+[bad-release] recorded 20 model steps, 44 tool answers
+[bad-release] answer: checkout - correct
+[bad-release] recover
+[bad-release] all alerts resolved 292.3s after recovery
+[bad-release] closed 1 incident(s)
+
+| fault | root cause | first alert | alerts (service) | expected symptom seen | flapping | tool checks | resolved after recovery | result |
+|---|---|---|---|---|---|---|---|---|
+| payment-failure | payment | 201s | ErrorBudgetBurn[fast] (payment, 201s), ErrorBudgetBurn[fast] (checkout, 201s) | yes | - | 5/5 | 285s | ok |
+| network-delay | product-catalog | 190s | LatencyP95High (recommendation, 190s), LatencyP95High (product-catalog, 190s), LatencyP95High (checkout, 204s), LatencyP95High (frontend-proxy, 204s), LatencyP95High (frontend, 204s) | yes | - | 5/5 | 321s | ok |
+| bad-release | checkout | 132s | ErrorBudgetBurn[fast] (checkout, 132s) | yes | - | 6/6 | 292s | ok |
+
+| fault | root cause | first incident | top candidate | correct | all incidents (top) | time | calls | tokens | cost |
+|---|---|---|---|---|---|---|---|---|---|
+| payment-failure | payment | ErrorBudgetBurn/checkout | payment 70%, payment 20% | yes | payment: payment, checkout: payment | 144s | 30 | 352,594 | $0.058 |
+| network-delay | product-catalog | LatencyP95High/product-catalog | astronomy-db 60%, product-catalog 25% | no | recommendation: product-catalog, product-catalog: astronomy-db, checkout: product-catalog, frontend-proxy: product-catalog, frontend: product-catalog | 311s | 91 | 1,361,726 | $0.196 |
+| bad-release | checkout | ErrorBudgetBurn/checkout | checkout 80%, payment 15% | yes | checkout: checkout | 128s | 20 | 397,180 | $0.048 |
+
+Top-1 correct: 2/3 (needed: 2)
+

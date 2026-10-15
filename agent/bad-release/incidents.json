@@ -1,0 +1,174 @@
+{
+ "annotations": {
+  "e70c959d-dd6d-4489-a2b7-a98bde2629fc": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 36.76% of requests"
+  }
+ },
+ "expected": {
+  "e70c959d-dd6d-4489-a2b7-a98bde2629fc": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_68f987b40a5c5aee",
+       "ev_563e0b43c77775b5"
+      ],
+      "statement": "Checkout revision 2 (18:25:51Z) has change_cause 'payment client moved to port 9999'. Its diff from revision 1 is exactly PAYMENT_ADDR 'payment:8080' -> 'payment:9999'."
+     },
+     {
+      "evidence_ids": [
+       "ev_51dcf3be93e13f03",
+       "ev_6cbb60cca75b0334",
+       "ev_1261a19275669bec"
+      ],
+      "statement": "Checkout's current error is 'dial tcp 10.96.168.114:9999: i/o timeout' on PaymentService/Charge. Checkout returns gRPC Unavailable on PlaceOrder, with five Charge and four PlaceOrder errors in the last 5 minutes."
+     },
+     {
+      "evidence_ids": [
+       "ev_13dd383ab0fab16d",
+       "ev_b14a93be52ad623b",
+       "ev_f4256b73e21dff8f",
+       "ev_44dcd5eb3376e851",
+       "ev_73875e42de59c137"
+      ],
+      "statement": "Payment has one revision (17:39:54Z) and no warning events. Payment logs stop at 18:25:48Z and it has no spans in the last 30 minutes."
+     },
+     {
+      "evidence_ids": [
+       "ev_a8b0bb28940b22e6",
+       "ev_bcadca539d5e6bdc",
+       "ev_cafbee34801320ac",
+       "ev_3f29bb4e82d997b0",
+       "ev_7f0bf838e217617d"
+      ],
+      "statement": "Checkout's server 5m error ratio is 0.51 and the 1m ratio is 1.0. Checkout's errors sit almost entirely on the client span PaymentService/Charge (STATUS_CODE_ERROR, about 0.14-0.19/s). Other dependency calls show no errors."
+     },
+     {
+      "evidence_ids": [
+       "ev_b96919289badb8e7",
+       "ev_ee9dc505499f30b4"
+      ],
+      "statement": "All 18 flagd flags are off. Over 180 minutes the only warnings are unrelated readiness probe failures; there are no restarts or OOM kills."
+     },
+     {
+      "evidence_ids": [
+       "ev_65175f1b04e3b9fb",
+       "ev_fabf9a921dabbfec",
+       "ev_0a308f89cf7e513a"
+      ],
+      "statement": "Payment's server-side Charge error rate is 0 now. Its 5m error ratio peaked at 0.467 around 18:03 and returned to 0 after about 18:20."
+     },
+     {
+      "evidence_ids": [
+       "ev_f6397b67c83bc01b"
+      ],
+      "statement": "Checkout logs no error-level lines in the last 30 minutes. The failure is visible only in traces and info-level logs."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Run 'kubectl get svc payment -n otel-demo -o yaml' and 'kubectl get endpoints payment'. Confirm the ClusterIP is 10.96.168.114 and that port 9999 is not listed.",
+      "statement": "Payment's Kubernetes Service exposes only port 8080, so 10.96.168.114:9999 has no endpoints and the dial times out."
+     },
+     {
+      "how_to_verify": "Run 'kubectl rollout undo deployment/checkout -n otel-demo' (or set PAYMENT_ADDR=payment:8080), then watch service:sli_error_ratio:rate5m for checkout and Charge error spans in Jaeger.",
+      "statement": "Rolling checkout back to revision 1 will restore Charge calls and drop the 5m error ratio."
+     },
+     {
+      "how_to_verify": "Check payment pod status and restarts, and payment logs just before 18:25:48Z. Confirm payment's Service selector and endpoints.",
+      "statement": "Payment stopped receiving traffic at 18:25:48Z, which is just before the checkout change at 18:25:51Z. Payment's last log line may be coincidental or may reflect a separate payment event."
+     },
+     {
+      "how_to_verify": "Review payment logs for 17:58-18:03Z and the payment change history for any token or config change in that window.",
+      "statement": "The earlier payment 'Invalid token' errors for gold-tier users may point to a payment auth or config problem that could return."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_563e0b43c77775b5",
+       "ev_68f987b40a5c5aee",
+       "ev_51dcf3be93e13f03",
+       "ev_97cba2f4a2ddd7dd"
+      ],
+      "statement": "The revision 2 change caused the current outage. The timing matches (about 2m12s before the alert) and the dial target is the 9999 port, which payment does not serve on 8080. The payment-side silence is consistent with no traffic reaching it."
+     },
+     {
+      "evidence_ids": [
+       "ev_65175f1b04e3b9fb",
+       "ev_3f29bb4e82d997b0",
+       "ev_f4256b73e21dff8f"
+      ],
+      "statement": "The payment server-side view and checkout's client-side errors disagree only because checkout never reaches payment. Payment being healthy and unreached is the expected pattern for a wrong port."
+     },
+     {
+      "evidence_ids": [
+       "ev_71aeeccb2a6b4475",
+       "ev_a8b0bb28940b22e6",
+       "ev_0a308f89cf7e513a"
+      ],
+      "statement": "The earlier 17:58-18:03 error burst (metrics and the payment token warnings) predates the config change and is a separate issue that has already stopped."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Revision 2 changed PAYMENT_ADDR to payment:9999 (payment serves on 8080). Checkout's Charge gRPC dials time out, which fails PlaceOrder with Unavailable and drives the ~37% error ratio. Rolling back to revision 1 should restore service.",
+      "confidence": 0.8,
+      "evidence_ids": [
+       "ev_68f987b40a5c5aee",
+       "ev_563e0b43c77775b5",
+       "ev_51dcf3be93e13f03",
+       "ev_6cbb60cca75b0334",
+       "ev_97cba2f4a2ddd7dd",
+       "ev_fe22982bd38e4a85",
+       "ev_cafbee34801320ac"
+      ],
+      "service": "checkout"
+     },
+     {
+      "cause": "Earlier 'Invalid token' errors for gold-tier users (17:58-18:03) caused a past error burst. They stopped on their own and are not the current outage. Still unexplained and worth a follow-up.",
+      "confidence": 0.15,
+      "evidence_ids": [
+       "ev_71aeeccb2a6b4475",
+       "ev_0a308f89cf7e513a"
+      ],
+      "service": "payment"
+     }
+    ],
+    "summary": "Checkout is the victim, and the fault is its own config change. Revision 2 (18:25:51Z, change-cause 'payment client moved to port 9999') set PAYMENT_ADDR from payment:8080 to payment:9999. Checkout's current errors are gRPC dial timeouts to 10.96.168.114:9999 on PaymentService/Charge, which return Unavailable for PlaceOrder, so about half of checkout requests fail. Payment has no errors because it receives no traffic. Fix: roll checkout back to revision 1 or correct PAYMENT_ADDR to payment:8080, then confirm the 5m error ratio falls. The 17:58-18:03 payment 'Invalid token' burst predates the change and is a separate, already-stopped issue."
+   },
+   "findings": 21,
+   "state": "DIAGNOSED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": null,
+   "created_at": "2026-10-15 18:28:03.015798+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "e70c959d-dd6d-4489-a2b7-a98bde2629fc",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "DIAGNOSED",
+   "tenant_id": "lab",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}
