@@ -95,6 +95,8 @@ class Settings(BaseSettings):
     # The executor's own Kubernetes identity: patch Deployments in k8s_namespace, nothing else.
     # Only the executor process is given it; workers never are.
     executor_k8s_token: SecretStr | None = None
+    # How long the executor watches a rollout before handing over to verification anyway.
+    executor_rollout_timeout_s: float = 180.0
 
     # Verification after a repair: wait, then check the SLI every interval until it has been
     # healthy for verify_healthy_checks checks in a row, or verify_timeout_s has passed.

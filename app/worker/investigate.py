@@ -12,6 +12,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from functools import partial
 
+import httpx
+
 from app.agents.investigation import AgentConfig, Outcome, investigate
 from app.agents.loop import Deps
 from app.agents.store import PgAgentStore
@@ -34,16 +36,18 @@ log = logging.getLogger(__name__)
 @dataclass
 class AgentServices:
     """Shared by every job in a worker process: the model backend (its concurrency limit is
-    per process), the tool source (its circuit breakers too)."""
+    per process), the tool source (its circuit breakers too), Prometheus for verification."""
 
     backend: LLMBackend
     source: Source
     closers: list[Callable[[], Awaitable[None]]] = field(default_factory=list)
+    # Read by the verify job (app/remediation/verify.py); None: repairs cannot be verified.
+    prometheus: httpx.AsyncClient | None = None
 
     @classmethod
     def from_settings(cls, settings: Settings) -> AgentServices:
         clients = Clients.from_settings(settings)
-        return cls(build_backend(settings), LiveSource(clients), [clients.aclose])
+        return cls(build_backend(settings), LiveSource(clients), [clients.aclose], clients.prometheus)
 
     async def aclose(self) -> None:
         for close in self.closers:

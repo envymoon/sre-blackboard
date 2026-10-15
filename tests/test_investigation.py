@@ -51,6 +51,7 @@ def alert(service: str) -> dict[str, Any]:
             "environment": "lab",
             "severity": "critical",
             "burn": "fast",
+            "slo": "availability",
         },
         "annotations": {"summary": f"{service} is burning its error budget"},
         "startsAt": "2026-10-15T04:05:00Z",
