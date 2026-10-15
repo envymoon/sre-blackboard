@@ -39,6 +39,7 @@ from typing import Any
 from sqlalchemy import Engine, text
 
 from scripts.lab.cluster import Lab
+from scripts.lab.diagnose import Diagnoser, DiagnosisSeen, primary
 from scripts.lab.faults import Fault
 from scripts.lab.probes import ProbeResult
 
@@ -67,7 +68,18 @@ class ScenarioResult:
     unresolved: list[str] = field(default_factory=list)
     flapping: list[str] = field(default_factory=list)
     probes: list[ProbeResult] = field(default_factory=list)
+    # M4: the agents' diagnoses of the incidents this fault opened (when the run asks for them).
+    diagnosed: bool = False
+    diagnoses: list[DiagnosisSeen] = field(default_factory=list)
     error: str | None = None
+
+    @property
+    def answer(self) -> DiagnosisSeen | None:
+        return primary(self.diagnoses)
+
+    @property
+    def diagnosis_correct(self) -> bool:
+        return self.answer is not None and self.answer.top == self.root_cause
 
     @property
     def symptom_matched(self) -> bool:
@@ -83,6 +95,7 @@ class ScenarioResult:
             and self.symptom_matched
             and not self.flapping
             and all(p.ok for p in self.probes)
+            and (not self.diagnosed or (self.answer is not None and self.answer.top is not None))
             and self.resolved_s is not None
         )
 
@@ -192,6 +205,7 @@ def run_scenario(
     hold_s: float = 60,
     poll_s: float = 5,
     probe: Probe | None = None,
+    diagnoser: Diagnoser | None = None,
 ) -> ScenarioResult:
     result = ScenarioResult(fault.name, fault.root_cause, list(fault.symptoms))
     result.quiet_before = wait_quiet(lab, quiet_timeout, log, hold_s=hold_s, poll_s=poll_s)
@@ -236,6 +250,12 @@ def run_scenario(
             result.probes = probe(fault)
             for p in result.probes:
                 log(f"[{fault.name}] tool {p.tool} ({p.name}): {'ok' if p.ok else 'FAIL'} - {p.detail}")
+        if diagnoser is not None and seen:
+            result.diagnosed = True
+            result.diagnoses = diagnoser.wait(fault, t0, log)
+            if result.answer is not None:
+                verdict = "correct" if result.diagnosis_correct else f"wrong (expected {fault.root_cause})"
+                log(f"[{fault.name}] answer: {result.answer.top or 'no root cause'} - {verdict}")
     except Exception as exc:  # report and still try to recover; one broken fault should not stop the run
         result.error = f"{type(exc).__name__}: {exc}"
         log(f"[{fault.name}] error: {result.error}")
@@ -266,6 +286,8 @@ def run_scenario(
             log(f"[{fault.name}] not resolved after {resolve_timeout:.0f}s: {result.unresolved or _names(active)}")
             break
         time.sleep(poll_s)
+    if diagnoser is not None:
+        log(f"[{fault.name}] closed {diagnoser.close(t0)} incident(s)")
     result.flapping = _flapping(_alert_rows(engine, tenant, t0), seen, t1)
     if result.flapping:
         log(f"[{fault.name}] flapping: {', '.join(result.flapping)}")
@@ -289,7 +311,15 @@ def run(
 
 def to_json(results: Sequence[ScenarioResult], alert_timeout: float) -> str:
     return json.dumps(
-        [{**asdict(r), "ok": r.ok(alert_timeout), "symptom_matched": r.symptom_matched} for r in results],
+        [
+            {
+                **asdict(r),
+                "ok": r.ok(alert_timeout),
+                "symptom_matched": r.symptom_matched,
+                "diagnosis_correct": r.diagnosis_correct if r.diagnosed else None,
+            }
+            for r in results
+        ],
         indent=2,
         default=str,
     )
@@ -315,4 +345,31 @@ def to_markdown(results: Sequence[ScenarioResult], alert_timeout: float) -> str:
             f"| {r.fault} | {r.root_cause} | {first} | {alerts} | {'yes' if r.symptom_matched else 'no'} "
             f"| {flapping} | {tools} | {resolved} | {verdict} |"
         )
+    diagnosed = [r for r in results if r.diagnosed]
+    if diagnosed:
+        lines += [
+            "",
+            "| fault | root cause | first incident | top candidate | correct | all incidents (top) | time | calls | tokens | cost |",
+            "|---|---|---|---|---|---|---|---|---|---|",
+        ]
+        for r in diagnosed:
+            a = r.answer
+            if a is None:
+                lines.append(f"| {r.fault} | {r.root_cause} | none | - | no | - | - | - | - | - |")
+                continue
+            top = ", ".join(f"{c['service']} {c['confidence']:.0%}" for c in a.root_causes[:2]) or f"none ({a.reason})"
+            others = ", ".join(f"{d.service}: {d.top or d.state.lower()}" for d in r.diagnoses)
+            took = f"{a.investigation_s:.0f}s" if a.investigation_s is not None else "-"
+            cost = f"${sum(d.cost_usd or 0 for d in r.diagnoses):.3f}"
+            lines.append(
+                f"| {r.fault} | {r.root_cause} | {a.title}/{a.service} | {top} | {'yes' if r.diagnosis_correct else 'no'} "
+                f"| {others} | {took} | {sum(d.calls for d in r.diagnoses)} | {sum(d.tokens for d in r.diagnoses):,} | {cost} |"
+            )
+        correct = sum(r.diagnosis_correct for r in diagnosed)
+        lines += ["", f"Top-1 correct: {correct}/{len(diagnosed)} (needed: {required_correct(len(diagnosed))})"]
     return "\n".join(lines) + "\n"
+
+
+def required_correct(n: int) -> int:
+    """M4 acceptance: the top candidate is right for at least 2 of the 3 faults."""
+    return -(-2 * n // 3)

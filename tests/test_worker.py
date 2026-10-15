@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from app.core.config import Settings
 from app.db import audit, incidents
 from app.queue import jobs
-from app.worker.handlers import default_handlers
+from app.worker.handlers import triage
 from app.worker.runner import Handler, JobContext, Worker
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -97,7 +97,7 @@ async def test_triage_moves_incident_to_triaged(engine, settings):
     assert created
     job_id = await enqueue(engine, "triage", incident_id=incident_id)
 
-    await run_worker_until(engine, fast(settings), default_handlers(), status_is(engine, job_id, "done"))
+    await run_worker_until(engine, fast(settings), {"triage": triage}, status_is(engine, job_id, "done"))
 
     async with engine.connect() as conn:
         incident = await incidents.get(conn, incident_id, tenant_id="t1")
@@ -105,6 +105,14 @@ async def test_triage_moves_incident_to_triaged(engine, settings):
         assert (incident["state"], incident["version"]) == ("TRIAGED", 2)
         result = await audit.verify(conn)
         assert result.ok and result.checked == 1
+        # ... and queued the investigation, with the incident's priority.
+        follow_up = (
+            await conn.execute(
+                text("SELECT kind, priority, status FROM jobs WHERE incident_id = :id AND id <> :job"),
+                {"id": incident_id, "job": job_id},
+            )
+        ).one()
+        assert tuple(follow_up) == ("investigate", 1, "queued")
 
 
 async def test_failing_handler_is_retried_then_dead_lettered(engine, settings):
@@ -241,3 +249,15 @@ async def test_killed_worker_job_is_taken_over_after_lease_expiry(engine, settin
     await run_worker_until(engine, fast(settings), {"sleep": sleep}, status_is(engine, job_id, "done"))
     row = await job_row(engine, job_id)
     assert row["attempts"] == 2 and row["fence"] == 2
+
+
+async def test_triage_only_mode_queues_no_investigation(engine, settings):
+    async with engine.begin() as conn:
+        incident_id, _ = await incidents.open_or_merge(
+            conn, tenant_id="t1", fingerprint="fp2", title="T", service="s", environment="prod", priority=2, labels={}
+        )
+    job_id = await enqueue(engine, "triage", incident_id=incident_id)
+    off = fast(settings, auto_investigate=False)
+    await run_worker_until(engine, off, {"triage": triage}, status_is(engine, job_id, "done"))
+    async with engine.connect() as conn:
+        assert await conn.scalar(text("SELECT count(*) FROM jobs WHERE kind = 'investigate'")) == 0

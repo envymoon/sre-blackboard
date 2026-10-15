@@ -10,7 +10,6 @@ import logging
 
 from app.core.config import get_settings
 from app.worker.__main__ import serve
-from app.worker.handlers import default_handlers
 from app.worker.runner import JobContext
 
 
@@ -20,4 +19,4 @@ async def sleep(ctx: JobContext) -> None:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    asyncio.run(serve(get_settings(), {**default_handlers(), "sleep": sleep}))
+    asyncio.run(serve(get_settings(), extra_handlers={"sleep": sleep}))

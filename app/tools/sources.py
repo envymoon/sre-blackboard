@@ -37,7 +37,8 @@ class Fetched:
 
 
 class Source(Protocol):
-    async def fetch(self, tool: Tool, args: ToolArgs) -> Fetched: ...
+    # ``agent`` is who asked; only replay uses it (see ReplaySource).
+    async def fetch(self, tool: Tool, args: ToolArgs, agent: str | None = None) -> Fetched: ...
 
 
 @dataclass
@@ -83,7 +84,7 @@ class LiveSource:
     def breaker(self, backend: str) -> Breaker:
         return self.breakers.setdefault(backend, Breaker())
 
-    async def fetch(self, tool: Tool, args: ToolArgs) -> Fetched:
+    async def fetch(self, tool: Tool, args: ToolArgs, agent: str | None = None) -> Fetched:
         breaker = self.breaker(tool.backend)
         attempt = 0
         while True:
@@ -145,10 +146,12 @@ class RecordingSource:
     live: Source
     cassette: Cassette
 
-    async def fetch(self, tool: Tool, args: ToolArgs) -> Fetched:
+    async def fetch(self, tool: Tool, args: ToolArgs, agent: str | None = None) -> Fetched:
         entry: dict[str, Any] = {"tool": tool.name, "args": args.model_dump(mode="json")}
+        if agent is not None:
+            entry["agent"] = agent
         try:
-            got = await self.live.fetch(tool, args)
+            got = await self.live.fetch(tool, args, agent)
         except ToolError as e:
             entry |= {"at": datetime.now(UTC).isoformat(), "error": {"code": e.code, "message": e.message}}
             self.cassette.entries.append(entry)
@@ -159,7 +162,12 @@ class RecordingSource:
 
 @dataclass
 class ReplaySource:
-    """Answers from a cassette. Repeated calls get the recorded answers in order, then the last one again."""
+    """Answers from a cassette. Repeated calls get the recorded answers in order, then the last one again.
+
+    Entries recorded with the asking agent are matched per agent first. Investigators run in
+    parallel and may send the same query a few seconds apart; per agent, each gets back the
+    answer it got live, whatever order the replay happens to run them in.
+    """
 
     cassette: Cassette
     _queues: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
@@ -169,17 +177,23 @@ class ReplaySource:
         for e in self.cassette.entries:
             key = canonical_json([e["tool"], e["args"]])
             self._queues.setdefault(key, []).append(e)
+            if "agent" in e:
+                self._queues.setdefault(canonical_json([e["agent"], e["tool"], e["args"]]), []).append(e)
 
-    async def fetch(self, tool: Tool, args: ToolArgs) -> Fetched:
-        key = cassette_key(tool.name, args)
+    def _take(self, key: str) -> dict[str, Any] | None:
         queue = self._queues.get(key)
         if queue:
-            entry = queue.pop(0)
-            self._last[key] = entry
-        elif key in self._last:
-            entry = self._last[key]
-        else:
-            raise ToolError("replay_miss", f"no recorded answer for {tool.name} {args.model_dump(mode='json')}")
+            self._last[key] = queue.pop(0)
+            return self._last[key]
+        return self._last.get(key)
+
+    async def fetch(self, tool: Tool, args: ToolArgs, agent: str | None = None) -> Fetched:
+        dumped = args.model_dump(mode="json")
+        entry = self._take(canonical_json([agent, tool.name, dumped])) if agent is not None else None
+        if entry is None:
+            entry = self._take(cassette_key(tool.name, args))
+        if entry is None:
+            raise ToolError("replay_miss", f"no recorded answer for {tool.name} {dumped}")
         if "error" in entry:
             raise ToolError(entry["error"]["code"], entry["error"]["message"])
         return Fetched(raw=entry["raw"], fetched_at=datetime.fromisoformat(entry["at"]), attempts=1, source="replay")

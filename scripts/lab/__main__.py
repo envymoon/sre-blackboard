@@ -109,6 +109,12 @@ def cmd_accept(args: argparse.Namespace) -> int:
         from scripts.lab.probes import ProbeRunner
 
         probe = ProbeRunner(get_settings(), Path(args.probe_dir), tenant=args.tenant)
+    diagnoser = None
+    if args.diagnose:
+        from scripts.lab.diagnose import Diagnoser
+
+        out = Path(args.record_agents) if args.record_agents else None
+        diagnoser = Diagnoser(engine, get_settings().database_url, args.tenant, out, timeout_s=args.diagnose_timeout)
     results = accept.run(
         lab,
         engine,
@@ -119,6 +125,7 @@ def cmd_accept(args: argparse.Namespace) -> int:
         resolve_timeout=args.resolve_timeout,
         hold_s=args.hold,
         probe=probe,
+        diagnoser=diagnoser,
     )
     markdown = accept.to_markdown(results, args.alert_timeout)
     print("\n" + markdown)
@@ -128,7 +135,22 @@ def cmd_accept(args: argparse.Namespace) -> int:
     if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(summary, "a") as fh:
             fh.write("### Fault lab acceptance\n\n" + markdown)
-    return 0 if all(r.ok(args.alert_timeout) for r in results) else 1
+    ok = all(r.ok(args.alert_timeout) for r in results)
+    if diagnoser is not None:
+        ok = ok and sum(r.diagnosis_correct for r in results) >= accept.required_correct(len(results))
+    return 0 if ok else 1
+
+
+# Inside kind's Docker network the node answers by its container name: the NodePorts the
+# host reaches through port mappings, and the API server (its certificate covers that name).
+NODE = "sre-lab-control-plane"
+INTERNAL = {
+    "SRE_PROMETHEUS_URL": f"http://{NODE}:30090",
+    "SRE_LOKI_URL": f"http://{NODE}:30100",
+    "SRE_JAEGER_URL": f"http://{NODE}:30080/jaeger/ui",
+    "SRE_FLAGD_UI_URL": f"http://{NODE}:30080/feature",
+    "SRE_K8S_API_URL": f"https://{NODE}:6443",
+}
 
 
 def cmd_env(args: argparse.Namespace) -> int:
@@ -136,6 +158,9 @@ def cmd_env(args: argparse.Namespace) -> int:
 
     The Kubernetes token belongs to the reader ServiceAccount (deploy/kind/manifests/reader.yaml),
     which can only get and list in the demo namespace, and expires after --ttl.
+
+    With --internal, the endpoints are for a container on kind's Docker network (the compose
+    workers, deploy/kind/compose.lab.yml), and the CA file is named as mounted there.
     """
     kubectl = _lab(args).kubectl
     config = json.loads(kubectl("config", "view", "--minify", "--raw", "-o", "json"))
@@ -153,6 +178,8 @@ def cmd_env(args: argparse.Namespace) -> int:
         "SRE_K8S_NAMESPACE": kubectl.namespace,
         "SRE_K8S_TOKEN": token,
     }
+    if args.internal:
+        lines |= INTERNAL | {"SRE_K8S_CA_FILE": "/run/lab/ca.crt"}
     print("\n".join(f"{k}={v}" for k, v in lines.items()))
     return 0
 
@@ -202,6 +229,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("env", help="settings for the read-only tools, as .lab.env lines")
     p.add_argument("--ca-file", default=".lab-ca.crt")
     p.add_argument("--ttl", default="12h")
+    p.add_argument("--internal", action="store_true", help="endpoints for a container on kind's network")
     p.set_defaults(func=cmd_env)
     p = sub.add_parser("accept")
     p.add_argument("names", nargs="*", help="faults to run (default: those tagged --tag)")
@@ -218,6 +246,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--probe-dir", help="call the read-only tools during each fault, check them, record cassettes here (M3)"
     )
+    p.add_argument("--diagnose", action="store_true", help="wait for the agents' diagnosis of each fault (M4)")
+    p.add_argument("--diagnose-timeout", type=float, default=900)
+    p.add_argument("--record-agents", help="export each fault's investigations as a recording here")
     p.set_defaults(func=cmd_accept)
     p = sub.add_parser("fixtures", help="contract test fixtures from a lab-recordings checkout")
     p.add_argument("dir")

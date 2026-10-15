@@ -347,22 +347,32 @@ claude -p \
 
 目标：真实 LLM 对真实数据做诊断，产出带证据链的根因报告。
 
-- [ ] 探针（M4 第一天）：写一个脚本验证 2.7 节的 `claude -p` 参数组合，确认 `--json-schema` 的输出字段、`usage` 字段、退出码、限流时的报错形态；结论写进学习笔记。
-- [ ] `app/llm/`（见 2.7 节）：
+- [x] 探针（M4 第一天）：写一个脚本验证 2.7 节的 `claude -p` 参数组合，确认 `--json-schema` 的输出字段、`usage` 字段、退出码、限流时的报错形态；结论写进学习笔记。
+  - 补充：`scripts/llm_probe.py`（`make llm-smoke` / `make llm-probe`）。最重要的发现：数据源若写在系统提示里，Haiku 会先把它们当原生工具调用、失败后才用 `actions`；改为只写进输出 schema 后，提示 token 减半、每步少一轮。限流无法主动触发，按 `api_error_status` 和文本识别。
+- [x] `app/llm/`（见 2.7 节）：
   - `LLMBackend` 接口和 `AgentStep` schema。
   - ClaudeCLIBackend：子进程调用、超时、非零退出码和限流的识别与退避；全局并发信号量（默认 2）。
   - AnthropicAPIBackend：原生 tool use，系统提示和工具定义设为 prompt caching 前缀；对 429/5xx 做带抖动的重试。
   - ReplayBackend：按 `(agent, prompt_version, transcript_hash)` 查找 cassette；live 运行时自动录制。
   - 模型路由：每个角色的模型单独配置，默认全部 `claude-haiku-5-5`。
   - 用量账本：token 和等价成本写入 `llm_calls`；每个事件有 token 上限，超出就进入 ESCALATED。
-- [ ] Agent 循环（手写，与后端无关）：渲染 transcript → `backend.step()` → 校验 `AgentStep` → Harness 执行工具并把结果压缩后追加到 transcript → … → `final`；有最大步数限制，每一步都记 trace span。
-- [ ] Coordinator、3 个 Investigator、Synthesizer 的 prompt 放在 `agents/prompts/`，有版本号，并记录在每次运行中。
-- [ ] 黑板：Finding 和 Hypothesis 写入 Postgres；Investigator 并行执行（同一事件内 asyncio 并发，跨事件由队列并发）。
-- [ ] 引用校验器（确定性）：证据 ID 必须存在、属于本事件、类型匹配；不合格的结论打回重写或丢弃。
-- [ ] 报告：结构化的 `Diagnosis`，再用模板渲染成 Markdown（保留原设计中"事实 / 高置信推断 / 待验证假设"的区分）。
-- [ ] 状态机加断点续跑：在 INVESTIGATING 中途 kill worker，另一个 worker 接手后不会重复调用已完成的 Investigator。
+  - 偏差：没有在 `incidents` 上加 `budget_used` 列，已用量直接从 `llm_calls` 汇总，避免两处记账不一致。API 后端用 httpx 直接调用，没有引入 SDK。
+- [x] Agent 循环（手写，与后端无关）：渲染 transcript → `backend.step()` → 校验 `AgentStep` → Harness 执行工具并把结果压缩后追加到 transcript → … → `final`；有最大步数限制，每一步都记 trace span。
+  - 偏差：每一步记进 `llm_calls`（耗时、token、请求哈希、模型的回答）和结构化日志；OpenTelemetry span 留到 M8 统一接入。
+- [x] Coordinator、3 个 Investigator、Synthesizer 的 prompt 放在 `agents/prompts/`，有版本号，并记录在每次运行中。
+  - 补充：版本 = 各片段的版本号 + 文本哈希前 8 位，忘了改版本号也看得出来。环境说明（服务、调用关系、指标名）是共享片段，不含任何故障信息。
+- [x] 黑板：Finding 和 Hypothesis 写入 Postgres；Investigator 并行执行（同一事件内 asyncio 并发，跨事件由队列并发）。
+  - 补充：黑板只追加、每行属于写它的 Agent，所以不需要版本号也不会覆盖；`agent_runs` 是检查点，和黑板写在同一个事务里，并走 job 的 fence。
+- [x] 引用校验器（确定性）：证据 ID 必须存在、属于本事件、类型匹配；不合格的结论打回重写或丢弃。
+  - 补充：另加一条"引用者必须看过"：Investigator 只能引用自己查到的，Synthesizer 只能引用 Finding 引用过的。
+- [x] 报告：结构化的 `Diagnosis`，再用模板渲染成 Markdown（保留原设计中"事实 / 高置信推断 / 待验证假设"的区分）。
+  - 补充：`GET /api/v1/incidents/{id}/diagnosis`、`/report` 和 `GET /api/v1/evidence/{id}`；报告里每个证据 ID 都链接到证据接口。
+- [x] 状态机加断点续跑：在 INVESTIGATING 中途 kill worker，另一个 worker 接手后不会重复调用已完成的 Investigator。
+  - 补充：测试里真的 SIGKILL 一个 worker 进程（卡在 Synthesizer），接手的 worker 只调用了 Synthesizer。一次调查可以从数据库导出成录音，在空库里回放出同样的诊断（`app/agents/recording.py`）。
 
 验收：在 M2 的 3 个代表性故障上，Agent 都能给出根因候选；Top-1 正确至少 2 个；每条结论都有可点开的证据。
+
+- 结果：实验环境上跑了 3 次（Haiku 5.5），Top-1 分别 2/3、3/3、3/3，最后一次的录音进了契约测试，8 个调查全部回放成功。弱点是 product-catalog 自己那个事件常把它的数据库排第一，详见学习笔记 m4-agent 第 4 节。
 
 面试点：手写 agent 循环与框架的取舍；后端可插拔（CLI、API、回放）；结构化输出；如何防幻觉（引用校验）；成本与额度控制（结果压缩、模型分级、预算、并发限流）；如何让并行 Agent 共享状态又不互相覆盖（黑板加版本号）。
 
@@ -568,8 +578,8 @@ claude -p \
 | M0 | 已完成 | 2026-10-10 | PR #2，标签 `v0.1.0` |
 | M1 | 已完成 | 2026-10-12 | PR #3，2026-10-14 合并；compose 全栈验收在 CI 的 `e2e` job 里 |
 | M2 | 已完成 | 2026-10-14 | PR #4，2026-10-15 合并；实验环境在 GitHub Actions 上运行（ADR-0004），3 个代表性故障验收通过，基线 10 分钟无告警 |
-| M3 | 已完成 | 2026-10-15 | 分支 `milestone/m3-tools`；9 个只读工具 + 证据库 + 录制回放（ADR-0005）；第 11 次实验环境运行中 3 个故障的 16 项工具检查全部通过，录音进契约测试 |
-| M4 | 未开始 | | |
+| M3 | 已完成 | 2026-10-15 | PR #5，2026-10-15 合并；9 个只读工具 + 证据库 + 录制回放（ADR-0005）；第 11 次实验环境运行中 3 个故障的 16 项工具检查全部通过，录音进契约测试 |
+| M4 | 已完成 | 2026-10-15 | 分支 `milestone/m4-agent`；LLM 后端、Agent 循环、黑板检查点、引用校验（ADR-0006）；第 17 次实验环境运行 Top-1 3/3（8 个事件 7 个正确），每个故障约 0.05–0.22 美元，录音进契约测试 |
 | M5 | 未开始 | | |
 | M6 | 未开始 | | |
 | M7 | 未开始 | | |

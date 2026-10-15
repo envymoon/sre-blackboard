@@ -439,3 +439,60 @@ def test_probes_check_live_answers_and_record_a_replayable_cassette(tmp_path: Pa
         "traces_search",
         "logs_search",
     ]
+
+
+class DiagnosingLab(SimulatedLab):
+    """As SimulatedLab, and 'the agents' diagnose every incident the fault opens right away."""
+
+    def __init__(self, engine: Engine, top: str) -> None:
+        super().__init__(engine)
+        self.top = top
+
+    def inject(self, fault: Any) -> None:
+        super().inject(fault)
+        body = {
+            "summary": "s",
+            "root_causes": [
+                {"service": self.top, "cause": "c", "confidence": 0.8, "evidence_ids": ["ev_0000000000000001"]}
+            ],
+            "facts": [],
+            "inferences": [],
+            "hypotheses": [],
+        }
+        with self.engine.begin() as conn:
+            for row in conn.execute(text("SELECT id, tenant_id FROM incidents WHERE state = 'RECEIVED'")).all():
+                conn.execute(text("UPDATE incidents SET state = 'DIAGNOSED' WHERE id = :id"), {"id": row.id})
+                conn.execute(
+                    text(
+                        "INSERT INTO blackboard (tenant_id, incident_id, kind, author, body) "
+                        "VALUES (:t, :id, 'diagnosis', 'synthesizer', CAST(:b AS jsonb))"
+                    ),
+                    {"t": row.tenant_id, "id": row.id, "b": json.dumps(body)},
+                )
+
+
+@pytest.mark.parametrize(("top", "correct"), [("payment", True), ("checkout", False)])
+def test_acceptance_scores_the_diagnosis_and_closes_the_incidents(
+    sync_engine: Engine, migrated_url: str, tmp_path: Path, top: str, correct: bool
+) -> None:
+    from scripts.lab.diagnose import Diagnoser
+
+    with sync_engine.begin() as conn:
+        conn.execute(text("TRUNCATE blackboard, agent_runs, llm_calls, tool_calls, evidence CASCADE"))
+    diagnoser = Diagnoser(sync_engine, migrated_url, "lab", tmp_path, timeout_s=5)
+    (result,) = accept.run(
+        DiagnosingLab(sync_engine, top),  # type: ignore[arg-type]
+        sync_engine,
+        [get("payment-failure")],
+        tenant="lab",
+        log=lambda _: None,
+        diagnoser=diagnoser,
+        **FAST,
+    )
+    assert result.ok(alert_timeout=300), result  # a candidate was given, right or wrong
+    assert result.answer is not None and result.answer.top == top and result.diagnosis_correct is correct
+    markdown = accept.to_markdown([result], 300)
+    assert f"Top-1 correct: {int(correct)}/1 (needed: 1)" in markdown
+    assert (tmp_path / "payment-failure" / "incidents.json").exists()
+    with sync_engine.connect() as conn:
+        assert conn.execute(text("SELECT state, closed_at IS NOT NULL FROM incidents")).all() == [("ESCALATED", True)]

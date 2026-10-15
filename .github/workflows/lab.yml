@@ -8,6 +8,11 @@ name: Fault lab
 # Since M3 the acceptance run also calls the read-only tools during each fault, checks what
 # they return, and records the answers. The recordings are pushed to a branch
 # lab-recordings/run-<id>, because the cloud dev container can read git but not artifacts.
+#
+# Since M4 the compose workers investigate every incident with the real model (claude -p on
+# the subscription, authenticated by the CLAUDE_CODE_OAUTH_TOKEN secret), and the acceptance
+# run waits for each fault's diagnosis and scores it. Without the secret the agents are
+# skipped and the run says so. Each fault's investigations are exported as recordings too.
 
 on:
   workflow_dispatch:
@@ -22,6 +27,11 @@ on:
       - "deploy/kind/**"
       - "scripts/lab/**"
       - "app/tools/**"
+      - "app/agents/**"
+      - "app/llm/**"
+      - "app/worker/**"
+      - "Dockerfile"
+      - "docker-compose.yml"
       - ".github/workflows/lab.yml"
 
 permissions:
@@ -35,13 +45,13 @@ jobs:
   lab:
     # Pinned: ubuntu-latest moves to a new release, and the lab should only change on purpose.
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 150
     permissions:
       contents: write  # only to push the recordings branch
     env:
       SRE_DATABASE_URL: postgresql+psycopg://sre:sre@localhost:5432/sre
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
       - name: Free disk space
         run: |
@@ -52,7 +62,7 @@ jobs:
       - name: Load pinned versions
         run: grep -E '^[A-Z_]+=' deploy/kind/versions.env >> "$GITHUB_ENV"
 
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
         with:
           version: "0.11.32"
           enable-cache: true
@@ -84,6 +94,44 @@ jobs:
           # Endpoints and a short-lived read-only Kubernetes token. Not in lab-out: that is uploaded.
           uv run python -m scripts.lab env > .lab.env
           grep -v TOKEN .lab.env
+
+      - name: Point the workers at the lab
+        env:
+          # The model token is visible to this step only, and from here only to the worker
+          # containers' environment: never written to a file, a log or lab-out. Empty when the
+          # secret is not set. Its scope is model requests on the subscription (one year).
+          LAB_CLAUDE_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          # The workers join kind's Docker network and investigate the lab from there.
+          uv run python -m scripts.lab env --internal > .lab.worker.env
+          if [ -n "$LAB_CLAUDE_TOKEN" ]; then export CLAUDE_CODE_OAUTH_TOKEN="$LAB_CLAUDE_TOKEN"; fi
+          docker compose -f docker-compose.yml -f deploy/kind/compose.lab.yml up -d --no-deps worker
+          sleep 5
+          {
+            echo "# claude in the worker image"
+            docker compose exec -T worker claude --version
+            echo "# a tool call from inside a worker container (Prometheus over kind's network)"
+            docker compose exec -T worker python -m app.tools call prom_query '{"query": "count(up)"}'
+            echo "# Kubernetes API with the reader token"
+            docker compose exec -T worker python -m app.tools call rollout_history '{"deployment": "checkout"}' | head -c 600
+          } 2>&1 | tee lab-out/worker-check.txt
+          # Can the workers reach the model? One tiny claude -p call, as the backend makes it.
+          # Lab run 13 had no token: every investigation escalated with "Not logged in".
+          if [ -z "$LAB_CLAUDE_TOKEN" ]; then
+            echo "[agents] skipped: the CLAUDE_CODE_OAUTH_TOKEN secret is not set" | tee lab-out/agents.txt
+          # The JSON answer is on stdout; the CLI may print warnings on stderr, which the backend
+          # reads only to explain a failure. So the same here.
+          elif out=$(echo "Reply with the word ok." | docker compose exec -T worker sh -c 'cd /tmp && claude -p \
+                --model claude-haiku-5-5 --tools "" --strict-mcp-config --setting-sources "" \
+                --output-format json --no-session-persistence' 2>/tmp/claude-check.err) \
+               && echo "$out" | jq -e '.is_error == false' > /dev/null; then
+            echo "[agents] model reachable: $(echo "$out" | jq -c '{result, total_cost_usd}')" | tee lab-out/agents.txt
+            echo "enabled" > lab-out/agents.enabled
+          else
+            why=$(cat - /tmp/claude-check.err <<< "$out" | tr '\n' ' ' | head -c 400)
+            echo "[agents] skipped: claude -p in the worker failed: $why" | tee lab-out/agents.txt
+          fi
+          echo "::notice title=agents::$(cat lab-out/agents.txt)"
 
       - name: Wait for span metrics
         run: |
@@ -144,8 +192,10 @@ jobs:
       - name: Acceptance
         run: |
           set -o pipefail
-          uv run python -m scripts.lab accept ${{ inputs.faults }} --report lab-out/report.json \
-            --probe-dir lab-out/cassettes | tee lab-out/accept.txt
+          agents=()
+          if [ -f lab-out/agents.enabled ]; then agents=(--diagnose --record-agents lab-out/agent); fi
+          { cat lab-out/agents.txt; uv run python -m scripts.lab accept ${{ inputs.faults }} --report lab-out/report.json \
+            --probe-dir lab-out/cassettes "${agents[@]}"; } | tee lab-out/accept.txt
 
       - name: Diagnostics
         if: always()
@@ -158,7 +208,9 @@ jobs:
           kubectl "${ctx[@]}" -n otel-demo logs deployment/prometheus -c prometheus-server --tail=300 > lab-out/prometheus.log 2>&1 || true
           curl -fsS localhost:19090/api/v1/rules | jq . > lab-out/rules.json 2>&1 || true
           curl -fsS localhost:19090/api/v1/alerts | jq . > lab-out/alerts.json 2>&1 || true
-          docker compose logs --no-color --tail=500 api worker > lab-out/sre-blackboard.log 2>&1 || true
+          docker compose logs --no-color --tail=500 api > lab-out/sre-blackboard.log 2>&1 || true
+          docker compose logs --no-color worker > lab-out/worker.log 2>&1 || true
+          grep -E "WARNING|ERROR|incident .*: |failed" lab-out/worker.log | tail -200 > lab-out/worker-events.txt || true
           cat lab-out/pods.txt || true
 
       # Readable through the REST API even where logs and artifacts are not (see the script).
@@ -166,8 +218,8 @@ jobs:
       - name: Publish results as annotations
         if: always()
         run: |
-          uv run python -m scripts.lab.annotate lab-out/accept.txt:150 lab-out/baseline-slis.txt \
-            lab-out/docker-stats.txt lab-out/container-memory.txt lab-out/baseline-status.txt lab-out/up.log:40
+          uv run python -m scripts.lab.annotate lab-out/accept.txt:200 lab-out/worker-check.txt:40 \
+            lab-out/baseline-slis.txt lab-out/docker-stats.txt lab-out/container-memory.txt lab-out/up.log:40
       - name: Publish cluster state as annotations
         if: always()
         run: |
@@ -176,25 +228,26 @@ jobs:
       - name: Publish logs as annotations
         if: always()
         run: |
-          uv run python -m scripts.lab.annotate lab-out/sre-blackboard.log:80 lab-out/alertmanager.log:60 \
-            lab-out/prometheus.log:40
+          uv run python -m scripts.lab.annotate lab-out/worker-events.txt:120 lab-out/sre-blackboard.log:60 \
+            lab-out/alertmanager.log:40 lab-out/prometheus.log:20
 
       - name: Push recordings
-        if: always() && hashFiles('lab-out/cassettes/*.jsonl.gz') != ''
+        if: always() && (hashFiles('lab-out/cassettes/*.jsonl.gz') != '' || hashFiles('lab-out/agent/**') != '')
         run: |
           branch="lab-recordings/run-${{ github.run_id }}"
           keep=$(mktemp -d)
-          cp -r lab-out/cassettes lab-out/accept.txt lab-out/report.json "$keep"/ 2>/dev/null || true
+          cp -r lab-out/cassettes lab-out/agent lab-out/accept.txt lab-out/report.json "$keep"/ 2>/dev/null || true
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch --orphan "$branch"
           cp -r "$keep"/. .
-          git add cassettes accept.txt report.json 2>/dev/null || git add cassettes
+          # Only these: untracked leftovers (lab-out/, ignored settings files) stay out.
+          for f in cassettes agent accept.txt report.json; do [ -e "$f" ] && git add "$f"; done
           git commit -q -m "lab recordings from run ${{ github.run_id }} (${{ github.sha }})"
           git push -q origin "$branch"
           echo "::notice title=recordings::pushed to $branch"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         if: always()
         with:
           name: lab-out

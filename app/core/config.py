@@ -13,9 +13,26 @@ class Settings(BaseSettings):
     # (`make lab-env`); values there override .env.
     model_config = SettingsConfigDict(env_prefix="SRE_", env_file=(".env", ".lab.env"), extra="ignore")
 
-    # Default model for every agent role; per-role overrides go in llm_role_models.
+    # Default model for every agent role. Overrides by role ("investigator.metrics") or by
+    # family ("investigator"), e.g. SRE_LLM_ROLE_MODELS='{"synthesizer": "claude-sonnet-5-5"}'.
     llm_model: str = "claude-haiku-5-5"
     llm_role_models: dict[str, str] = {}
+    # "cli" (claude -p, subscription), "api" (Anthropic API key) or "replay" (llm_cassette).
+    llm_backend: str = "cli"
+    llm_cli_binary: str = "claude"
+    llm_cassette: str | None = None
+    anthropic_api_key: SecretStr | None = None
+    anthropic_base_url: str = "https://api.anthropic.com"
+    llm_timeout_s: float = 180.0
+    llm_retries: int = 3
+    # claude -p processes at once, per worker process.
+    llm_concurrency: int = 2
+    # Tokens (prompt, cached or not, plus output) one incident may use before it is escalated.
+    llm_incident_token_budget: int = 1_500_000
+    agent_max_steps: int = 8
+    # Queue an investigation for every new incident. Off: triage only (no model access, or
+    # a load test of the ingest path).
+    auto_investigate: bool = True
 
     kb_dir: str = "kb"
 
@@ -56,7 +73,8 @@ class Settings(BaseSettings):
     worker_reap_interval_s: float = 5.0
     worker_shutdown_grace_s: float = 20.0
     # A handler running longer than this fails the attempt (and is retried).
-    worker_job_timeout_s: float = 600.0
+    # An investigation (about 20 model steps, a few in parallel) is the longest job.
+    worker_job_timeout_s: float = 1200.0
 
 
 @lru_cache

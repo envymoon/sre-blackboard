@@ -1,0 +1,45 @@
+name: Model check
+
+# One tiny claude -p call with the CLAUDE_CODE_OAUTH_TOKEN secret, made the way the workers
+# make it. About a minute, against the hour a lab run takes to find out the same thing.
+# Prints only whether the secret is set and the model's one-word answer, never the token.
+
+on:
+  workflow_dispatch:
+  # Dispatch needs the file on the default branch; until then a push of this file runs it,
+  # and a re-run of that run checks the secret again.
+  push:
+    branches: ["milestone/**"]
+    paths: [".github/workflows/model-check.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Install the Claude Code CLI (the version the worker image pins)
+        run: |
+          npm install -g --no-fund --no-audit "@anthropic-ai/claude-code@2.1.300"
+          claude --version
+
+      - name: One claude -p call
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+            msg="the CLAUDE_CODE_OAUTH_TOKEN repository secret is empty or not visible to Actions"
+            echo "::error title=model::$msg"; exit 1
+          fi
+          cd "$(mktemp -d)"
+          # The answer is the JSON on stdout. stderr may carry warnings; it is shown only on failure,
+          # on one line (a workflow annotation ends at the first newline).
+          out=$(echo "Reply with the word ok." | claude -p --model claude-haiku-5-5 --tools "" \
+                --strict-mcp-config --setting-sources "" --output-format json --no-session-persistence 2>err.txt) || true
+          if echo "$out" | jq -e '.is_error == false' > /dev/null 2>&1; then
+            echo "::notice title=model::reachable: $(echo "$out" | jq -c '{result, total_cost_usd, models: (.modelUsage | keys)}')"
+          else
+            echo "::error title=model::claude -p failed: $(cat - err.txt <<< "$out" | tr '\n' ' ' | head -c 600)"; exit 1
+          fi
