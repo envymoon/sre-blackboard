@@ -22,6 +22,7 @@ eval/report.json
 .env
 # Lab tool settings with a Kubernetes token (make lab-env)
 .lab.env
+.lab.worker.env
 .lab-ca.crt
 *.pem
 *.key

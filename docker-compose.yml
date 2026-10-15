@@ -1,7 +1,9 @@
 # Postgres, a one-shot migration, the API (2 processes) and 2 workers.
 # Needs SRE_JWT_SECRET (32+ characters) in the environment or in .env; see .env.example.
+# The workers call the model through the Claude CLI: set CLAUDE_CODE_OAUTH_TOKEN (from
+# `claude setup-token`) or ANTHROPIC_API_KEY. Without either, investigations escalate.
 x-app: &app
-  build: .
+  build: {context: ., target: api}
   environment: &app-env
     SRE_DATABASE_URL: postgresql+psycopg://sre:sre@db:5432/sre
     SRE_JWT_SECRET: ${SRE_JWT_SECRET:?set SRE_JWT_SECRET (32+ characters) in .env}
@@ -41,7 +43,16 @@ services:
 
   worker:
     <<: *app
-    command: ["python", "-m", "app.worker"]
+    build: {context: ., target: worker}
+    environment:
+      <<: *app-env
+      SRE_LLM_BACKEND: ${SRE_LLM_BACKEND:-cli}
+      SRE_AUTO_INVESTIGATE: ${SRE_AUTO_INVESTIGATE:-true}
+      SRE_LLM_ROLE_MODELS: ${SRE_LLM_ROLE_MODELS:-{}}
+      # No value: passed through from the shell or .env when set, absent otherwise.
+      CLAUDE_CODE_OAUTH_TOKEN:
+      ANTHROPIC_API_KEY:
+      SRE_ANTHROPIC_API_KEY:
     deploy:
       replicas: 2
     stop_grace_period: 30s

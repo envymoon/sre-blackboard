@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     # Tokens (prompt, cached or not, plus output) one incident may use before it is escalated.
     llm_incident_token_budget: int = 1_500_000
     agent_max_steps: int = 8
+    # Queue an investigation for every new incident. Off: triage only (no model access, or
+    # a load test of the ingest path).
+    auto_investigate: bool = True
 
     kb_dir: str = "kb"
 
@@ -70,7 +73,8 @@ class Settings(BaseSettings):
     worker_reap_interval_s: float = 5.0
     worker_shutdown_grace_s: float = 20.0
     # A handler running longer than this fails the attempt (and is retried).
-    worker_job_timeout_s: float = 600.0
+    # An investigation (about 20 model steps, a few in parallel) is the longest job.
+    worker_job_timeout_s: float = 1200.0
 
 
 @lru_cache

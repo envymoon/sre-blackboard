@@ -28,6 +28,8 @@ async def triage(ctx: JobContext) -> None:
             actor=f"worker:{ctx.worker_id}",
             reason="accepted for investigation",
         )
+        if not ctx.settings.auto_investigate:
+            return
         await jobs.enqueue(
             conn,
             tenant_id=incident["tenant_id"],

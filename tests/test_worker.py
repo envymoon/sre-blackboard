@@ -249,3 +249,15 @@ async def test_killed_worker_job_is_taken_over_after_lease_expiry(engine, settin
     await run_worker_until(engine, fast(settings), {"sleep": sleep}, status_is(engine, job_id, "done"))
     row = await job_row(engine, job_id)
     assert row["attempts"] == 2 and row["fence"] == 2
+
+
+async def test_triage_only_mode_queues_no_investigation(engine, settings):
+    async with engine.begin() as conn:
+        incident_id, _ = await incidents.open_or_merge(
+            conn, tenant_id="t1", fingerprint="fp2", title="T", service="s", environment="prod", priority=2, labels={}
+        )
+    job_id = await enqueue(engine, "triage", incident_id=incident_id)
+    off = fast(settings, auto_investigate=False)
+    await run_worker_until(engine, off, {"triage": triage}, status_is(engine, job_id, "done"))
+    async with engine.connect() as conn:
+        assert await conn.scalar(text("SELECT count(*) FROM jobs WHERE kind = 'investigate'")) == 0

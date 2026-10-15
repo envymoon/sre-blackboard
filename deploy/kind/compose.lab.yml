@@ -1,0 +1,18 @@
+# The workers investigate the lab: they join kind's Docker network and call Prometheus, Loki,
+# Jaeger, flagd and the Kubernetes API on the node, as a pod would. After `make env-up`:
+#
+#   uv run python -m scripts.lab env --internal > .lab.worker.env
+#   docker compose -f docker-compose.yml -f deploy/kind/compose.lab.yml up -d worker
+#
+# (`make lab-workers` does both.) .lab.worker.env holds a short-lived read-only token; it is
+# git-ignored. The CA certificate is the one `scripts.lab env` wrote to .lab-ca.crt.
+services:
+  worker:
+    networks: [default, kind]
+    env_file: [.lab.worker.env]
+    volumes:
+      - ./.lab-ca.crt:/run/lab/ca.crt:ro
+
+networks:
+  kind:
+    external: true
