@@ -1,4 +1,4 @@
-.PHONY: install fmt lint typecheck test check db migrate run worker up down token loadtest \
+.PHONY: install fmt lint typecheck test check db migrate run worker up down token audit-verify loadtest \
 	llm-smoke llm-probe env-up env-down faults fault recover lab-status lab-probe lab-accept lab-env lab-workers rules-test
 
 install:  ## Install runtime + dev dependencies and git hooks
@@ -41,6 +41,9 @@ down:
 
 token:  ## Print a token, e.g. make token ROLES=ingest TENANT=t1
 	@uv run python -m app.core.security mint --sub $${SUB:-dev} --tenant $${TENANT:-t1} --roles $${ROLES:-viewer}
+
+audit-verify:  ## Recompute the audit hash chain; fails at the first tampered row
+	uv run python -m app.db.audit verify
 
 loadtest:  ## 1000 duplicate alerts against a running stack (see scripts/loadtest.py)
 	uv run python -m scripts.loadtest
