@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Column,
     ForeignKey,
@@ -45,6 +46,7 @@ INCIDENT_STATES = (
     "ESCALATED",
 )
 JOB_STATUSES = ("queued", "running", "done", "dead")
+TOOL_CALL_STATUSES = ("ok", "error")
 
 
 def _in(column: str, values: tuple[str, ...]) -> str:
@@ -142,4 +144,54 @@ audit_log = Table(
     Column("payload", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
     Column("prev_hash", Text, nullable=False),
     Column("hash", Text, nullable=False, unique=True),
+)
+
+# A snapshot of what one read-only tool call returned. Rows are immutable (a trigger rejects
+# UPDATE and DELETE): findings cite them by id, and the hash proves the snapshot is unchanged.
+evidence = Table(
+    "evidence",
+    metadata,
+    # "ev_" + 16 hex characters: short enough for a model to copy back without typos.
+    Column("id", Text, primary_key=True),
+    Column("tenant_id", Text, nullable=False),
+    Column("incident_id", UUID(as_uuid=True), ForeignKey("incidents.id")),
+    Column("tool", Text, nullable=False),
+    Column("args", JSONB, nullable=False),
+    # The backend's answer as fetched, before compression.
+    Column("result", JSONB, nullable=False),
+    # sha256 of the canonical JSON of ``result``.
+    Column("result_hash", Text, nullable=False),
+    Column("result_bytes", Integer, nullable=False),
+    # What the model was shown: a bounded summary derived from ``result``.
+    Column("summary", JSONB, nullable=False),
+    # The summary had to be cut to fit the size limit.
+    Column("truncated", Boolean, nullable=False, server_default="false"),
+    # "live" or "replay" (read from a cassette).
+    Column("source", Text, nullable=False),
+    # When the data was read from the backend (for a replay: when it was recorded).
+    Column("fetched_at", TS, nullable=False),
+    Column("created_at", TS, nullable=False, server_default=func.now()),
+    CheckConstraint("source IN ('live', 'replay')", name="source_valid"),
+    Index("ix_evidence_incident_id", "incident_id"),
+)
+
+# Every tool call, including failed ones (which leave no evidence).
+tool_calls = Table(
+    "tool_calls",
+    metadata,
+    Column("id", BigInteger, Identity(), primary_key=True),
+    Column("tenant_id", Text, nullable=False),
+    Column("incident_id", UUID(as_uuid=True), ForeignKey("incidents.id")),
+    Column("agent", Text),
+    Column("tool", Text, nullable=False),
+    Column("args", JSONB, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("error_code", Text),
+    Column("error", Text),
+    Column("attempts", SmallInteger, nullable=False),
+    Column("latency_ms", Integer, nullable=False),
+    Column("evidence_id", Text, ForeignKey("evidence.id")),
+    Column("created_at", TS, nullable=False, server_default=func.now()),
+    CheckConstraint(_in("status", TOOL_CALL_STATUSES), name="status_valid"),
+    Index("ix_tool_calls_incident_id", "incident_id"),
 )

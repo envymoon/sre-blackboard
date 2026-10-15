@@ -9,13 +9,26 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="SRE_", env_file=".env", extra="ignore")
+    # .lab.env holds the lab's tool endpoints and a short-lived Kubernetes token
+    # (`make lab-env`); values there override .env.
+    model_config = SettingsConfigDict(env_prefix="SRE_", env_file=(".env", ".lab.env"), extra="ignore")
 
     # Default model for every agent role; per-role overrides go in llm_role_models.
     llm_model: str = "claude-haiku-5-5"
     llm_role_models: dict[str, str] = {}
 
     kb_dir: str = "kb"
+
+    # Read-only tools (M3). Defaults are the lab's ports on the host (deploy/kind/cluster.yaml).
+    prometheus_url: str = "http://localhost:19090"
+    loki_url: str = "http://localhost:13100"
+    jaeger_url: str = "http://localhost:18080/jaeger/ui"
+    flagd_ui_url: str = "http://localhost:18080/feature"
+    # The Kubernetes API, read with a ServiceAccount token that can only get/list in one namespace.
+    k8s_api_url: str = "https://127.0.0.1:6443"
+    k8s_token: SecretStr | None = None
+    k8s_ca_file: str | None = None
+    k8s_namespace: str = "otel-demo"
 
     database_url: str = "postgresql+psycopg://sre:sre@localhost:5432/sre"
     db_pool_size: int = 10
