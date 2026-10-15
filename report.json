@@ -1,0 +1,366 @@
+[
+  {
+    "fault": "payment-failure",
+    "root_cause": "payment",
+    "expected_symptoms": [
+      "payment",
+      "checkout"
+    ],
+    "quiet_before": true,
+    "first_alert_s": 153.9,
+    "alerts": [
+      {
+        "alertname": "ErrorBudgetBurn[fast]",
+        "service": "checkout",
+        "labels": {
+          "slo": "availability",
+          "burn": "fast",
+          "severity": "critical",
+          "alertname": "ErrorBudgetBurn",
+          "environment": "lab",
+          "service_name": "checkout"
+        },
+        "seconds_after_injection": 153.9
+      },
+      {
+        "alertname": "ErrorBudgetBurn[fast]",
+        "service": "payment",
+        "labels": {
+          "slo": "availability",
+          "burn": "fast",
+          "severity": "critical",
+          "alertname": "ErrorBudgetBurn",
+          "environment": "lab",
+          "service_name": "payment"
+        },
+        "seconds_after_injection": 153.9
+      }
+    ],
+    "incident_created": true,
+    "resolved_s": 305.3,
+    "unresolved": [],
+    "flapping": [],
+    "probes": [
+      {
+        "name": "error_ratio",
+        "tool": "prom_query",
+        "args": {
+          "query": "service:sli_error_ratio:rate5m",
+          "at": null
+        },
+        "ok": true,
+        "detail": "payment=0.3926 (want > 0.1)",
+        "evidence_id": "ev_b99c2d04c57d60bc"
+      },
+      {
+        "name": "error_trend",
+        "tool": "prom_range",
+        "args": {
+          "query": "service:sli_error_ratio:rate5m",
+          "minutes": 15,
+          "step_s": null,
+          "end": null
+        },
+        "ok": true,
+        "detail": "payment: first=0.05417 max=0.3926 peak_at=2026-10-15T04:06:04Z",
+        "evidence_id": "ev_16bf542639855f22"
+      },
+      {
+        "name": "flags",
+        "tool": "flag_state",
+        "args": {
+          "flag": null
+        },
+        "ok": true,
+        "detail": "on: ['paymentFailure']",
+        "evidence_id": "ev_09d5927e1d7a7662"
+      },
+      {
+        "name": "error_traces",
+        "tool": "traces_search",
+        "args": {
+          "service": "payment",
+          "operation": null,
+          "errors_only": true,
+          "min_duration_ms": null,
+          "minutes": 10,
+          "limit": 20,
+          "end": null
+        },
+        "ok": true,
+        "detail": "20/20 traces with errors; payment: charge: Payment request failed. Invalid token. demo.user_context.loyalty_level=gold",
+        "evidence_id": "ev_92f466b4914a8b3c"
+      },
+      {
+        "name": "logs",
+        "tool": "logs_search",
+        "args": {
+          "service": "payment",
+          "contains": null,
+          "level": "warn",
+          "minutes": 10,
+          "limit": 200,
+          "end": null
+        },
+        "ok": true,
+        "detail": "29 lines, match: Payment request failed. Invalid token. demo.user_context.loyalty_level=gold, top: Payment request failed. Invalid token. demo.user_context.loyalty_level=gold",
+        "evidence_id": "ev_7ae8f338fc00cf60"
+      }
+    ],
+    "error": null,
+    "ok": true,
+    "symptom_matched": true
+  },
+  {
+    "fault": "network-delay",
+    "root_cause": "product-catalog",
+    "expected_symptoms": [
+      "product-catalog",
+      "recommendation",
+      "checkout",
+      "frontend",
+      "frontend-proxy"
+    ],
+    "quiet_before": true,
+    "first_alert_s": 173.0,
+    "alerts": [
+      {
+        "alertname": "LatencyP95High",
+        "service": "recommendation",
+        "labels": {
+          "slo": "latency",
+          "severity": "warning",
+          "alertname": "LatencyP95High",
+          "environment": "lab",
+          "service_name": "recommendation"
+        },
+        "seconds_after_injection": 173.0
+      },
+      {
+        "alertname": "LatencyP95High",
+        "service": "product-catalog",
+        "labels": {
+          "slo": "latency",
+          "severity": "warning",
+          "alertname": "LatencyP95High",
+          "environment": "lab",
+          "service_name": "product-catalog"
+        },
+        "seconds_after_injection": 188.0
+      },
+      {
+        "alertname": "LatencyP95High",
+        "service": "frontend",
+        "labels": {
+          "slo": "latency",
+          "severity": "warning",
+          "alertname": "LatencyP95High",
+          "environment": "lab",
+          "service_name": "frontend"
+        },
+        "seconds_after_injection": 203.0
+      },
+      {
+        "alertname": "LatencyP95High",
+        "service": "frontend-proxy",
+        "labels": {
+          "slo": "latency",
+          "severity": "warning",
+          "alertname": "LatencyP95High",
+          "environment": "lab",
+          "service_name": "frontend-proxy"
+        },
+        "seconds_after_injection": 218.0
+      },
+      {
+        "alertname": "LatencyP95High",
+        "service": "checkout",
+        "labels": {
+          "slo": "latency",
+          "severity": "warning",
+          "alertname": "LatencyP95High",
+          "environment": "lab",
+          "service_name": "checkout"
+        },
+        "seconds_after_injection": 218.0
+      }
+    ],
+    "incident_created": true,
+    "resolved_s": 315.5,
+    "unresolved": [],
+    "flapping": [],
+    "probes": [
+      {
+        "name": "p95",
+        "tool": "prom_query",
+        "args": {
+          "query": "service:sli_latency_p95_ms:rate5m",
+          "at": null
+        },
+        "ok": true,
+        "detail": "product-catalog=9224.0 (want > 1000)",
+        "evidence_id": "ev_84c6a03ec120554d"
+      },
+      {
+        "name": "slow_traces",
+        "tool": "traces_search",
+        "args": {
+          "service": "product-catalog",
+          "operation": null,
+          "errors_only": false,
+          "min_duration_ms": 900,
+          "minutes": 10,
+          "limit": 20,
+          "end": null
+        },
+        "ok": true,
+        "detail": "20 traces, p95=15566.0ms",
+        "evidence_id": "ev_da6b129832117894"
+      },
+      {
+        "name": "slow_trace",
+        "tool": "trace_get",
+        "args": {
+          "trace_id": "8d7bf5e923ffc087f5fb3e369fb5eb0c"
+        },
+        "ok": true,
+        "detail": "product-catalog self=5457.0ms; slowest: product-catalog oteldemo.ProductCatalogService/GetProduct self=5457.0ms",
+        "evidence_id": "ev_fefe300541e876cf"
+      },
+      {
+        "name": "events",
+        "tool": "k8s_events",
+        "args": {
+          "object_name": null,
+          "warnings_only": false,
+          "minutes": 30
+        },
+        "ok": true,
+        "detail": "0 events, by reason {}; chaos objects: []",
+        "evidence_id": "ev_c9a686289ca20564"
+      },
+      {
+        "name": "flags",
+        "tool": "flag_state",
+        "args": {
+          "flag": null
+        },
+        "ok": true,
+        "detail": "on: []",
+        "evidence_id": "ev_433615d44fa6bc33"
+      }
+    ],
+    "error": null,
+    "ok": true,
+    "symptom_matched": true
+  },
+  {
+    "fault": "bad-release",
+    "root_cause": "checkout",
+    "expected_symptoms": [
+      "checkout"
+    ],
+    "quiet_before": true,
+    "first_alert_s": 132.0,
+    "alerts": [
+      {
+        "alertname": "ErrorBudgetBurn[fast]",
+        "service": "checkout",
+        "labels": {
+          "slo": "availability",
+          "burn": "fast",
+          "severity": "critical",
+          "alertname": "ErrorBudgetBurn",
+          "environment": "lab",
+          "service_name": "checkout"
+        },
+        "seconds_after_injection": 132.0
+      }
+    ],
+    "incident_created": true,
+    "resolved_s": 286.5,
+    "unresolved": [],
+    "flapping": [],
+    "probes": [
+      {
+        "name": "error_ratio",
+        "tool": "prom_query",
+        "args": {
+          "query": "service:sli_error_ratio:rate5m",
+          "at": null
+        },
+        "ok": true,
+        "detail": "checkout=0.6561 (want > 0.1)",
+        "evidence_id": "ev_32a430814e951f7d"
+      },
+      {
+        "name": "history",
+        "tool": "rollout_history",
+        "args": {
+          "deployment": "checkout"
+        },
+        "ok": true,
+        "detail": "revision 2: 'checkout config release: payment client moved to port 9999'",
+        "evidence_id": "ev_fdf6ab1412d50fd6"
+      },
+      {
+        "name": "diff",
+        "tool": "deploy_diff",
+        "args": {
+          "deployment": "checkout",
+          "from_revision": null,
+          "to_revision": null
+        },
+        "ok": true,
+        "detail": "1 changes; {'path': 'containers.checkout.env.PAYMENT_ADDR', 'from': 'payment:8080', 'to': 'payment:9999'}",
+        "evidence_id": "ev_3a0195e0c447e093"
+      },
+      {
+        "name": "events",
+        "tool": "k8s_events",
+        "args": {
+          "object_name": "checkout",
+          "warnings_only": false,
+          "minutes": 30
+        },
+        "ok": true,
+        "detail": "by reason: {'Scheduled': 1, 'Pulling': 1, 'Pulled': 1, 'Created': 1, 'Started': 1, 'SuccessfulCreate': 1, 'Killing': 1, 'SuccessfulDelete': 1, 'ScalingReplicaSet': 1}",
+        "evidence_id": "ev_7d77e9cd344c2ca6"
+      },
+      {
+        "name": "error_traces",
+        "tool": "traces_search",
+        "args": {
+          "service": "checkout",
+          "operation": null,
+          "errors_only": true,
+          "min_duration_ms": null,
+          "minutes": 10,
+          "limit": 20,
+          "end": null
+        },
+        "ok": true,
+        "detail": "20/20 traces with errors; checkout: oteldemo.CheckoutService/PlaceOrder: failed to charge card: could not charge the card: rpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing: dial tcp 10.96.119.97:9999: i/o timeout\"",
+        "evidence_id": "ev_b36028eca57ccf41"
+      },
+      {
+        "name": "error_logs",
+        "tool": "logs_search",
+        "args": {
+          "service": "frontend",
+          "contains": null,
+          "level": "warn",
+          "minutes": 10,
+          "limit": 200,
+          "end": null
+        },
+        "ok": true,
+        "detail": "49 lines, match: Checkout failed to place order <n> INTERNAL: failed to charge card: could not charge the card: rpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing: dial tcp \u2026, top: Checkout failed to place order <n> INTERNAL: failed to charge card: could not charge the card: rpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing: dial tcp \u2026",
+        "evidence_id": "ev_3c72bf3b882ef457"
+      }
+    ],
+    "error": null,
+    "ok": true,
+    "symptom_matched": true
+  }
+]

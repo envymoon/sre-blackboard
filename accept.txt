@@ -1,0 +1,42 @@
+[baseline] watching for 600s with no fault injected
+[baseline] quiet
+[payment-failure] inject: payment rejects half of all charges
+[payment-failure] alert ErrorBudgetBurn[fast] on checkout after 153.9s
+[payment-failure] alert ErrorBudgetBurn[fast] on payment after 153.9s
+[payment-failure] tool prom_query (error_ratio): ok - payment=0.3926 (want > 0.1)
+[payment-failure] tool prom_range (error_trend): ok - payment: first=0.05417 max=0.3926 peak_at=2026-10-15T04:06:04Z
+[payment-failure] tool flag_state (flags): ok - on: ['paymentFailure']
+[payment-failure] tool traces_search (error_traces): ok - 20/20 traces with errors; payment: charge: Payment request failed. Invalid token. demo.user_context.loyalty_level=gold
+[payment-failure] tool logs_search (logs): ok - 29 lines, match: Payment request failed. Invalid token. demo.user_context.loyalty_level=gold, top: Payment request failed. Invalid token. demo.user_context.loyalty_level=gold
+[payment-failure] recover
+[payment-failure] all alerts resolved 305.3s after recovery
+[network-delay] inject: 1s of added network latency on product-catalog
+[network-delay] alert LatencyP95High on recommendation after 173.0s
+[network-delay] alert LatencyP95High on product-catalog after 188.0s
+[network-delay] alert LatencyP95High on frontend after 203.0s
+[network-delay] alert LatencyP95High on frontend-proxy after 218.0s
+[network-delay] alert LatencyP95High on checkout after 218.0s
+[network-delay] tool prom_query (p95): ok - product-catalog=9224.0 (want > 1000)
+[network-delay] tool traces_search (slow_traces): ok - 20 traces, p95=15566.0ms
+[network-delay] tool trace_get (slow_trace): ok - product-catalog self=5457.0ms; slowest: product-catalog oteldemo.ProductCatalogService/GetProduct self=5457.0ms
+[network-delay] tool k8s_events (events): ok - 0 events, by reason {}; chaos objects: []
+[network-delay] tool flag_state (flags): ok - on: []
+[network-delay] recover
+[network-delay] all alerts resolved 315.5s after recovery
+[bad-release] inject: a checkout rollout points its payment client at a port nobody listens on
+[bad-release] alert ErrorBudgetBurn[fast] on checkout after 132.0s
+[bad-release] tool prom_query (error_ratio): ok - checkout=0.6561 (want > 0.1)
+[bad-release] tool rollout_history (history): ok - revision 2: 'checkout config release: payment client moved to port 9999'
+[bad-release] tool deploy_diff (diff): ok - 1 changes; {'path': 'containers.checkout.env.PAYMENT_ADDR', 'from': 'payment:8080', 'to': 'payment:9999'}
+[bad-release] tool k8s_events (events): ok - by reason: {'Scheduled': 1, 'Pulling': 1, 'Pulled': 1, 'Created': 1, 'Started': 1, 'SuccessfulCreate': 1, 'Killing': 1, 'SuccessfulDelete': 1, 'ScalingReplicaSet': 1}
+[bad-release] tool traces_search (error_traces): ok - 20/20 traces with errors; checkout: oteldemo.CheckoutService/PlaceOrder: failed to charge card: could not charge the card: rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: dial tcp 10.96.119.97:9999: i/o timeout"
+[bad-release] tool logs_search (error_logs): ok - 49 lines, match: Checkout failed to place order <n> INTERNAL: failed to charge card: could not charge the card: rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: dial tcp …, top: Checkout failed to place order <n> INTERNAL: failed to charge card: could not charge the card: rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: dial tcp …
+[bad-release] recover
+[bad-release] all alerts resolved 286.5s after recovery
+
+| fault | root cause | first alert | alerts (service) | expected symptom seen | flapping | tool checks | resolved after recovery | result |
+|---|---|---|---|---|---|---|---|---|
+| payment-failure | payment | 154s | ErrorBudgetBurn[fast] (checkout, 154s), ErrorBudgetBurn[fast] (payment, 154s) | yes | - | 5/5 | 305s | ok |
+| network-delay | product-catalog | 173s | LatencyP95High (recommendation, 173s), LatencyP95High (product-catalog, 188s), LatencyP95High (frontend, 203s), LatencyP95High (frontend-proxy, 218s), LatencyP95High (checkout, 218s) | yes | - | 5/5 | 316s | ok |
+| bad-release | checkout | 132s | ErrorBudgetBurn[fast] (checkout, 132s) | yes | - | 6/6 | 286s | ok |
+
