@@ -123,7 +123,41 @@ plan_hash = sha256(json([incident_id, seq, plan]))
 
 ## 4. 验收结果
 
-（第 18 次实验环境运行完成后补充。）
+验收在 GitHub Actions 的实验环境里跑（ADR-0004），第 18 次运行。和 M4 一样注入 3 个故障、等诊断；多出来的是：验收脚本通过真实 API、以 `lab-approver`（approver 角色，不是发起人）的身份扮演审批人。故障有已知修复（目前只有坏版本发布：`rollout_undo checkout`），而等待审批的计划恰好就是它，就批准，绑定计划哈希；是别的计划就拒绝；故障没有目录里的修复，就不动它，故障恢复后由实验环境关闭事件。然后等执行器和验证器把事件带到 RESOLVED 或 ESCALATED，检查审计记录里闭环的每一步按顺序出现，最后校验整条审计链。
+
+**坏版本发布的闭环**：
+
+```
+07:33  checkout 发布 revision 2（PAYMENT_ADDR → payment:9999）
++147s  ErrorBudgetBurn[fast] on checkout → 事件
++153s  诊断：checkout 75%（引用 rollout_history、deploy_diff、错误 trace）
+       Planner：rollout_undo checkout，引用同样的发布证据；备选 restart（"会带着同样的坏配置起来"）、
+       scale（"不缺容量"）、none（"回滚可逆，等待只会延长故障"）
+       策略：require_approval（R3），6 项阻断检查全部通过
+       lab-approver 批准（plan_hash）
+       执行器：dry-run → started → patch → rollout 完成，revision 2 → 3（旧模板拷回，新版本号）
+       验证器：60 秒后开始，checkout 1 分钟错误率 0，连续 3 次 → RESOLVED
++130s  （从批准到 RESOLVED）
+       验收脚本的"恢复"一步发现没什么可恢复："sre-blackboard already repaired it"
+```
+
+审计链：88 行全部校验通过。闭环事件 `remediation.plan → remediation.approved → execution.started → execution.succeeded → verification.passed` 按顺序都在。
+
+**所有事件的修复提议**：
+
+| 故障 | 事件 | 提议 | 策略 | 结果 |
+|---|---|---|---|---|
+| payment-failure | payment、checkout | 不动作："原因是 flagd 里的 paymentFailure 开关，目录里没有能改它的动作；人去把它关掉，然后看 payment 的错误率是否降回 0.1%" | deny（没有动作） | ESCALATED，交给人 |
+| network-delay | 5 个事件中的 4 个 | 不动作："查 astronomy-db 的锁、慢查询和连接数" | deny（没有动作） | ESCALATED |
+| network-delay | frontend-proxy | `restart_deployment product-catalog`（"像是连接池卡住"） | require_approval（R2） | 没有人批准；故障恢复后关闭 |
+| bad-release | checkout | `rollout_undo checkout` | require_approval（R3） | 批准 → 执行 → **RESOLVED** |
+
+- **结论**：验收通过。坏版本发布从告警到 RESOLVED 全程自动，只有审批一步是人（这里由脚本扮演）。诊断 Top-1 3/3。
+- **"不动作"是对的答案**：功能开关和网络延迟都不是目录里的动作能修的。8 个计划里 6 个明确说"不动作"，并写出人应该去做什么、做完怎么确认。没有动作的计划记为 deny（原因"计划没有动作"），事件转 ESCALATED，Planner 写的建议进了审计记录。
+- **策略管不了"有没有用"**：network-delay 的一个事件提议重启 product-catalog。它是排第一的根因（Problem Host），重启不需要特定证据，所以策略放行到人工审批。但故障是 Chaos Mesh 注入的网络延迟，重启没用。策略只能保证"动作指向有证据的问题主机、在范围内、可撤销"，"这个动作能不能修好"要靠人判断，修了没好要靠验证器发现。这也是 R2 默认要审批的原因。
+- **成本**：Planner 每个事件 1–2 次模型调用，约 0.001–0.002 美元，和调查（约 0.04 美元）比可以忽略。
+- **回放**：第 18 次的录音替换了 `tests/fixtures/agent/` 里第 17 次的录音；契约测试现在把 8 个调查和 8 个计划都重跑一遍，要求零未命中、同样的诊断、同样的计划。
+- **诚实说明**：闭环只跑了一次（一个故障、一次运行），审批人是脚本，不是真的人在看计划。"连续 3 次健康"在实验环境里很容易满足（回滚后错误立刻归零）；真实的恢复可能更慢、更嘈杂，`verify_timeout_s` 和阈值需要按服务调。失败路径（执行出错、验证超时、审批过期、执行中被杀）是在测试里用假的 K8s API 和假的 Prometheus 验证的，没有在实验环境里真的触发。
 
 ## 5. 面试问答
 
