@@ -56,6 +56,10 @@ class Fault:
     symptoms: tuple[str, ...]
     mechanism: FlagFault | ChaosFault | ReleaseFault
     tags: tuple[str, ...] = field(default=())
+    # M5: the repair from the action catalogue a human would approve, e.g. ("rollout_undo",
+    # "checkout"). The acceptance run approves a plan that is exactly this and rejects any other.
+    # None: nothing in the catalogue repairs this fault; its plans are left for the lab to close.
+    repair: tuple[str, str] | None = None
 
     @property
     def kind(self) -> str:
@@ -222,6 +226,7 @@ CATALOGUE: tuple[Fault, ...] = (
             change_cause="checkout config release: payment client moved to port 9999",
         ),
         tags=("acceptance",),
+        repair=("rollout_undo", "checkout"),
     ),
 )
 

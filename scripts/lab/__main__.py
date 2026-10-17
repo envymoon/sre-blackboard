@@ -25,6 +25,8 @@ from scripts.lab.faults import CATALOGUE, get
 
 # The read-only ServiceAccount for the tools (deploy/kind/manifests/reader.yaml).
 READER = "sre-blackboard-reader"
+# The executor's ServiceAccount: patch Deployments in the demo namespace (deploy/kind/manifests/executor.yaml).
+EXECUTOR = "sre-blackboard-executor"
 
 
 def _lab(args: argparse.Namespace) -> Lab:
@@ -114,7 +116,19 @@ def cmd_accept(args: argparse.Namespace) -> int:
         from scripts.lab.diagnose import Diagnoser
 
         out = Path(args.record_agents) if args.record_agents else None
-        diagnoser = Diagnoser(engine, get_settings().database_url, args.tenant, out, timeout_s=args.diagnose_timeout)
+        diagnoser = Diagnoser(
+            engine,
+            get_settings().database_url,
+            args.tenant,
+            out,
+            timeout_s=args.diagnose_timeout,
+            planning=args.remediate,
+        )
+    remediator = None
+    if args.remediate:
+        from scripts.lab.remediate import Remediator
+
+        remediator = Remediator(engine, get_settings(), args.tenant, api_url=args.api_url)
     results = accept.run(
         lab,
         engine,
@@ -126,8 +140,17 @@ def cmd_accept(args: argparse.Namespace) -> int:
         hold_s=args.hold,
         probe=probe,
         diagnoser=diagnoser,
+        remediator=remediator,
     )
     markdown = accept.to_markdown(results, args.alert_timeout)
+    chain_ok = True
+    if remediator is not None:
+        chain = remediator.verify_audit()
+        chain_ok = bool(chain["ok"])
+        markdown += (
+            f"\nAudit chain: {'ok' if chain_ok else 'BROKEN at seq ' + str(chain['first_bad_seq'])}, "
+            f"{chain['checked']} rows verified\n"
+        )
     print("\n" + markdown)
     if args.report:
         with open(args.report, "w") as fh:
@@ -135,7 +158,7 @@ def cmd_accept(args: argparse.Namespace) -> int:
     if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(summary, "a") as fh:
             fh.write("### Fault lab acceptance\n\n" + markdown)
-    ok = all(r.ok(args.alert_timeout) for r in results)
+    ok = all(r.ok(args.alert_timeout) for r in results) and chain_ok
     if diagnoser is not None:
         ok = ok and sum(r.diagnosis_correct for r in results) >= accept.required_correct(len(results))
     return 0 if ok else 1
@@ -161,12 +184,26 @@ def cmd_env(args: argparse.Namespace) -> int:
 
     With --internal, the endpoints are for a container on kind's Docker network (the compose
     workers, deploy/kind/compose.lab.yml), and the CA file is named as mounted there.
+
+    With --executor, only the Kubernetes API and a token for the executor's ServiceAccount
+    (deploy/kind/manifests/executor.yaml), which may patch Deployments in the namespace (M5).
     """
     kubectl = _lab(args).kubectl
     config = json.loads(kubectl("config", "view", "--minify", "--raw", "-o", "json"))
     cluster = config["clusters"][0]["cluster"]
     ca = Path(args.ca_file)
     ca.write_bytes(base64.b64decode(cluster["certificate-authority-data"]))
+    if args.executor:
+        # Only what the executor needs: the API server and its own token. No read tools.
+        token = kubectl("create", "token", EXECUTOR, f"--duration={args.ttl}").strip()
+        lines = {
+            "SRE_K8S_API_URL": INTERNAL["SRE_K8S_API_URL"] if args.internal else cluster["server"],
+            "SRE_K8S_CA_FILE": "/run/lab/ca.crt" if args.internal else str(ca.resolve()),
+            "SRE_K8S_NAMESPACE": kubectl.namespace,
+            "SRE_EXECUTOR_K8S_TOKEN": token,
+        }
+        print("\n".join(f"{k}={v}" for k, v in lines.items()))
+        return 0
     token = kubectl("create", "token", READER, f"--duration={args.ttl}").strip()
     lines = {
         "SRE_PROMETHEUS_URL": args.prometheus_url,
@@ -230,6 +267,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--ca-file", default=".lab-ca.crt")
     p.add_argument("--ttl", default="12h")
     p.add_argument("--internal", action="store_true", help="endpoints for a container on kind's network")
+    p.add_argument("--executor", action="store_true", help="the executor's settings and token instead (M5)")
     p.set_defaults(func=cmd_env)
     p = sub.add_parser("accept")
     p.add_argument("names", nargs="*", help="faults to run (default: those tagged --tag)")
@@ -249,6 +287,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--diagnose", action="store_true", help="wait for the agents' diagnosis of each fault (M4)")
     p.add_argument("--diagnose-timeout", type=float, default=900)
     p.add_argument("--record-agents", help="export each fault's investigations as a recording here")
+    p.add_argument(
+        "--remediate",
+        action="store_true",
+        help="M5: approve each fault's known repair through the API and wait for the executor and the verifier",
+    )
+    p.add_argument("--api-url", default="http://localhost:8000")
     p.set_defaults(func=cmd_accept)
     p = sub.add_parser("fixtures", help="contract test fixtures from a lab-recordings checkout")
     p.add_argument("dir")

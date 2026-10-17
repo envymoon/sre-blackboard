@@ -33,8 +33,11 @@ def _cases() -> list[tuple[str, str]]:
     out = []
     for fault in FAULTS:
         doc = json.loads((FIXTURES / fault / "incidents.json").read_text())
+        # Every incident whose investigation finished, whatever happened after (M5: planned, approved, ...).
         out += [
-            (fault, inc) for inc, exp in sorted(doc["expected"].items()) if exp["state"] in ("DIAGNOSED", "ESCALATED")
+            (fault, inc)
+            for inc, exp in sorted(doc["expected"].items())
+            if exp["state"] not in ("RECEIVED", "TRIAGED", "INVESTIGATING")
         ]
     return out
 
@@ -53,3 +56,18 @@ async def test_a_recorded_lab_investigation_replays_to_the_same_outcome(engine, 
     assert {a: s for a, s in outcome.agents.items()} == expected["agents"]
     got = outcome.diagnosis.model_dump() if outcome.diagnosis else None
     assert got == expected["diagnosis"]
+
+    # M5: the planner's proposal on that diagnosis, when the recording has one.
+    if expected.get("plan") is not None:
+        assert outcome.diagnosis is not None
+        proposal = await recording.replay_plan(
+            engine,
+            rec,
+            UUID(incident),
+            outcome.diagnosis,
+            model="claude-haiku-5-5",
+            max_steps=settings.planner_max_steps,
+        )
+        assert proposal.plan is not None and proposal.plan.model_dump(mode="json") == expected["plan"]
+        async with engine.connect() as conn:
+            assert await conn.scalar(text("SELECT count(*) FROM tool_calls WHERE error_code = 'replay_miss'")) == 0
