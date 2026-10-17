@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -75,6 +76,34 @@ class Settings(BaseSettings):
     # A handler running longer than this fails the attempt (and is retried).
     # An investigation (about 20 model steps, a few in parallel) is the longest job.
     worker_job_timeout_s: float = 1200.0
+
+    # Remediation (M5, ADR-0007). After a diagnosis, plan a repair and put it to the policy.
+    auto_remediate: bool = True
+    planner_max_steps: int = 3
+    # Deployments in k8s_namespace that remediation may touch. Empty: none (fail closed).
+    remediation_targets: list[str] = []
+    # The top root cause must be at least this sure before anything is done about it.
+    remediation_min_confidence: float = 0.5
+    # Plans up to this risk run without a human; above it they wait for an approval.
+    # R1 means: every action in the catalogue (R2 and R3) needs one.
+    remediation_auto_max_risk: Literal["R0", "R1", "R2", "R3"] = "R1"
+    # When changes may be made, UTC, "HH:MM-HH:MM" (may wrap past midnight).
+    remediation_change_window: str = "00:00-24:00"
+    # How long a plan waits for an approval before the incident is escalated.
+    remediation_approval_ttl_s: float = 1800.0
+
+    # The executor's own Kubernetes identity: patch Deployments in k8s_namespace, nothing else.
+    # Only the executor process is given it; workers never are.
+    executor_k8s_token: SecretStr | None = None
+    # How long the executor watches a rollout before handing over to verification anyway.
+    executor_rollout_timeout_s: float = 180.0
+
+    # Verification after a repair: wait, then check the SLI every interval until it has been
+    # healthy for verify_healthy_checks checks in a row, or verify_timeout_s has passed.
+    verify_settle_s: float = 60.0
+    verify_interval_s: float = 30.0
+    verify_healthy_checks: int = 3
+    verify_timeout_s: float = 600.0
 
 
 @lru_cache

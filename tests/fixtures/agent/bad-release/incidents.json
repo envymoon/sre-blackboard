@@ -1,12 +1,12 @@
 {
  "annotations": {
-  "d5d43627-da91-4ed9-9d68-7cfe36919a6b": {
+  "d5a44ef3-b40f-4a44-907e-a4eb2f38dc56": {
    "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
-   "summary": "checkout is failing 41.02% of requests"
+   "summary": "checkout is failing 35.33% of requests"
   }
  },
  "expected": {
-  "d5d43627-da91-4ed9-9d68-7cfe36919a6b": {
+  "d5a44ef3-b40f-4a44-907e-a4eb2f38dc56": {
    "agents": {
     "coordinator": "done",
     "investigator.changes": "done",
@@ -18,141 +18,174 @@
     "facts": [
      {
       "evidence_ids": [
-       "ev_c0bc864afb69ae48"
+       "ev_0bda40438c09b242"
       ],
-      "statement": "Checkout revision 2 was created 20:36:37Z with change-cause 'payment client moved to port 9999'. Revision 1 is from 19:51:22Z."
+      "statement": "Checkout revision 2 was created at 07:33:05Z, about 2.5 minutes before the alert, with the change cause 'payment client moved to port 9999'."
      },
      {
       "evidence_ids": [
-       "ev_8144d6d9dcf8069f"
+       "ev_e9317504fe444411"
       ],
-      "statement": "The only pod-template diff between checkout revisions 1 and 2 is PAYMENT_ADDR: 'payment:8080' changed to 'payment:9999'."
+      "statement": "The only pod-template difference between checkout revisions 1 and 2 is PAYMENT_ADDR, changed from payment:8080 to payment:9999."
      },
      {
       "evidence_ids": [
-       "ev_34229504bc942314",
-       "ev_61a7a076dc3018e0"
+       "ev_5603d8f4689d541a",
+       "ev_c0e3b864b5066663",
+       "ev_636101e0e302228a"
       ],
-      "statement": "Checkout's 20 sampled error traces all fail at PaymentService/Charge with 'dial tcp 10.96.32.3:9999: i/o timeout', propagating up to frontend /api/checkout as HTTP 500 / gRPC 13."
+      "statement": "Checkout's error spans are all PaymentService/Charge gRPC dial failures ('dial tcp 10.96.101.68:9999: i/o timeout'), propagated as 'failed to charge card' through PlaceOrder, frontend and frontend-proxy HTTP 500s."
      },
      {
       "evidence_ids": [
-       "ev_800736092a3fccef",
-       "ev_9e6f14f1a1cc3244",
-       "ev_3418cfc53dd5b7d5"
+       "ev_624bb5db1f46019f",
+       "ev_8f4c8b62db31b6ff"
       ],
-      "statement": "Checkout logs show a gRPC server stop and a config dump with paymentSvcAddr payment:9999 at 20:36:38Z. Checkout has no error-level log lines in 30 minutes."
+      "statement": "Payment has one revision (06:45:29Z), is 1/1 available, and had no changes or Warning events in the incident window."
      },
      {
       "evidence_ids": [
-       "ev_c1dd6239e0d2ed60",
-       "ev_5e059b2e7b878678"
+       "ev_23938eca600ea7ba",
+       "ev_9d8d3b45936964ab",
+       "ev_e526fd489d26febb",
+       "ev_0fc905b41a2fe28a"
       ],
-      "statement": "Payment logs end at 20:36:38Z and show nothing afterward (info lines only)."
+      "statement": "Payment's logs and spans stop at 07:33:04 and it has no error logs in the last 30 minutes. Payment's server-side Charge rate was 0 at 07:36."
      },
      {
       "evidence_ids": [
-       "ev_ba3faea18deadb35",
-       "ev_2e01eed7929f352a"
+       "ev_9d9ff37ef1c62c6b",
+       "ev_679c4f34c9a5a61b"
       ],
-      "statement": "Payment has one revision (19:51:22Z), no change cause, 1/1 available, and no warning events in the last 60 minutes."
+      "statement": "All 18 flagd flags are off, and the only Warning events in otel-demo are readiness-probe failures on other services around 06:45-06:46."
      },
      {
       "evidence_ids": [
-       "ev_ebbd774903f63efc",
-       "ev_095686bd96dca76c"
+       "ev_c05507e4d3620563"
       ],
-      "statement": "All 18 flagd flags are off. No namespace crashloops or OOM kills occurred in the last 120 minutes."
+      "statement": "Checkout's SLI error ratio peaked at 0.65 at 07:09, dropped to 0 around 07:13-07:20, and was back at 0.38 at 07:35."
      },
      {
       "evidence_ids": [
-       "ev_fd5f4ddac520fe31",
-       "ev_2c6c4f70b500fae3",
-       "ev_e76d0ba7cf002203"
+       "ev_859ade1d9056a275",
+       "ev_48bd35476fb01689"
       ],
-      "statement": "Checkout's only erroring client span is PaymentService/Charge. Cart, currency, and product-catalog client spans show no errors, and there are no kafka, email, or shipping errors in 20:10-20:41."
-     },
-     {
-      "evidence_ids": [
-       "ev_1704a42e3535bbc0",
-       "ev_8f6eaae66465e016"
-      ],
-      "statement": "Payment's server-side Charge errors were 0 from about 20:20 onward. The metrics report says Charge successes continued, which conflicts with the log silence after 20:36:38Z."
+      "statement": "Product-catalog's own server-side GetProduct p95 peaked at 9530 ms at 07:21 and recovered by 07:36, with mostly UNSET (not ERROR) statuses."
      }
     ],
     "hypotheses": [
      {
-      "how_to_verify": "kubectl get svc/endpoints payment; check the payment container listening port; roll back checkout to revision 1 and watch the checkout error ratio fall.",
-      "statement": "Payment is not listening on 9999 and the checkout config is the fault. Confirm with payment's Service/endpoints and a container port check, and by rolling checkout back to PAYMENT_ADDR=payment:8080."
+      "how_to_verify": "Run kubectl get svc payment -o yaml and check the payment container ports; check that checkout's live PAYMENT_ADDR env matches revision 2.",
+      "statement": "Payment's Service and container expose only port 8080, so nothing listens on 9999 and the dial times out."
      },
      {
-      "how_to_verify": "Pull exception messages from payment Charge error spans for 20:10-20:20 and astronomy-db span errors and timings from product-catalog for 20:20-20:30.",
-      "statement": "The 20:10-20:20 wave (payment Charge server errors plus product-catalog DB latency) is a separate, earlier issue, possibly in payment or the astronomy-db path."
+      "how_to_verify": "Check NetworkPolicies in otel-demo; test a connection from the checkout pod to payment:9999 and payment:8080.",
+      "statement": "A NetworkPolicy or similar blocks checkout-to-payment traffic on 9999, which would explain i/o timeout rather than connection refused."
      },
      {
-      "how_to_verify": "Check the timestamps of those payment spans against the 20:36:37Z change, and check for other payment span sources.",
-      "statement": "The payment 'Invalid token' 422 error spans are stale or unrelated, since they conflict with payment's error-free logs and the dial timeout."
+      "how_to_verify": "Pull payment logs and traces for 07:00-07:15 and check for flag or deployment events in that window.",
+      "statement": "The 07:03-07:12 payment Charge error wave came from a transient payment-side fault unrelated to the current incident."
      }
     ],
     "inferences": [
      {
       "evidence_ids": [
-       "ev_c0bc864afb69ae48",
-       "ev_a970c752d20e7244",
-       "ev_056bf0b9d82d8790"
+       "ev_0bda40438c09b242",
+       "ev_e9317504fe444411",
+       "ev_636101e0e302228a",
+       "ev_23938eca600ea7ba"
       ],
-      "statement": "The failure starts at the 20:36:37Z config rollout, about 3 minutes before the alert. The 1.0 error ratio at 20:43-20:44 fits all Charge calls failing against the wrong port."
+      "statement": "Checkout's revision 2 is the most likely cause of the current error burn. Checkout started dialing payment:9999 at 07:33:05 and the failures began right after, while payment (not changed) stopped seeing traffic at 07:33:04."
      },
      {
       "evidence_ids": [
-       "ev_c1dd6239e0d2ed60",
-       "ev_2e01eed7929f352a",
-       "ev_ba3faea18deadb35"
+       "ev_a4174762bb311c72",
+       "ev_88dd67cf84402f58"
       ],
-      "statement": "Payment's silence after 20:36:38Z more likely reflects no traffic reaching it after the port change than a payment fault. Payment has no changes, warnings, or server-side errors of its own."
+      "statement": "Checkout's own pod shows no crash or restart events, so the fault is configuration and not checkout's pod health."
      }
     ],
     "root_causes": [
      {
-      "cause": "Bad config in checkout revision 2: PAYMENT_ADDR changed to payment:9999 (payment serves on 8080), so every PaymentService/Charge dial times out and PlaceOrder fails.",
-      "confidence": 0.85,
+      "cause": "Revision 2 changed PAYMENT_ADDR to payment:9999 (the only config change). Checkout's Charge dials to 10.96.101.68:9999 time out, and checkout surfaces these as failed charges and HTTP 500s. Payment is likely not listening on 9999 (its port is 8080); this still needs confirming.",
+      "confidence": 0.75,
       "evidence_ids": [
-       "ev_8144d6d9dcf8069f",
-       "ev_c0bc864afb69ae48",
-       "ev_34229504bc942314",
-       "ev_61a7a076dc3018e0",
-       "ev_800736092a3fccef",
-       "ev_9e6f14f1a1cc3244",
-       "ev_a970c752d20e7244"
+       "ev_0bda40438c09b242",
+       "ev_e9317504fe444411",
+       "ev_5603d8f4689d541a",
+       "ev_c0e3b864b5066663",
+       "ev_636101e0e302228a",
+       "ev_624bb5db1f46019f"
       ],
       "service": "checkout"
      },
      {
-      "cause": "Earlier, separate slowdown (about 20:10-20:30): product-catalog GetProduct p95 reached about 9.5s, with astronomy-db spans up to 4.7s. Payment Charge errors also occurred 20:10-20:20. Neither has a confirmed cause, and both predate the config change.",
+      "cause": "A latency problem in product-catalog and its astronomy-db dependency (GetProduct p95 about 9.5 s, astronomy-db p95 about 4.7 s) during 07:19-07:21. It recovered by 07:36 and is not the source of the current checkout errors, so it is a secondary issue.",
       "confidence": 0.3,
       "evidence_ids": [
-       "ev_8c91fe0685203a40",
-       "ev_97eda007ef467e22",
-       "ev_5ea9383e860db6b5",
-       "ev_bc39788cdb6b3449",
-       "ev_d0e83d535fdbe452"
+       "ev_859ade1d9056a275",
+       "ev_48bd35476fb01689",
+       "ev_c3a814a8be1d916d"
       ],
       "service": "product-catalog"
+     },
+     {
+      "cause": "An unexplained payment-side Charge error wave from 07:03 to 07:12, with no matching payment error logs, flag change or rollout change. It predates checkout revision 2 and stopped on its own, so the cause is unknown.",
+      "confidence": 0.2,
+      "evidence_ids": [
+       "ev_c35b3395b44b39d4",
+       "ev_c20cc04a15fdd97d",
+       "ev_eae2e0648dc77661",
+       "ev_2614be6239eb4a2c"
+      ],
+      "service": "payment"
      }
     ],
-    "summary": "Checkout's fast ErrorBudgetBurn is most likely caused by its own config change: revision 2 (20:36:37Z) moved PAYMENT_ADDR from payment:8080 to payment:9999. Checkout's Charge calls now fail with dial i/o timeouts to 10.96.32.3:9999, which surface as HTTP 500/gRPC 13 at frontend. Payment shows no change or warnings of its own. Its logs go quiet at the same moment, which fits no traffic arriving. Not yet confirmed by payment-side listener or endpoint checks. A separate earlier wave (20:10-20:20, payment Charge errors plus product-catalog DB slowness) predates the change and is unexplained."
+    "summary": "Checkout's current error burn (about 35% of requests) is most likely caused by its own revision 2 (07:33:05Z), which changed PAYMENT_ADDR from payment:8080 to payment:9999 and was the only pod-template change. Checkout's error spans are PaymentService/Charge dial timeouts to payment:9999, and payment's logs and spans stop at 07:33:04, which fits checkout no longer reaching payment. The earlier payment error wave (07:03-07:12) predates revision 2 and is unexplained. The product-catalog/astronomy-db latency wave (07:19-07:21) has recovered and is secondary. Suggested fix: confirm payment's Service and container ports, then roll checkout back to revision 1 (PAYMENT_ADDR=payment:8080)."
    },
-   "findings": 21,
-   "state": "DIAGNOSED"
+   "findings": 20,
+   "plan": {
+    "actions": [
+     {
+      "action": "rollout_undo",
+      "deployment": "checkout",
+      "evidence_ids": [
+       "ev_0bda40438c09b242",
+       "ev_e9317504fe444411",
+       "ev_636101e0e302228a",
+       "ev_5603d8f4689d541a"
+      ],
+      "reason": "Checkout revision 2 (07:33:05Z, 'payment client moved to port 9999') changed PAYMENT_ADDR from payment:8080 to payment:9999, the only pod-template change. Checkout's errors are PaymentService/Charge dial i/o timeouts to 9999, and payment is unchanged. Reverting to revision 1 restores the working address.",
+      "to_revision": 1
+     }
+    ],
+    "alternatives": [
+     {
+      "action": "restart_deployment",
+      "why_not": "The fault is in the pod template configuration, not a stuck process. A restart would bring up pods with the same PAYMENT_ADDR=9999 and keep failing."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "Checkout is not short of capacity. Its failures are dial timeouts to a wrong port, so more replicas would fail the same way."
+     },
+     {
+      "action": "none",
+      "why_not": "Not chosen. The rollback is reversible, and the evidence points to the release, so waiting only prolongs the fast burn."
+     }
+    ],
+    "no_action_reason": null,
+    "summary": "Roll checkout back to revision 1, which restores PAYMENT_ADDR=payment:8080 and removes the bad port 9999 change from revision 2. Expect checkout's error ratio to fall toward zero within a few minutes as new pods pick up the old config and Charge calls succeed again."
+   },
+   "state": "AWAITING_APPROVAL"
   }
  },
  "incidents": [
   {
    "closed_at": null,
-   "created_at": "2026-10-15 20:39:33.017532+00:00",
+   "created_at": "2026-10-17 07:35:33.015009+00:00",
    "environment": "lab",
    "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
-   "id": "d5d43627-da91-4ed9-9d68-7cfe36919a6b",
+   "id": "d5a44ef3-b40f-4a44-907e-a4eb2f38dc56",
    "labels": {
     "alertname": "ErrorBudgetBurn",
     "burn": "fast",
@@ -163,7 +196,7 @@
    },
    "priority": 1,
    "service": "checkout",
-   "state": "DIAGNOSED",
+   "state": "AWAITING_APPROVAL",
    "tenant_id": "lab",
    "title": "ErrorBudgetBurn"
   }

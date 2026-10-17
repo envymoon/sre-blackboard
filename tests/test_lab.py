@@ -479,7 +479,7 @@ def test_acceptance_scores_the_diagnosis_and_closes_the_incidents(
 
     with sync_engine.begin() as conn:
         conn.execute(text("TRUNCATE blackboard, agent_runs, llm_calls, tool_calls, evidence CASCADE"))
-    diagnoser = Diagnoser(sync_engine, migrated_url, "lab", tmp_path, timeout_s=5)
+    diagnoser = Diagnoser(sync_engine, migrated_url, "lab", tmp_path, timeout_s=5, planning=False)
     (result,) = accept.run(
         DiagnosingLab(sync_engine, top),  # type: ignore[arg-type]
         sync_engine,
@@ -496,3 +496,43 @@ def test_acceptance_scores_the_diagnosis_and_closes_the_incidents(
     assert (tmp_path / "payment-failure" / "incidents.json").exists()
     with sync_engine.connect() as conn:
         assert conn.execute(text("SELECT state, closed_at IS NOT NULL FROM incidents")).all() == [("ESCALATED", True)]
+
+
+def test_a_closed_loop_needs_the_approval_the_resolution_and_every_step_in_the_audit_trail() -> None:
+    from scripts.lab.remediate import LOOP_EVENTS, RemediationSeen
+
+    events = ["incident.created", *LOOP_EVENTS]
+    done = RemediationSeen(
+        "i", "checkout", ["rollout_undo checkout"], decision="approve", state="RESOLVED", events=events
+    )
+    assert done.closed_loop
+    assert not RemediationSeen("i", "checkout", decision="approve", state="ESCALATED", events=events).closed_loop
+    assert not RemediationSeen("i", "checkout", decision="approve", state="RESOLVED", events=events[:-1]).closed_loop
+    shuffled = [*events[:2], events[3], events[2], *events[4:]]
+    assert not RemediationSeen("i", "checkout", decision="approve", state="RESOLVED", events=shuffled).closed_loop
+
+
+def test_the_report_shows_each_plan_and_whether_the_loop_closed() -> None:
+    from scripts.lab.remediate import LOOP_EVENTS, RemediationSeen
+
+    result = accept.ScenarioResult("bad-release", "checkout", ["checkout"], repair="rollout_undo checkout")
+    result.remediated = True
+    result.remediations = [
+        RemediationSeen(
+            "i",
+            "checkout",
+            ["rollout_undo checkout"],
+            verdict="require_approval",
+            risk="R3",
+            decision="approve",
+            state="RESOLVED",
+            reason="checkout error ratio over 1m is 0 ratio, below 0.06, for 3 checks in a row",
+            approved_to_final_s=170.0,
+            executions=["succeeded: rollout_undo checkout (revision 2 -> 3)"],
+            events=list(LOOP_EVENTS),
+        )
+    ]
+    markdown = accept.to_markdown([result], 300)
+    assert "| bad-release | checkout | rollout_undo checkout | require_approval (R3) | approve | resolved: " in markdown
+    assert "| 170s | succeeded: rollout_undo checkout (revision 2 -> 3) |" in markdown
+    assert "Closed loop for bad-release (rollout_undo checkout): closed" in markdown

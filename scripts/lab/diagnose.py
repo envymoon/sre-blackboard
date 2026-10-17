@@ -34,7 +34,10 @@ from app.agents import recording
 from app.db import incidents
 from scripts.lab.faults import Fault
 
-FINISHED = ("DIAGNOSED", "ESCALATED")
+# Still being investigated; with M5, also still being planned and reviewed (DIAGNOSED is a
+# stop on the way to a reviewed plan, unless remediation is off).
+INVESTIGATING = ("RECEIVED", "TRIAGED", "INVESTIGATING")
+PLANNING = ("DIAGNOSED", "PLANNED", "SAFETY_REVIEWED")
 
 
 @dataclass
@@ -64,12 +67,22 @@ def primary(diagnoses: list[DiagnosisSeen]) -> DiagnosisSeen | None:
 
 
 class Diagnoser:
-    def __init__(self, engine: Engine, database_url: str, tenant: str, out: Path | None, timeout_s: float = 900):
+    def __init__(
+        self,
+        engine: Engine,
+        database_url: str,
+        tenant: str,
+        out: Path | None,
+        timeout_s: float = 900,
+        planning: bool = True,
+    ):
         self.engine = engine
         self.database_url = database_url
         self.tenant = tenant
         self.out = out
         self.timeout_s = timeout_s
+        # Wait for the plan and its review too (M5), not only the diagnosis.
+        self.pending = INVESTIGATING + PLANNING if planning else INVESTIGATING
 
     def _incidents(self, since: datetime) -> list[Any]:
         with self.engine.connect() as conn:
@@ -87,7 +100,7 @@ class Diagnoser:
         deadline = time.monotonic() + self.timeout_s
         while True:
             rows = self._incidents(t0)
-            pending = [r for r in rows if r.state not in FINISHED]
+            pending = [r for r in rows if r.state in self.pending]
             if rows and not pending:
                 break
             if time.monotonic() > deadline:
@@ -127,10 +140,11 @@ class Diagnoser:
                 ),
                 {"id": row.id},
             )
+            # How the investigation ended (DIAGNOSED or ESCALATED), whatever happened after.
             last = conn.execute(
                 text(
                     "SELECT payload->>'reason' AS reason, ts FROM audit_log WHERE subject = :s "
-                    "AND event = 'incident.transition' ORDER BY seq DESC LIMIT 1"
+                    "AND event = 'incident.transition' AND payload->>'from' = 'INVESTIGATING' ORDER BY seq LIMIT 1"
                 ),
                 {"s": str(row.id)},
             ).one_or_none()
@@ -158,11 +172,9 @@ class Diagnoser:
             priority=row.priority,
             state=row.state,
             seconds_after_injection=round((row.created_at - t0).total_seconds(), 1),
-            root_causes=causes if row.state == "DIAGNOSED" else [],
+            root_causes=causes,
             reason=(last.reason if last else "") or "",
-            investigation_s=round((last.ts - row.created_at).total_seconds(), 1)
-            if last is not None and row.state in FINISHED
-            else None,
+            investigation_s=round((last.ts - row.created_at).total_seconds(), 1) if last is not None else None,
             agents=agents,
             calls=usage.calls,
             tokens=int(usage.tokens),

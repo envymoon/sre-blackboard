@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from app.agents.schemas import Diagnosis, Finding, InvestigatorReport
+from app.remediation.plans import RemediationPlan
 
 SIGNAL_TOOLS: dict[str, frozenset[str]] = {
     "metrics": frozenset({"prom_query", "prom_range"}),
@@ -103,3 +104,10 @@ def check_diagnosis(diagnosis: Diagnosis, known: Mapping[str, str], shown: Colle
     )
     value = diagnosis.model_copy(update={"root_causes": root_causes, "facts": facts, "inferences": inferences})
     return Checked(value, problems, dropped)
+
+
+def check_plan(plan: RemediationPlan, known: Mapping[str, str], shown: Collection[str]) -> Checked[RemediationPlan]:
+    """``shown``: the planner's own results plus the evidence the diagnosis cites."""
+    problems: list[str] = []
+    actions = _keep(plan.actions, "actions", known, shown, problems)
+    return Checked(plan.model_copy(update={"actions": actions}), problems, len(plan.actions) - len(actions))

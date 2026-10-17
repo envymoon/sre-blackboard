@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import random
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -56,15 +57,21 @@ async def enqueue(
     incident_id: UUID | None = None,
     payload: dict[str, Any] | None = None,
     idempotency_key: str | None = None,
+    delay_s: float = 0.0,
 ) -> int | None:
-    """Add a job. Returns its id, or None if a job with the same idempotency key exists."""
+    """Add a job. Returns its id, or None if a job with the same idempotency key exists.
+
+    ``delay_s`` holds it back (an approval deadline, a settle time before verifying); its place
+    in line is still counted from now.
+    """
     row = await conn.execute(
         text(
             """
             INSERT INTO jobs (tenant_id, incident_id, kind, payload, idempotency_key,
-                              priority, max_attempts, sort_key)
+                              priority, max_attempts, sort_key, run_after)
             VALUES (:tenant_id, :incident_id, :kind, CAST(:payload AS jsonb), :key,
-                    :priority, :max_attempts, now() + make_interval(secs => :priority * :step))
+                    :priority, :max_attempts, now() + make_interval(secs => :priority * :step),
+                    now() + make_interval(secs => :delay))
             ON CONFLICT (idempotency_key) DO NOTHING
             RETURNING id
             """
@@ -78,16 +85,26 @@ async def enqueue(
             "priority": priority,
             "max_attempts": max_attempts,
             "step": aging_step_s,
+            "delay": delay_s,
         },
     )
     return row.scalar_one_or_none()
 
 
-async def claim(conn: AsyncConnection, *, owner: str, lease_ttl_s: float, max_priority: int = 3) -> Job | None:
+async def claim(
+    conn: AsyncConnection,
+    *,
+    owner: str,
+    lease_ttl_s: float,
+    max_priority: int = 3,
+    kinds: Sequence[str] | None = None,
+) -> Job | None:
     """Lease the next runnable job, or return None if there is none.
 
     Order is ``sort_key``: enqueue time plus priority * aging step. Within one step P0 goes
     first, but a P3 that has waited 3 steps beats any newly arrived P0, so nothing starves.
+    ``kinds`` limits the claim to the jobs a process can run: the executor, which alone holds
+    write access to the cluster, is the only one that claims ``execute`` jobs.
     """
     result = await conn.execute(
         text(
@@ -95,6 +112,7 @@ async def claim(conn: AsyncConnection, *, owner: str, lease_ttl_s: float, max_pr
             WITH next AS (
                 SELECT id FROM jobs
                 WHERE status = 'queued' AND run_after <= now() AND priority <= :max_priority
+                  AND (CAST(:kinds AS text[]) IS NULL OR kind = ANY(CAST(:kinds AS text[])))
                 ORDER BY sort_key, id
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
@@ -111,7 +129,7 @@ async def claim(conn: AsyncConnection, *, owner: str, lease_ttl_s: float, max_pr
             RETURNING j.*
             """
         ),
-        {"owner": owner, "ttl": lease_ttl_s, "max_priority": max_priority},
+        {"owner": owner, "ttl": lease_ttl_s, "max_priority": max_priority, "kinds": list(kinds) if kinds else None},
     )
     row = result.mappings().one_or_none()
     return Job.from_row(row) if row else None

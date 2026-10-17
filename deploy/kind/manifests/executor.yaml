@@ -1,0 +1,32 @@
+# The executor's identity (app/executor, ADR-0007): the only one that may change anything.
+# In the demo namespace: read and patch Deployments (rollback, restart, scale), read their
+# ReplicaSets (the revisions a rollback copies from). Nothing cluster-wide, no secrets, no
+# pods/exec, no create or delete. `python -m scripts.lab env --executor` mints a short-lived token.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sre-blackboard-executor
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sre-blackboard-executor
+rules:
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, patch]
+  - apiGroups: [apps]
+    resources: [replicasets]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sre-blackboard-executor
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sre-blackboard-executor
+subjects:
+  - kind: ServiceAccount
+    name: sre-blackboard-executor

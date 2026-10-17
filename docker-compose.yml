@@ -8,6 +8,9 @@ x-app: &app
     SRE_DATABASE_URL: postgresql+psycopg://sre:sre@db:5432/sre
     SRE_JWT_SECRET: ${SRE_JWT_SECRET:?set SRE_JWT_SECRET (32+ characters) in .env}
     SRE_LLM_MODEL: ${SRE_LLM_MODEL:-claude-haiku-5-5}
+    # Deployments remediation may touch (JSON list). The API, the workers and the executor
+    # must agree: each of them puts plans to the policy. Default: none (fail closed).
+    SRE_REMEDIATION_TARGETS: ${SRE_REMEDIATION_TARGETS:-[]}
   restart: unless-stopped
 
 services:

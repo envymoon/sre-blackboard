@@ -20,12 +20,14 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.agents.investigation import AgentConfig, Outcome, investigate
+from app.agents.investigation import AgentConfig, IncidentView, Outcome, investigate
 from app.agents.loop import Deps
+from app.agents.schemas import Diagnosis
 from app.agents.store import PgAgentStore
 from app.db import incidents as incidents_repo
 from app.db import investigations
 from app.llm.replay import LLMCassette, ReplayBackend
+from app.remediation.planner import PLANNER, Proposal, propose
 from app.tools import ALL_TOOLS, ToolRegistry
 from app.tools.evidence import PgEvidenceStore
 from app.tools.sources import Cassette, ReplaySource
@@ -151,11 +153,14 @@ async def export(engine: AsyncEngine, incident_ids: list[UUID], meta: dict[str, 
             runs = await PgAgentStore(engine).runs(inc_id)
             state = await conn.scalar(text("SELECT state FROM incidents WHERE id = :id"), {"id": inc_id})
             dx = next((e.body for e in reversed(board) if e.kind == "diagnosis"), None)
+            planned = runs.get(PLANNER)
             rec.expected[str(inc_id)] = {
                 "state": state,
                 "diagnosis": dx,
-                "agents": {name: r.status for name, r in runs.items()},
+                "agents": {name: r.status for name, r in runs.items() if name != PLANNER},
                 "findings": sum(1 for e in board if e.kind == "finding"),
+                # M5: the planner's proposal, when it ran (a separate job after the diagnosis).
+                "plan": planned.result.get("plan") if planned is not None and planned.status == "done" else None,
             }
     return rec
 
@@ -214,6 +219,19 @@ async def load_incidents(engine: AsyncEngine, rec: Recording) -> None:
 
 async def replay(engine: AsyncEngine, rec: Recording, incident_id: UUID, config: AgentConfig) -> Outcome:
     """Run one recorded incident's investigation again, answering from the recording."""
+    view, deps = await _replay_deps(engine, rec, incident_id)
+    return await investigate(view, deps, config)
+
+
+async def replay_plan(
+    engine: AsyncEngine, rec: Recording, incident_id: UUID, diagnosis: Diagnosis, *, model: str, max_steps: int
+) -> Proposal:
+    """Run the planner again on a replayed diagnosis, answering from the recording."""
+    view, deps = await _replay_deps(engine, rec, incident_id)
+    return await propose(view, diagnosis, deps, model=model, max_steps=max_steps)
+
+
+async def _replay_deps(engine: AsyncEngine, rec: Recording, incident_id: UUID) -> tuple[IncidentView, Deps]:
     async with engine.connect() as conn:
         row = await incidents_repo.get(conn, incident_id, tenant_id=None)
         assert row is not None, f"incident {incident_id} is not loaded"
@@ -226,4 +244,4 @@ async def replay(engine: AsyncEngine, rec: Recording, incident_id: UUID, config:
         incident_id=view.id,
         token_budget=10**9,
     )
-    return await investigate(view, deps, config)
+    return view, deps

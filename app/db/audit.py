@@ -101,3 +101,36 @@ def _digest(
         ensure_ascii=False,
     )
     return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+async def _verify_cli() -> int:
+    from app.core.config import get_settings
+    from app.db.engine import make_engine
+
+    engine = make_engine(get_settings())
+    try:
+        async with engine.connect() as conn:
+            v = await verify(conn)
+    finally:
+        await engine.dispose()
+    if v.ok:
+        print(f"audit chain ok: {v.checked} rows")
+        return 0
+    print(f"audit chain BROKEN at seq {v.first_bad_seq}: {v.reason} ({v.checked} rows before it are intact)")
+    return 1
+
+
+def main() -> None:
+    """``python -m app.db.audit verify``: recompute the chain; exit 1 at the first bad row."""
+    import argparse
+    import asyncio
+    import sys
+
+    parser = argparse.ArgumentParser(prog="python -m app.db.audit")
+    parser.add_argument("command", choices=["verify"])
+    parser.parse_args()
+    sys.exit(asyncio.run(_verify_cli()))
+
+
+if __name__ == "__main__":
+    main()

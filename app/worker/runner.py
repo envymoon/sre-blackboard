@@ -97,6 +97,7 @@ class Worker:
                     owner=self.worker_id,
                     lease_ttl_s=self.settings.queue_lease_ttl_s,
                     max_priority=max_priority,
+                    kinds=sorted(self.handlers),
                 )
         except Exception:
             log.exception("claim failed")
