@@ -78,8 +78,8 @@ lab-status:  ## Active faults and firing alerts
 lab-probe:  ## Per-service request rate, error ratio and p95 right now
 	uv run python -m scripts.lab probe
 
-lab-accept:  ## Acceptance: inject, alert within 5 min, diagnosis (M4, needs lab-workers), recover, resolve
-	uv run python -m scripts.lab accept --diagnose
+lab-accept:  ## Acceptance: inject, alert within 5 min, diagnosis (M4), approved repair (M5), recover; needs lab-workers
+	uv run python -m scripts.lab accept --diagnose --remediate
 
 lab-env:  ## Endpoints and a 12h read-only token for the tools (python -m app.tools), into .lab.env
 	uv run python -m scripts.lab env > .lab.env
