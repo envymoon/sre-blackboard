@@ -99,7 +99,11 @@ async def test_an_exported_case_holds_every_response_the_incident_page_reads(eng
     ids = await fire(client, settings, "checkout", "payment")
     await run_until(engine, fast(settings), ScriptedLLM(payment_scripts()), done={"DIAGNOSED"})
     checkout = ids["checkout"]
-    doc = await export(settings, checkout)
+    sizes = sorted(
+        e["result_bytes"] for p, e in (await export(settings, checkout))["responses"].items() if "/evidence/" in p
+    )
+    cap = sizes[len(sizes) // 2]
+    doc = await export(settings, checkout, max_result_bytes=cap)
     base = f"/api/v1/incidents/{checkout}"
     responses = doc["responses"]
     viewer = auth(settings, "viewer")
@@ -109,3 +113,9 @@ async def test_an_exported_case_holds_every_response_the_incident_page_reads(eng
     evidence = [p for p in responses if p.startswith("/api/v1/evidence/")]
     produced = {t["evidence_id"] for r in responses[f"{base}/agents"] for s in r["llm_calls"] for t in s["tools"]}
     assert {p.rsplit("/", 1)[1] for p in evidence} == produced - {None}
+    # A large raw result is left out; what proves it (size, hash) and what the model read stay.
+    big = [responses[p] for p in evidence if responses[p]["result_bytes"] > cap]
+    small = [responses[p] for p in evidence if responses[p]["result_bytes"] <= cap]
+    assert big and small
+    assert all(e["result"] is None and e["result_omitted"] and e["summary"] and e["result_hash"] for e in big)
+    assert all(e["result"] is not None and "result_omitted" not in e for e in small)

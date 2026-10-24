@@ -3,7 +3,9 @@
 ``python -m app.console.export <incident-id> -o case.json`` asks the API (in-process, as a
 viewer of the incident's tenant) for every response the incident page reads, and writes them
 keyed by path: the list, the incident, its diagnosis, its call tree, its plans, its audit
-trail and every piece of evidence a tool call produced. The static site serves the page from
+trail and every piece of evidence a tool call produced. A raw tool result over
+``max_result_bytes`` is left out (a trace search can be megabytes); its summary, which is what
+the model read, its size and its hash stay, so the page still shows and proves it. The static site serves the page from
 that file instead of a server, so the replay shows exactly what the API returned, nothing
 re-typed by hand. The page replays it by the stored timestamps.
 """
@@ -27,9 +29,10 @@ from app.core.security import mint_token
 from app.db import incidents
 
 FORMAT = 1
+MAX_RESULT_BYTES = 64 * 1024
 
 
-async def export(settings: Settings, incident_id: UUID) -> dict[str, Any]:
+async def export(settings: Settings, incident_id: UUID, *, max_result_bytes: int = MAX_RESULT_BYTES) -> dict[str, Any]:
     app = create_app(settings)
     async with (
         app.router.lifespan_context(app),
@@ -60,7 +63,10 @@ async def export(settings: Settings, incident_id: UUID) -> dict[str, Any]:
             - {None}
         )
         for ev in cited:
-            responses[f"/api/v1/evidence/{ev}"] = await get(f"/api/v1/evidence/{ev}")
+            row = await get(f"/api/v1/evidence/{ev}")
+            if row["result_bytes"] > max_result_bytes:
+                row = {**row, "result": None, "result_omitted": True}
+            responses[f"/api/v1/evidence/{ev}"] = row
     return {
         "format": FORMAT,
         "incident_id": str(incident_id),
@@ -73,9 +79,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m app.console.export", description=__doc__.split("\n\n")[0])
     parser.add_argument("incident", type=UUID)
     parser.add_argument("-o", "--out", type=Path, help="write here instead of stdout")
+    parser.add_argument(
+        "--max-result-bytes", type=int, default=MAX_RESULT_BYTES, help="leave out raw tool results larger than this"
+    )
     args = parser.parse_args()
     try:
-        doc = asyncio.run(export(get_settings(), args.incident))
+        doc = asyncio.run(export(get_settings(), args.incident, max_result_bytes=args.max_result_bytes))
     except LookupError as e:
         sys.exit(str(e))
     text = json.dumps(doc, indent=1, sort_keys=True) + "\n"
