@@ -274,3 +274,80 @@ blackboard = Table(
     CheckConstraint(_in("kind", BLACKBOARD_KINDS), name="kind_valid"),
     Index("ix_blackboard_incident_id", "incident_id"),
 )
+
+# --- M5: remediation (ADR-0007) ---------------------------------------------------------
+
+POLICY_VERDICTS = ("allow", "require_approval", "deny")
+RISK_LEVELS = ("R0", "R1", "R2", "R3", "R4")
+APPROVAL_DECISIONS = ("approve", "reject")
+EXECUTION_STATUSES = ("started", "succeeded", "failed", "unknown")
+
+# Every plan proposed for an incident, with the policy's verdict on it. Append-only (a
+# trigger rejects UPDATE and DELETE): a revised plan is a new row with the next seq, and
+# its own hash, so an approval of an earlier plan never matches it.
+remediation_plans = Table(
+    "remediation_plans",
+    metadata,
+    Column("id", BigInteger, Identity(), primary_key=True),
+    Column("tenant_id", Text, nullable=False),
+    Column("incident_id", UUID(as_uuid=True), ForeignKey("incidents.id"), nullable=False),
+    Column("seq", SmallInteger, nullable=False),
+    # "agent:planner", or "user:<subject>" for a plan a responder submitted.
+    Column("proposed_by", Text, nullable=False),
+    Column("plan", JSONB, nullable=False),
+    # sha256 over the incident id, seq and the canonical plan (app/remediation/plans.py).
+    Column("plan_hash", Text, nullable=False, unique=True),
+    Column("verdict", Text, nullable=False),
+    # The highest risk among the plan's actions; NULL for a plan without actions.
+    Column("risk", Text),
+    # The policy's checks, one {name, ok, blocking, detail} per check.
+    Column("checks", JSONB, nullable=False),
+    # Approval deadline, for a plan that needs one.
+    Column("expires_at", TS),
+    Column("created_at", TS, nullable=False, server_default=func.now()),
+    CheckConstraint(_in("verdict", POLICY_VERDICTS), name="verdict_valid"),
+    CheckConstraint(f"risk IS NULL OR {_in('risk', RISK_LEVELS)}", name="risk_valid"),
+    Index("ux_remediation_plans_incident_seq", "incident_id", "seq", unique=True),
+)
+
+# A human's decision on one plan. One per plan (the first decision stands); append-only.
+approvals = Table(
+    "approvals",
+    metadata,
+    Column("id", BigInteger, Identity(), primary_key=True),
+    Column("tenant_id", Text, nullable=False),
+    Column("incident_id", UUID(as_uuid=True), ForeignKey("incidents.id"), nullable=False),
+    Column("plan_id", BigInteger, ForeignKey("remediation_plans.id"), nullable=False, unique=True),
+    # The hash the approver saw; the executor checks it against the plan it is about to run.
+    Column("plan_hash", Text, nullable=False),
+    Column("approver", Text, nullable=False),
+    Column("decision", Text, nullable=False),
+    Column("comment", Text, nullable=False, server_default=""),
+    Column("created_at", TS, nullable=False, server_default=func.now()),
+    CheckConstraint(_in("decision", APPROVAL_DECISIONS), name="decision_valid"),
+)
+
+# One row per action the executor started. The unique key is written and committed before
+# the cluster is touched: a rerun that finds it 'started' does not try again (at most once).
+executions = Table(
+    "executions",
+    metadata,
+    Column("id", BigInteger, Identity(), primary_key=True),
+    Column("tenant_id", Text, nullable=False),
+    Column("incident_id", UUID(as_uuid=True), ForeignKey("incidents.id"), nullable=False),
+    Column("plan_id", BigInteger, ForeignKey("remediation_plans.id"), nullable=False),
+    Column("action_index", SmallInteger, nullable=False),
+    Column("action", JSONB, nullable=False),
+    Column("idempotency_key", Text, nullable=False, unique=True),
+    Column("status", Text, nullable=False),
+    Column("executor", Text, nullable=False),
+    # The server-side dry run's answer, the target's state before, and after.
+    Column("dry_run", JSONB),
+    Column("before", JSONB),
+    Column("after", JSONB),
+    Column("error", Text),
+    Column("started_at", TS, nullable=False, server_default=func.now()),
+    Column("finished_at", TS),
+    CheckConstraint(_in("status", EXECUTION_STATUSES), name="status_valid"),
+    Index("ix_executions_incident_id", "incident_id"),
+)

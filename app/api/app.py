@@ -19,7 +19,7 @@ from app.core.config import Settings, get_settings
 from app.core.security import validate_secret
 from app.db.engine import make_engine
 
-from . import alerts, evidence, health, incidents
+from . import alerts, evidence, health, incidents, remediation
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -50,4 +50,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(alerts.router)
     app.include_router(incidents.router)
     app.include_router(evidence.router)
+    app.include_router(remediation.router)
     return app

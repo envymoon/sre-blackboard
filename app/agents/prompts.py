@@ -50,3 +50,7 @@ def investigator(focus: str) -> Prompt:
 
 def synthesizer() -> Prompt:
     return compose("synthesizer", "synthesizer", "environment")
+
+
+def planner() -> Prompt:
+    return compose("planner", "planner", "environment")

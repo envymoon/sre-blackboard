@@ -6,6 +6,7 @@ from app.db import incidents
 from app.queue import jobs
 
 from .investigate import AgentServices, make_investigate
+from .remediate import approval_timeout, make_plan, make_verify
 from .runner import Handler, JobContext, PermanentJobError
 
 
@@ -43,4 +44,11 @@ async def triage(ctx: JobContext) -> None:
 
 
 def default_handlers(services: AgentServices) -> dict[str, Handler]:
-    return {"triage": triage, "investigate": make_investigate(services)}
+    return {
+        "triage": triage,
+        "investigate": make_investigate(services),
+        "plan": make_plan(services),
+        "approval_timeout": approval_timeout,
+        "verify": make_verify(services),
+        # "execute" is not here: only the executor process (app/executor) runs it.
+    }

@@ -42,6 +42,7 @@ from scripts.lab.cluster import Lab
 from scripts.lab.diagnose import Diagnoser, DiagnosisSeen, primary
 from scripts.lab.faults import Fault
 from scripts.lab.probes import ProbeResult
+from scripts.lab.remediate import RemediationSeen, Remediator
 
 Log = Callable[[str], None]
 Probe = Callable[[Fault], list[ProbeResult]]
@@ -71,6 +72,10 @@ class ScenarioResult:
     # M4: the agents' diagnoses of the incidents this fault opened (when the run asks for them).
     diagnosed: bool = False
     diagnoses: list[DiagnosisSeen] = field(default_factory=list)
+    # M5: the plans for those incidents, what the acceptance run decided, and how it ended.
+    repair: str | None = None  # the fault's known repair, "rollout_undo checkout"
+    remediated: bool = False
+    remediations: list[RemediationSeen] = field(default_factory=list)
     error: str | None = None
 
     @property
@@ -80,6 +85,10 @@ class ScenarioResult:
     @property
     def diagnosis_correct(self) -> bool:
         return self.answer is not None and self.answer.top == self.root_cause
+
+    @property
+    def closed_loop(self) -> bool:
+        return any(r.closed_loop for r in self.remediations)
 
     @property
     def symptom_matched(self) -> bool:
@@ -96,6 +105,7 @@ class ScenarioResult:
             and not self.flapping
             and all(p.ok for p in self.probes)
             and (not self.diagnosed or (self.answer is not None and self.answer.top is not None))
+            and (not self.remediated or self.repair is None or self.closed_loop)
             and self.resolved_s is not None
         )
 
@@ -206,8 +216,11 @@ def run_scenario(
     poll_s: float = 5,
     probe: Probe | None = None,
     diagnoser: Diagnoser | None = None,
+    remediator: Remediator | None = None,
 ) -> ScenarioResult:
     result = ScenarioResult(fault.name, fault.root_cause, list(fault.symptoms))
+    result.repair = " ".join(fault.repair) if fault.repair else None
+    repaired_at: datetime | None = None  # database time of the approval
     result.quiet_before = wait_quiet(lab, quiet_timeout, log, hold_s=hold_s, poll_s=poll_s)
     if not result.quiet_before:
         result.error = "lab was not quiet before injection"
@@ -256,14 +269,23 @@ def run_scenario(
             if result.answer is not None:
                 verdict = "correct" if result.diagnosis_correct else f"wrong (expected {fault.root_cause})"
                 log(f"[{fault.name}] answer: {result.answer.top or 'no root cause'} - {verdict}")
+        if remediator is not None and result.diagnoses:
+            result.remediated = True
+            decided_at = _db_now(engine)
+            result.remediations = remediator.run(fault, result.diagnoses, log)
+            if any(r.decision == "approve" for r in result.remediations):
+                repaired_at = decided_at
     except Exception as exc:  # report and still try to recover; one broken fault should not stop the run
         result.error = f"{type(exc).__name__}: {exc}"
         log(f"[{fault.name}] error: {result.error}")
     finally:
         result.alerts = sorted(seen.values(), key=lambda a: a.seconds_after_injection)
-        t1 = _db_now(engine)
+        # A fault sre-blackboard repaired counts from the approval: its alerts may have resolved
+        # before the lab's own recovery step, which then finds nothing to undo.
+        t1 = repaired_at or _db_now(engine)
         log(f"[{fault.name}] recover")
-        lab.recover(fault)
+        if not lab.recover(fault) and repaired_at is not None:
+            log(f"[{fault.name}] nothing to recover: sre-blackboard already repaired it")
 
     deadline_r = time.monotonic() + resolve_timeout
     quiet_since: datetime | None = None  # database time; resolution counts from here
@@ -317,6 +339,7 @@ def to_json(results: Sequence[ScenarioResult], alert_timeout: float) -> str:
                 "ok": r.ok(alert_timeout),
                 "symptom_matched": r.symptom_matched,
                 "diagnosis_correct": r.diagnosis_correct if r.diagnosed else None,
+                "closed_loop": r.closed_loop if r.remediated and r.repair else None,
             }
             for r in results
         ],
@@ -367,6 +390,25 @@ def to_markdown(results: Sequence[ScenarioResult], alert_timeout: float) -> str:
             )
         correct = sum(r.diagnosis_correct for r in diagnosed)
         lines += ["", f"Top-1 correct: {correct}/{len(diagnosed)} (needed: {required_correct(len(diagnosed))})"]
+    remediated = [r for r in results if r.remediated]
+    if remediated:
+        lines += [
+            "",
+            "| fault | incident | plan | policy | decision | outcome | time | executions |",
+            "|---|---|---|---|---|---|---|---|",
+        ]
+        for r in remediated:
+            for m in r.remediations:
+                policy = f"{m.verdict} ({m.risk})" if m.risk else (m.verdict or "-")
+                took = f"{m.approved_to_final_s:.0f}s" if m.approved_to_final_s is not None else "-"
+                lines.append(
+                    f"| {r.fault} | {m.service} | {', '.join(m.plan) or 'no action'} | {policy} | {m.decision or '-'} "
+                    f"| {m.state.lower()}{': ' + m.reason if m.decision else ''} | {took} | {'; '.join(m.executions) or '-'} |"
+                )
+        for r in remediated:
+            if r.repair is not None:
+                loop = "closed" if r.closed_loop else "NOT closed"
+                lines += ["", f"Closed loop for {r.fault} ({r.repair}): {loop}"]
     return "\n".join(lines) + "\n"
 
 

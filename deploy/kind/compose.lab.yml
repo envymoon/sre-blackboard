@@ -6,12 +6,32 @@
 #
 # (`make lab-workers` does both.) .lab.worker.env holds a short-lived read-only token; it is
 # git-ignored. The CA certificate is the one `scripts.lab env` wrote to .lab-ca.crt.
+#
+# The executor (M5, ADR-0007) is a separate container with a separate token, the only one
+# allowed to patch Deployments: `uv run python -m scripts.lab env --internal --executor >
+# .lab.executor.env`, then `up -d executor`. It has no model and no read tools; the workers
+# never see its token.
 services:
   worker:
     networks: [default, kind]
     env_file: [.lab.worker.env]
     volumes:
       - ./.lab-ca.crt:/run/lab/ca.crt:ro
+
+  executor:
+    build: {context: ., target: api}
+    command: ["python", "-m", "app.executor"]
+    environment:
+      SRE_DATABASE_URL: postgresql+psycopg://sre:sre@db:5432/sre
+      SRE_REMEDIATION_TARGETS: ${SRE_REMEDIATION_TARGETS:-[]}
+    env_file: [.lab.executor.env]
+    networks: [default, kind]
+    volumes:
+      - ./.lab-ca.crt:/run/lab/ca.crt:ro
+    restart: unless-stopped
+    stop_grace_period: 30s
+    depends_on:
+      migrate: {condition: service_completed_successfully}
 
 networks:
   kind:

@@ -9,12 +9,14 @@ from __future__ import annotations
 import os
 from collections.abc import AsyncIterator, Iterator
 
+import httpx
 import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+from app.api.app import create_app
 from app.core.config import Settings
 
 TEST_JWT_SECRET = "test-secret-that-is-at-least-32-bytes-long"
@@ -59,8 +61,19 @@ async def engine(settings: Settings) -> AsyncIterator[AsyncEngine]:
     async with eng.begin() as conn:
         await conn.execute(
             text(
-                "TRUNCATE blackboard, agent_runs, llm_calls, tool_calls, evidence, jobs, alerts, incidents, audit_log RESTART IDENTITY CASCADE"
+                "TRUNCATE executions, approvals, remediation_plans, blackboard, agent_runs, llm_calls, tool_calls, evidence, jobs, alerts, incidents, audit_log RESTART IDENTITY CASCADE"
             )
         )
     yield eng
     await eng.dispose()
+
+
+@pytest.fixture
+async def client(engine: AsyncEngine, settings: Settings) -> AsyncIterator[httpx.AsyncClient]:
+    """The API in-process, on the test database."""
+    app = create_app(settings)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c,
+    ):
+        yield c

@@ -80,6 +80,8 @@ jobs:
       - name: Start sre-blackboard
         run: |
           echo "SRE_JWT_SECRET=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')" > .env
+          # The Deployments remediation may touch (M5). The API, workers and executor all read it.
+          echo "SRE_REMEDIATION_TARGETS='[\"checkout\",\"payment\",\"product-catalog\",\"recommendation\",\"frontend\",\"cart\",\"currency\",\"shipping\",\"ad\",\"email\",\"quote\"]'" >> .env
           docker compose up --build -d
           timeout 120 bash -c 'until curl -fsS localhost:8000/readyz; do sleep 2; done'
 
@@ -104,8 +106,11 @@ jobs:
         run: |
           # The workers join kind's Docker network and investigate the lab from there.
           uv run python -m scripts.lab env --internal > .lab.worker.env
+          # The executor gets its own token and nothing else (M5); the workers never see it.
+          uv run python -m scripts.lab env --internal --executor > .lab.executor.env
           if [ -n "$LAB_CLAUDE_TOKEN" ]; then export CLAUDE_CODE_OAUTH_TOKEN="$LAB_CLAUDE_TOKEN"; fi
-          docker compose -f docker-compose.yml -f deploy/kind/compose.lab.yml up -d --no-deps worker
+          # The executor's environment has no model token: the override does not pass it through.
+          docker compose -f docker-compose.yml -f deploy/kind/compose.lab.yml up -d --no-deps worker executor
           sleep 5
           {
             echo "# claude in the worker image"
@@ -114,6 +119,18 @@ jobs:
             docker compose exec -T worker python -m app.tools call prom_query '{"query": "count(up)"}'
             echo "# Kubernetes API with the reader token"
             docker compose exec -T worker python -m app.tools call rollout_history '{"deployment": "checkout"}' | head -c 600
+            echo
+            echo "# who may do what (kubectl auth can-i), in otel-demo"
+            for sa in sre-blackboard-reader sre-blackboard-executor; do
+              for verb in "get deployments" "patch deployments" "delete deployments" "create pods/exec" "get secrets"; do
+                echo "$sa: $verb: $(kubectl --context kind-sre-lab -n otel-demo auth can-i $verb \
+                  --as=system:serviceaccount:otel-demo:$sa 2>/dev/null || true)"
+              done
+            done
+            echo "# the executor process"
+            lab=(-f docker-compose.yml -f deploy/kind/compose.lab.yml)
+            docker compose "${lab[@]}" ps executor --format '{{.Name}} {{.State}}'
+            docker compose "${lab[@]}" exec -T executor sh -c 'test -z "$CLAUDE_CODE_OAUTH_TOKEN" && test -z "$SRE_K8S_TOKEN" && echo "no model token, no reader token"'
           } 2>&1 | tee lab-out/worker-check.txt
           # Can the workers reach the model? One tiny claude -p call, as the backend makes it.
           # Lab run 13 had no token: every investigation escalated with "Not logged in".
@@ -193,7 +210,7 @@ jobs:
         run: |
           set -o pipefail
           agents=()
-          if [ -f lab-out/agents.enabled ]; then agents=(--diagnose --record-agents lab-out/agent); fi
+          if [ -f lab-out/agents.enabled ]; then agents=(--diagnose --remediate --record-agents lab-out/agent); fi
           { cat lab-out/agents.txt; uv run python -m scripts.lab accept ${{ inputs.faults }} --report lab-out/report.json \
             --probe-dir lab-out/cassettes "${agents[@]}"; } | tee lab-out/accept.txt
 
@@ -211,6 +228,7 @@ jobs:
           docker compose logs --no-color --tail=500 api > lab-out/sre-blackboard.log 2>&1 || true
           docker compose logs --no-color worker > lab-out/worker.log 2>&1 || true
           grep -E "WARNING|ERROR|incident .*: |failed" lab-out/worker.log | tail -200 > lab-out/worker-events.txt || true
+          docker compose -f docker-compose.yml -f deploy/kind/compose.lab.yml logs --no-color executor > lab-out/executor.log 2>&1 || true
           cat lab-out/pods.txt || true
 
       # Readable through the REST API even where logs and artifacts are not (see the script).
@@ -228,8 +246,8 @@ jobs:
       - name: Publish logs as annotations
         if: always()
         run: |
-          uv run python -m scripts.lab.annotate lab-out/worker-events.txt:120 lab-out/sre-blackboard.log:60 \
-            lab-out/alertmanager.log:40 lab-out/prometheus.log:20
+          uv run python -m scripts.lab.annotate lab-out/worker-events.txt:120 lab-out/executor.log:40 \
+            lab-out/sre-blackboard.log:60 lab-out/alertmanager.log:40
 
       - name: Push recordings
         if: always() && (hashFiles('lab-out/cassettes/*.jsonl.gz') != '' || hashFiles('lab-out/agent/**') != '')
