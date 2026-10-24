@@ -115,6 +115,19 @@ async def get_diagnosis(
     }
 
 
+@router.get("/{incident_id}/agents")
+async def get_agents(
+    incident_id: UUID,
+    request: Request,
+    principal: Annotated[Principal, Depends(require("viewer"))],
+) -> list[dict[str, Any]]:
+    """The call tree: each agent run, its model steps (time, tokens, cost) and each step's tool calls."""
+    async with request.app.state.engine.connect() as conn:
+        if await incidents.get(conn, incident_id, tenant_id=principal.tenant_id) is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "incident not found")
+        return await investigations.agent_tree(conn, incident_id)
+
+
 @router.get("/{incident_id}/report", response_class=PlainTextResponse)
 async def get_report(
     incident_id: UUID,

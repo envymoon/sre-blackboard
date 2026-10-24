@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     jwt_audience: str = "sre-blackboard"
     # Browser origins allowed to call the API. Empty means no CORS headers at all.
     cors_origins: list[str] = []
+    # The console's change stream (GET /api/v1/stream): how often it looks for new rows, and how
+    # long one connection lives before the client reconnects from its last event id.
+    stream_poll_s: float = 1.0
+    stream_max_s: float = 300.0
 
     # Job queue. A lease is renewed every lease_ttl_s / 3 seconds while a job runs.
     queue_lease_ttl_s: float = 30.0
