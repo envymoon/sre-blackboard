@@ -7,7 +7,7 @@ root-cause candidates. Every claim has to cite evidence. Any change to
 production is proposed, checked by a deterministic policy engine, and needs
 human approval before an isolated executor applies it.
 
-> **Status: being rebuilt (M0–M5 done; M9 next).** The first version was a
+> **Status: being rebuilt (M0–M5 and M9 done; M7 next).** The first version was a
 > spec-shaped prototype: it had no real model calls, no real tool backends, and
 > an evaluation that could not fail. This repository is now being rebuilt into a
 > working system, one milestone at a time. The plan, including every known
@@ -58,6 +58,8 @@ These carry over from the prototype and are what the rebuild implements for real
 | Prototype modules | Retrieval from the first version is still in `app/` (`rag.py`, `knowledge.py`) and is not wired into the API or worker. It is replaced in M6. |
 | Fault lab (M2) | `make env-up` builds a kind cluster with the OpenTelemetry Demo (trimmed), Loki, Chaos Mesh and SLO burn-rate alerts (promtool-tested); Alertmanager posts to this API. `make fault SCENARIO=…` injects one of 15 faults (feature flags, Chaos Mesh, a bad rollout). The lab is rebuilt from scratch and checked on GitHub Actions ([ADR-0004](docs/adr/0004-fault-lab-on-kind-in-ci.md)): a payment failure, a network delay and a bad release each reach this API as alerts within about 2–4 minutes and resolve after recovery, on a lab that first stays alert-free for 10 minutes. The whole lab uses about 4.7 GiB. |
 | Tools (M3) | Nine read-only tools in `app/tools/` over Prometheus, Loki, Jaeger, the Kubernetes API and flagd ([ADR-0005](docs/adr/0005-tool-layer-evidence-and-replay.md)). Each has a strict Pydantic schema that doubles as the model's tool definition, a timeout, retries for transient errors and a circuit breaker per backend; failures come back as structured errors with the backend's message. The model gets a bounded summary (counts, top-N, peaks, log templates) and an evidence ID; the raw result is stored in `evidence` with its SHA-256, and rows cannot be updated or deleted. Evidence IDs are derived from the content, so a replay shows the model the same bytes. Calls can be recorded to a cassette and replayed without a cluster. Kubernetes access is a ServiceAccount that can only read in the demo namespace; Chaos Mesh objects are filtered out so the lab never hands the agent the answer. On the lab, during each of the 3 acceptance faults, the tools return the data a diagnosis needs (the failing service's error ratio, the bad revision and its diff, the slow spans); CI replays those real recordings and must reproduce the live results exactly. |
+| Console (M9) | React + Vite + Tailwind in `web/` ([ADR-0008](docs/adr/0008-console-sse-replay-design-tokens.md)). An incident list (filters, virtualised, new incidents slide in) and an incident page: the state machine, the plan with each policy check and optimistic approve/reject bound to the plan's hash, root causes marking problem and event host, the agent call tree (`GET /api/v1/incidents/{id}/agents`: each step's time, tokens, cost and tool calls), the timeline, and an evidence drawer (metric sparklines, log groups, trace errors, deploy diffs). It follows `GET /api/v1/stream` (Server-Sent Events, resumable with `Last-Event-ID`) and refetches only what changed. Design tokens for both themes live in one file and a test checks WCAG AA contrast; CI holds first-screen JS under 200 KB gzip per route. |
+| Static site (M9) | GitHub Pages: positioning, architecture, results, and a replay of a real lab incident through the same incident page, from a case exported with `python -m app.console.export` and sped up by its own timestamps; it pauses where the real run waited for a human. The lab exports each closed-loop incident as such a case. |
 | Engineering | uv, ruff, mypy, pytest (database tests run against a real Postgres via testcontainers), pre-commit, GitHub Actions CI. |
 
 ## Quickstart
@@ -133,6 +135,19 @@ make audit-verify
 The demo shop is at http://localhost:18080 (Jaeger under `/jaeger/ui`, feature flags under
 `/feature`), Prometheus at :19090, Alertmanager at :19093, Loki at :13100.
 
+### Console
+
+```bash
+cd web && npm ci
+npm run dev                          # http://localhost:5173, proxies /api to localhost:8000 (SRE_API_URL to change)
+make -s token SUB=you ROLES=approver # paste it on the sign-in page; it stays in the tab's session storage
+VITE_SITE=pages npm run build        # the static site; the replay reads web/public/cases/*.json
+uv run python -m app.console.export $ID -o web/public/cases/my-case.json   # then open #/replay/my-case
+npm test && npm run budget           # unit tests (SSE parser, replay, contrast); first-screen JS budget
+```
+
+A console served from another origin needs it in `SRE_CORS_ORIGINS`, e.g. `SRE_CORS_ORIGINS='["https://console.example"]'`.
+
 ## Roadmap
 
 | Milestone | Scope | Status |
@@ -143,7 +158,7 @@ The demo shop is at http://localhost:18080 (Jaeger under `/jaeger/ui`, feature f
 | M3 | Read-only tools (Prometheus, Loki, Jaeger, Kubernetes), evidence store, record/replay | done |
 | M4 | Real agents: hand-written loop, pluggable LLM backends (`claude -p`, Anthropic API, replay) | done |
 | M5 | Policy engine, authenticated approvals, isolated executor, SLO recovery check, audit chain | done |
-| M9 | Minimal console (React), plus a GitHub Pages replay of a real run | planned |
+| M9 | Minimal console (React), plus a GitHub Pages replay of a real run | done |
 | M7 | Labeled fault scenarios, live and replay eval, ablations, CI release gate | planned |
 | M6 | Postgres hybrid retrieval (tsvector + pgvector, RRF, reranker) with a labeled query set | planned |
 | M8 | OpenTelemetry traces and Prometheus metrics for the copilot itself | planned |
@@ -164,7 +179,9 @@ app/llm/        LLM backends (claude -p, Anthropic API, replay), retries, per-ro
 app/agents/     agent loop, prompts, citation checks, blackboard store, investigation, report, recordings
 app/remediation/ action catalogue, plans, policy engine, planner agent, approval flow, SLO checks
 app/executor/   the executor process: Kubernetes writer, execute job
+app/console/    case export for the static replay (python -m app.console.export)
 app/*.py        prototype rag/knowledge (being replaced in M6)
+web/            the console and the static site (React, Vite, Tailwind)
 kb/             4 self-written SRE runbooks (retrieval corpus)
 tests/          pytest suite; tests/fixtures/{lab,agent}: real lab recordings for the contract tests
 deploy/kind/    fault lab: kind config, pinned versions, chart values, SLO rules and their tests
@@ -174,5 +191,4 @@ docs/plan/      rebuild plan (Chinese)
 docs/adr/       architecture decision records
 docs/learn/     per-milestone study notes with interview Q&A (Chinese)
 docs/legacy/    domain notes kept from the prototype
-docs/index.html legacy GitHub Pages animation (scripted; replaced in M9)
 ```

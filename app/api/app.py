@@ -19,7 +19,7 @@ from app.core.config import Settings, get_settings
 from app.core.security import validate_secret
 from app.db.engine import make_engine
 
-from . import alerts, evidence, health, incidents, remediation
+from . import alerts, evidence, health, incidents, remediation, stream
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -44,11 +44,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             CORSMiddleware,
             allow_origins=settings.cors_origins,
             allow_methods=["GET", "POST"],
-            allow_headers=["Authorization", "Content-Type"],
+            allow_headers=["Authorization", "Content-Type", "Last-Event-ID"],
         )
     app.include_router(health.router)
     app.include_router(alerts.router)
     app.include_router(incidents.router)
     app.include_router(evidence.router)
     app.include_router(remediation.router)
+    app.include_router(stream.router)
     return app

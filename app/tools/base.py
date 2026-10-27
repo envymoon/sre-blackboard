@@ -113,6 +113,21 @@ class ToolOutcome:
         return canonical_json(body)
 
 
+def without_nul(value: Any) -> Any:
+    """``value`` with every NUL character replaced by U+FFFD.
+
+    Postgres text and jsonb cannot hold U+0000, and a log line or a span attribute can carry
+    one; left in, the evidence row is refused and the agent's whole job fails.
+    """
+    if isinstance(value, str):
+        return value.replace("\x00", "\ufffd")
+    if isinstance(value, dict):
+        return {without_nul(k): without_nul(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [without_nul(v) for v in value]
+    return value
+
+
 def canonical_json(value: Json) -> str:
     """One fixed serialization, so equal data always gives equal bytes (and hashes)."""
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)

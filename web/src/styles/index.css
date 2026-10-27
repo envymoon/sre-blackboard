@@ -1,0 +1,100 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+@layer base {
+  html {
+    background: var(--c-bg);
+    color: var(--c-fg);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "cv11", "ss01";
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background: var(--c-bg);
+  }
+  :focus-visible {
+    outline: 2px solid var(--c-focus);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: var(--c-accent-soft);
+  }
+  a {
+    color: var(--c-accent-text);
+    text-decoration: none;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Loading shimmer: opacity only. */
+@keyframes pulse-soft {
+  50% {
+    opacity: 0.55;
+  }
+}
+.skeleton {
+  animation: pulse-soft 1.6s var(--ease-in-out) infinite;
+}
+
+/* The evidence drawer: slides with transform, the overlay fades. Radix waits for the exit animation. */
+@keyframes sheet-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+@keyframes sheet-out {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+.sheet[data-state="open"] {
+  animation: sheet-in var(--duration-slow) var(--ease-out);
+}
+.sheet[data-state="closed"] {
+  animation: sheet-out var(--duration-base) var(--ease-in-out);
+}
+.sheet-overlay[data-state="open"] {
+  animation: fade-in var(--duration-slow) var(--ease-out);
+}
+.sheet-overlay[data-state="closed"] {
+  animation: fade-out var(--duration-base) var(--ease-in-out);
+}
+
+/* The live dot breathes while connected. */
+@keyframes live {
+  50% {
+    opacity: 0.35;
+  }
+}
+.live-dot {
+  animation: live 2.4s var(--ease-in-out) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

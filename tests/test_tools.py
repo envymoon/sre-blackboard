@@ -19,6 +19,7 @@ from app.tools.compress import bound, template
 from app.tools.evidence import MemoryEvidenceStore, PgEvidenceStore, load
 from app.tools.loki import LogsSearchArgs, logql
 from app.tools.sources import Breaker, Cassette, LiveSource, RecordingSource, ReplaySource
+from tests.helpers import fake_backends
 from tests.helpers.fake_backends import NOW, FakeBackends
 
 CTX = ToolContext(tenant_id="lab")
@@ -327,6 +328,31 @@ async def test_replay_serves_repeated_calls_in_order_then_the_last() -> None:
 
 
 # --- evidence in Postgres --------------------------------------------------------------------
+
+
+async def test_a_nul_character_in_a_result_is_replaced_before_it_is_hashed_and_stored(engine, monkeypatch) -> None:
+    # Lab run 40458701488: a log or span with a NUL byte made Postgres refuse the evidence row
+    # ("unsupported Unicode escape sequence"), and the whole investigation job failed and restarted.
+    plain = fake_backends.loki_streams
+
+    def with_nul(service: str = "frontend") -> dict[str, Any]:
+        body = plain(service)
+        for stream in body["data"]["result"]:
+            stream["values"] = [[ts, line + "\x00binary", *rest] for ts, line, *rest in stream["values"]]
+        return body
+
+    monkeypatch.setattr(fake_backends, "loki_streams", with_nul)
+    live = LiveSource(FakeBackends().clients(), now=lambda: FIXED_NOW, sleep=_no_sleep)
+    registry = ToolRegistry(ALL_TOOLS, live, PgEvidenceStore(engine))
+    outcome = await registry.call("logs_search", {"service": "payment", "minutes": 10}, CTX)
+    assert outcome.ok, outcome.error
+
+    row = await load(engine, outcome.evidence_id or "", tenant_id="lab")
+    assert row is not None
+    stored = canonical_json(row["result"])
+    assert "\x00" not in stored and "\ufffdbinary" in stored
+    assert sha256_hex(stored) == row["result_hash"]
+    assert "\x00" not in json.dumps(outcome.summary, ensure_ascii=False)
 
 
 async def test_evidence_is_stored_immutable_and_verifiable(engine) -> None:

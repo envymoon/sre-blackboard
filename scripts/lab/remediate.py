@@ -10,19 +10,26 @@ For each incident a fault opened, once its plan has been reviewed by the policy:
   recovering the fault.
 
 Then wait for the executor and the verifier: RESOLVED (the SLO came back) or ESCALATED.
+A closed loop is also exported as a console case (``app.console.export``): the static site
+replays the real incident from it, with its real timestamps.
 Acceptance (plan, M5): the bad release goes alert -> diagnosis -> rollback proposed ->
 approved -> rolled back -> SLO recovered -> RESOLVED, with a complete audit trail.
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import httpx
 from sqlalchemy import Engine, text
 
+from app.console.export import export
 from app.core.config import Settings
 from app.core.security import mint_token
 from scripts.lab.diagnose import DiagnosisSeen
@@ -71,8 +78,11 @@ class Remediator:
         tenant: str,
         api_url: str = "http://localhost:8000",
         timeout_s: float = 900,
+        cases: Path | None = None,
     ) -> None:
         self.engine = engine
+        self.settings = settings
+        self.cases = cases
         self.tenant = tenant
         self.timeout_s = timeout_s
         self.http = httpx.Client(base_url=api_url, timeout=30)
@@ -149,6 +159,12 @@ class Remediator:
             )
             for x in r.executions:
                 log(f"[{fault.name}] execution {x}")
+            if self.cases is not None and r.closed_loop:
+                path = self.cases / f"{fault.name}-{r.service}.json"
+                self.cases.mkdir(parents=True, exist_ok=True)
+                doc = asyncio.run(export(self.settings, UUID(r.incident_id)))
+                path.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
+                log(f"[{fault.name}] console case: {path}")
         return seen
 
     def verify_audit(self) -> dict[str, Any]:

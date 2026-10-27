@@ -102,3 +102,69 @@ async def evidence_index(conn: AsyncConnection, incident_id: UUID, ids: list[str
         {"inc": incident_id, "ids": ids},
     )
     return {r.id: dict(r._mapping) for r in rows}
+
+
+async def agent_tree(conn: AsyncConnection, incident_id: UUID) -> list[dict[str, Any]]:
+    """Every agent run with its model steps, and under each step the tool calls it asked for.
+
+    A step's row is written when the model answers, before its tools run, and the next step's
+    after they all came back: so a tool call belongs to the agent's last step written before it.
+    """
+    runs = await conn.execute(
+        text(
+            "SELECT agent, status, model, prompt_version, steps, error, started_at, finished_at "
+            "FROM agent_runs WHERE incident_id = :id ORDER BY started_at, id"
+        ),
+        {"id": incident_id},
+    )
+    calls = await conn.execute(
+        text(
+            """
+            SELECT agent, step_no, status, error_code, error, attempts, model, input_tokens, output_tokens,
+                   cache_read_tokens, cache_creation_tokens, cost_usd, latency_ms, created_at,
+                   step->>'reasoning' AS reasoning, COALESCE(jsonb_typeof(step->'final'), 'null') <> 'null' AS final
+            FROM llm_calls WHERE incident_id = :id ORDER BY created_at, id
+            """
+        ),
+        {"id": incident_id},
+    )
+    tools = await conn.execute(
+        text(
+            "SELECT agent, tool, args, status, error_code, attempts, latency_ms, evidence_id, created_at "
+            "FROM tool_calls WHERE incident_id = :id ORDER BY created_at, id"
+        ),
+        {"id": incident_id},
+    )
+    steps: dict[str, list[dict[str, Any]]] = {}
+    for c in calls:
+        step = dict(c._mapping)
+        agent = step.pop("agent")
+        step["cost_usd"] = float(step["cost_usd"]) if step["cost_usd"] is not None else None
+        step["tools"] = []
+        steps.setdefault(agent, []).append(step)
+    for t in tools:
+        call = dict(t._mapping)
+        mine = steps.get(call.pop("agent") or "", [])
+        owner = next((s for s in reversed(mine) if s["created_at"] <= call["created_at"]), None)
+        if owner is not None:
+            owner["tools"].append(call)
+    out = []
+    for r in runs:
+        mine = steps.get(r.agent, [])
+        out.append(
+            {
+                **r._mapping,
+                "usage": {
+                    "calls": len(mine),
+                    "prompt_tokens": sum(
+                        s["input_tokens"] + s["cache_read_tokens"] + s["cache_creation_tokens"] for s in mine
+                    ),
+                    "output_tokens": sum(s["output_tokens"] for s in mine),
+                    "cost_usd": sum(s["cost_usd"] or 0.0 for s in mine),
+                    "model_time_ms": sum(s["latency_ms"] for s in mine),
+                    "tool_calls": sum(len(s["tools"]) for s in mine),
+                },
+                "llm_calls": mine,
+            }
+        )
+    return out
