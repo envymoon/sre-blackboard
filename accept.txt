@@ -1,0 +1,95 @@
+[agents] model reachable: {"result":"ok","total_cost_usd":0.00053329}
+[baseline] watching for 600s with no fault injected
+[baseline] quiet
+[payment-failure] inject: payment rejects half of all charges
+[payment-failure] alert ErrorBudgetBurn[fast] on checkout after 151.8s
+[payment-failure] alert ErrorBudgetBurn[fast] on payment after 151.8s
+[payment-failure] tool prom_query (error_ratio): ok - payment=0.3212 (want > 0.1)
+[payment-failure] tool prom_range (error_trend): ok - payment: first=0.07288 max=0.3332 peak_at=2026-10-27T07:36:36Z
+[payment-failure] tool flag_state (flags): ok - on: ['paymentFailure']
+[payment-failure] tool traces_search (error_traces): ok - 20/20 traces with errors; payment: charge: Payment request failed. Invalid token. demo.user_context.loyalty_level=gold
+[payment-failure] tool logs_search (logs): ok - 20 lines, match: Payment request failed. Invalid token. demo.user_context.loyalty_level=gold, top: Payment request failed. Invalid token. demo.user_context.loyalty_level=gold
+[payment-failure] escalated ErrorBudgetBurn/checkout: root causes payment 75%, payment 20%; 20 model calls, 284,727 tokens, $0.040 (root cause candidate: payment (75%): Charge calls fail hard (about half of them, per the paymentFailure 50% flag) with the 'Invalid token ... loyalty_level=gold' error. The likely trigger is the paymentFailure flag enabled in flagd, which makes payment fail deliberately. Checkout's order path surfaces these as 422s.)
+[payment-failure] escalated ErrorBudgetBurn/payment: root causes payment 70%, flagd 30%, checkout 8%; 18 model calls, 257,357 tokens, $0.038 (root cause candidate: payment (70%): Charge path rejects charges with 'Invalid token' for gold-loyalty users, consistent with the paymentFailure flag (ENABLED, 50%) being on in flagd. This is the only enabled flag, and no payment code or rollout change occurred.)
+[payment-failure] recorded 38 model steps, 70 tool answers
+[payment-failure] answer: payment - correct
+[payment-failure] plan for ErrorBudgetBurn/checkout: no action -> deny; failed checks: actions: the plan has no actions
+[payment-failure] plan for ErrorBudgetBurn/payment: no action -> deny; failed checks: actions: the plan has no actions
+[payment-failure] recover
+[payment-failure] all alerts resolved 255.3s after recovery
+[payment-failure] closed 0 incident(s)
+[network-delay] inject: 1s of added network latency on product-catalog
+[network-delay] alert LatencyP95High on product-catalog after 170.0s
+[network-delay] alert LatencyP95High on recommendation after 170.0s
+[network-delay] alert LatencyP95High on checkout after 200.0s
+[network-delay] alert LatencyP95High on frontend after 200.0s
+[network-delay] alert LatencyP95High on frontend-proxy after 200.1s
+[network-delay] tool prom_query (p95): ok - product-catalog=9232.0 (want > 1000)
+[network-delay] tool traces_search (slow_traces): ok - 20 traces, p95=11350.0ms
+[network-delay] tool trace_get (slow_trace): ok - product-catalog self=5536.0ms; slowest: product-catalog oteldemo.ProductCatalogService/GetProduct self=5536.0ms
+[network-delay] tool k8s_events (events): ok - 0 events, by reason {}; chaos objects: []
+[network-delay] tool flag_state (flags): ok - on: []
+[network-delay] escalated LatencyP95High/product-catalog: root causes product-catalog 55%, astronomy-db 30%; 20 model calls, 303,202 tokens, $0.041 (root cause candidate: product-catalog (55%): Requests in product-catalog began waiting for about 5s each at 07:47-07:48, with self time not explained by DB spans (possible connection-pool wait, lock wait or in-process blocking). Both its RPCs slowed together, and its CPU and memory stayed flat. No config or rollout change explains the step.)
+[network-delay] escalated LatencyP95High/recommendation: root causes product-catalog 50%, astronomy-db 35%; 20 model calls, 269,033 tokens, $0.042 (root cause candidate: product-catalog (50%): Slowdown inside product-catalog's data-access path. Its own GetProduct/ListProducts self time is 4.4-5.5 s per span, larger than its astronomy-db client time (1-2 s per call), so the delay is not only the DB query wait. Likely candidates are connection-pool wait or serialization in the service. Unconfirmed, since no pool metrics were checked.)
+[network-delay] escalated LatencyP95High/checkout: root causes product-catalog 60%, astronomy-db 30%; 20 model calls, 251,621 tokens, $0.039 (root cause candidate: product-catalog (60%): GetProduct is slow with large self time beyond its astronomy-db spans (about 5s per call), while CPU and load are flat. Likely lock, connection-pool or I/O wait inside product-catalog's request path, starting about 07:48Z. No change caused it.)
+[network-delay] escalated LatencyP95High/frontend: root causes product-catalog 50%, astronomy-db 30%; 20 model calls, 298,430 tokens, $0.044 (root cause candidate: product-catalog (50%): The GetProduct/ListProducts path is slow because its astronomy-db calls jumped from ~2ms to ~2s each (p95 ~4.6s) starting ~07:47-07:48, with self time of ~5.6-5.8s per GetProduct span. Load and CPU are flat and there are no errors, so the cause is latency on the DB path, not volume.)
+[network-delay] escalated LatencyP95High/frontend-proxy: root causes product-catalog 50%, astronomy-db 30%; 21 model calls, 346,410 tokens, $0.052 (root cause candidate: product-catalog (50%): Per-request DB access in product-catalog has become slow (about 2 s per astronomy-db call, plus large self time). This fits connection-pool exhaustion or waiting, a lock wait, or a configuration or network problem on its side. Not confirmed; no pool or DB-side metrics were available.)
+[network-delay] recorded 101 model steps, 196 tool answers
+[network-delay] answer: product-catalog - correct
+[network-delay] plan for LatencyP95High/product-catalog: no action -> deny; failed checks: actions: the plan has no actions
+[network-delay] plan for LatencyP95High/recommendation: no action -> deny; failed checks: actions: the plan has no actions
+[network-delay] plan for LatencyP95High/checkout: no action -> deny; failed checks: actions: the plan has no actions
+[network-delay] plan for LatencyP95High/frontend: no action -> deny; failed checks: actions: the plan has no actions
+[network-delay] plan for LatencyP95High/frontend-proxy: no action -> deny; failed checks: actions: the plan has no actions
+[network-delay] recover
+[network-delay] all alerts resolved 310.6s after recovery
+[network-delay] closed 0 incident(s)
+[bad-release] inject: a checkout rollout points its payment client at a port nobody listens on
+[bad-release] alert ErrorBudgetBurn[fast] on checkout after 267.3s
+[bad-release] tool prom_query (error_ratio): ok - checkout=1.0 (want > 0.1)
+[bad-release] tool rollout_history (history): ok - revision 2: 'checkout config release: payment client moved to port 9999'
+[bad-release] tool deploy_diff (diff): ok - 1 changes; {'path': 'containers.checkout.env.PAYMENT_ADDR', 'from': 'payment:8080', 'to': 'payment:9999'}
+[bad-release] tool k8s_events (events): ok - by reason: {'Scheduled': 1, 'Pulling': 1, 'Pulled': 1, 'Created': 1, 'Started': 1, 'SuccessfulCreate': 1, 'Killing': 1, 'SuccessfulDelete': 1, 'ScalingReplicaSet': 1}
+[bad-release] tool traces_search (error_traces): ok - 20/20 traces with errors; checkout: oteldemo.CheckoutService/PlaceOrder: failed to charge card: could not charge the card: rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: dial tcp 10.96.58.191:9999: i/o timeout"
+[bad-release] tool logs_search (error_logs): ok - 64 lines, match: Checkout failed to place order <n> INTERNAL: failed to charge card: could not charge the card: rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: dial tcp …, top: Checkout failed to place order <n> INTERNAL: failed to charge card: could not charge the card: rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: dial tcp …
+[bad-release] awaiting_approval ErrorBudgetBurn/checkout: root causes checkout 80%, checkout 30%; 23 model calls, 456,010 tokens, $0.058
+[bad-release] recorded 23 model steps, 46 tool answers
+[bad-release] answer: checkout - correct
+[bad-release] plan for ErrorBudgetBurn/checkout: rollout_undo checkout -> require_approval (R3); approved by lab-approver
+[bad-release] checkout: RESOLVED (checkout error ratio over 1m is 0 ratio, below 0.06, for 3 checks in a row) 130s after the decision
+[bad-release] execution succeeded: rollout_undo checkout (revision 2 -> 3)
+[bad-release] console case: lab-out/agent/cases/bad-release-checkout.json
+[bad-release] recover
+[bad-release] nothing to recover: sre-blackboard already repaired it
+[bad-release] all alerts resolved 296.3s after recovery
+[bad-release] closed 0 incident(s)
+
+| fault | root cause | first alert | alerts (service) | expected symptom seen | flapping | tool checks | resolved after recovery | result |
+|---|---|---|---|---|---|---|---|---|
+| payment-failure | payment | 152s | ErrorBudgetBurn[fast] (checkout, 152s), ErrorBudgetBurn[fast] (payment, 152s) | yes | - | 5/5 | 255s | ok |
+| network-delay | product-catalog | 170s | LatencyP95High (product-catalog, 170s), LatencyP95High (recommendation, 170s), LatencyP95High (checkout, 200s), LatencyP95High (frontend, 200s), LatencyP95High (frontend-proxy, 200s) | yes | - | 5/5 | 311s | ok |
+| bad-release | checkout | 267s | ErrorBudgetBurn[fast] (checkout, 267s) | yes | - | 6/6 | 296s | ok |
+
+| fault | root cause | first incident | top candidate | correct | all incidents (top) | time | calls | tokens | cost |
+|---|---|---|---|---|---|---|---|---|---|
+| payment-failure | payment | ErrorBudgetBurn/checkout | payment 75%, payment 20% | yes | checkout: payment, payment: payment | 185s | 38 | 542,084 | $0.078 |
+| network-delay | product-catalog | LatencyP95High/product-catalog | product-catalog 55%, astronomy-db 30% | yes | product-catalog: product-catalog, recommendation: product-catalog, checkout: product-catalog, frontend: product-catalog, frontend-proxy: product-catalog | 187s | 101 | 1,468,696 | $0.217 |
+| bad-release | checkout | ErrorBudgetBurn/checkout | checkout 80%, checkout 30% | yes | checkout: checkout | 158s | 23 | 456,010 | $0.058 |
+
+Top-1 correct: 3/3 (needed: 2)
+
+| fault | incident | plan | policy | decision | outcome | time | executions |
+|---|---|---|---|---|---|---|---|
+| payment-failure | checkout | no action | deny | - | escalated | - | - |
+| payment-failure | payment | no action | deny | - | escalated | - | - |
+| network-delay | product-catalog | no action | deny | - | escalated | - | - |
+| network-delay | recommendation | no action | deny | - | escalated | - | - |
+| network-delay | checkout | no action | deny | - | escalated | - | - |
+| network-delay | frontend | no action | deny | - | escalated | - | - |
+| network-delay | frontend-proxy | no action | deny | - | escalated | - | - |
+| bad-release | checkout | rollout_undo checkout | require_approval (R3) | approve | resolved: checkout error ratio over 1m is 0 ratio, below 0.06, for 3 checks in a row | 130s | succeeded: rollout_undo checkout (revision 2 -> 3) |
+
+Closed loop for bad-release (rollout_undo checkout): closed
+
+Audit chain: ok, 87 rows verified
+

@@ -1,0 +1,204 @@
+{
+ "annotations": {
+  "698e7c19-22fa-4ace-8a45-ef8ffbad0168": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 60.03% of requests"
+  }
+ },
+ "expected": {
+  "698e7c19-22fa-4ace-8a45-ef8ffbad0168": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_0317f9582d9327e2"
+      ],
+      "statement": "Checkout revision 2 was created at 08:01:50Z, about 4.5 minutes before the alert, with the change cause 'payment client moved to port 9999'."
+     },
+     {
+      "evidence_ids": [
+       "ev_1ed5bc1e29d783bf"
+      ],
+      "statement": "The only pod-template difference between checkout revisions 1 and 2 is PAYMENT_ADDR, changed from payment:8080 to payment:9999. The image is unchanged."
+     },
+     {
+      "evidence_ids": [
+       "ev_53cb857d43c44711",
+       "ev_a5814323d67ce2c0",
+       "ev_041918143bf9781e"
+      ],
+      "statement": "Checkout's failing PlaceOrder traces show PaymentService/Charge dial i/o timeouts to 10.96.58.191:9999. No payment span appears in the failing traces."
+     },
+     {
+      "evidence_ids": [
+       "ev_9ed5c3efc9af0583",
+       "ev_8a4607a233681bd9",
+       "ev_f259842ff8b5aa01",
+       "ev_5062999332de434e"
+      ],
+      "statement": "Payment has no error logs or error spans and only info lines, with the newest at 08:01:49Z. Payment has a single revision, created 07:15:56Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_42aed491a8ec858d",
+       "ev_9b4a8505c18a2886",
+       "ev_d542fe778798f822"
+      ],
+      "statement": "Checkout's server error ratio rose from about 0.07 at 07:34Z to 0.84 at 08:06Z. Nearly all failing client calls are PaymentService/Charge, at a 1.0 error ratio at the latest sample."
+     },
+     {
+      "evidence_ids": [
+       "ev_a3ccf53c60af64ff",
+       "ev_dee27f4627918bca",
+       "ev_75cd6c4084f57ed4"
+      ],
+      "statement": "Payment's request rate fell to 0 by about 08:06Z while checkout's Charge calls continued at about 0.11 to 0.2 req/s. Checkout's Charge client p95 spiked to about 12.5 s."
+     },
+     {
+      "evidence_ids": [
+       "ev_1227c0dfbab9625a",
+       "ev_f8be384689b318e8"
+      ],
+      "statement": "All 18 feature flags are off, so flagd is not the cause. No namespace warning events exist for checkout or payment in the last 60 minutes."
+     },
+     {
+      "evidence_ids": [
+       "ev_d88db429e1abed92",
+       "ev_e9772ae5aa7617c1"
+      ],
+      "statement": "Checkout's own logs contain no error or warn lines in the window, so its errors appear only in callers' logs and in traces."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Run kubectl get svc payment and get endpoints in otel-demo; confirm the port list and that 9999 is absent. Check the running checkout pod's PAYMENT_ADDR env.",
+      "statement": "Payment does not listen on port 9999 (its Service exposes 8080 only), so the revision-2 change is the direct fault."
+     },
+     {
+      "how_to_verify": "Identify the ClusterIP 10.96.101.65 with kubectl get svc -A and check its endpoints and logs.",
+      "statement": "The 10.96.101.65:8080 connect timeouts seen by frontend at 08:04:06Z point to a second, unrelated target that may be a separate issue."
+     },
+     {
+      "how_to_verify": "Review payment's logs and traces from 07:30 to 07:50Z for errors and any pod restarts.",
+      "statement": "The cause of payment's 07:38Z error peak (0.53) is unexplained and may be a separate, earlier issue."
+     },
+     {
+      "how_to_verify": "Run kubectl get pods -l app=payment and describe the pod for restart counts, readiness, and events.",
+      "statement": "Payment pod restarts and crash loops are not confirmed, because the restart-count query returned no data."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_1ed5bc1e29d783bf",
+       "ev_0317f9582d9327e2",
+       "ev_041918143bf9781e",
+       "ev_9ed5c3efc9af0583"
+      ],
+      "statement": "The wrong port in checkout's PAYMENT_ADDR is the most likely cause: it matches the onset, the error message, and the lack of payment-side errors or traffic."
+     },
+     {
+      "evidence_ids": [
+       "ev_9ed5c3efc9af0583",
+       "ev_32ffee97a573878b",
+       "ev_c995fad60459fdfe"
+      ],
+      "statement": "Payment is most likely a victim, not the root cause. Its earlier 07:38Z error peak has recovered and it logs nothing wrong, so the current outage is not in payment."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Checkout revision 2 (release 'payment client moved to port 9999') set PAYMENT_ADDR to payment:9999, but payment serves on 8080. Checkout's PaymentService/Charge calls time out, so about 60% of PlaceOrder requests fail.",
+      "confidence": 0.8,
+      "evidence_ids": [
+       "ev_0317f9582d9327e2",
+       "ev_1ed5bc1e29d783bf",
+       "ev_7f9bf9a8d2a9263e",
+       "ev_53cb857d43c44711",
+       "ev_041918143bf9781e",
+       "ev_42aed491a8ec858d",
+       "ev_9b4a8505c18a2886",
+       "ev_818b8d2aa44c9069"
+      ],
+      "service": "checkout"
+     },
+     {
+      "cause": "Checkout restarted at 08:01:51Z under the new config, and checkout logs no errors while its callers' logs and traces show the failures. Any stale address issue would also sit in checkout's configuration or service discovery, not payment.",
+      "confidence": 0.3,
+      "evidence_ids": [
+       "ev_10e9ee325581bbac",
+       "ev_5917fe33719c6ff0",
+       "ev_29b2b0e2ceccd058",
+       "ev_d88db429e1abed92"
+      ],
+      "service": "checkout"
+     }
+    ],
+    "summary": "Checkout's fast error-budget burn (about 60% of requests failing) began at 08:01:50Z, when checkout revision 2 changed PAYMENT_ADDR from payment:8080 to payment:9999. Checkout's Charge calls to payment now fail with dial i/o timeouts to 10.96.58.191:9999, and those errors propagate to PlaceOrder, frontend and frontend-proxy as 500s. Payment has no errors and no traffic after 08:01:49Z, and it has not changed, so the fault is most likely checkout's configuration, not payment. Payment's earlier 07:38Z error peak is unexplained but predates the alert. The port 9999 is unverified against payment's Service and was not confirmed as listening or not."
+   },
+   "findings": 21,
+   "plan": {
+    "actions": [
+     {
+      "action": "rollout_undo",
+      "deployment": "checkout",
+      "evidence_ids": [
+       "ev_0317f9582d9327e2",
+       "ev_1ed5bc1e29d783bf",
+       "ev_53cb857d43c44711",
+       "ev_9ed5c3efc9af0583"
+      ],
+      "reason": "Checkout revision 2 (08:01:50Z, 'payment client moved to port 9999') is the only pod-template change and set PAYMENT_ADDR to payment:9999 while payment listens on 8080. Reverting to revision 1 restores the address that worked before the alert.",
+      "to_revision": 1
+     }
+    ],
+    "alternatives": [
+     {
+      "action": "restart_deployment",
+      "why_not": "A restart would keep PAYMENT_ADDR at payment:9999, so checkout would still fail Charge calls. It does not address the cause."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "Checkout is not short of capacity. Its failures are dial timeouts to the wrong port, so more replicas would fail in the same way."
+     },
+     {
+      "action": "none",
+      "why_not": "Leaving it in place keeps about 60% of orders failing and burns the error budget in about 2 days at this rate, so waiting is not acceptable."
+     }
+    ],
+    "no_action_reason": null,
+    "summary": "Checkout revision 2 changed PAYMENT_ADDR to payment:9999, while payment serves on 8080, so checkout's Charge calls time out and about 60% of PlaceOrder requests fail. Rolling checkout back to revision 1 restores payment:8080, and checkout's error ratio should fall toward its earlier baseline (about 0.07) within a few minutes."
+   },
+   "state": "AWAITING_APPROVAL"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": null,
+   "created_at": "2026-10-27 08:06:18.017397+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "698e7c19-22fa-4ace-8a45-ef8ffbad0168",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "AWAITING_APPROVAL",
+   "tenant_id": "lab",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}
