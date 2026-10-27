@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     # Tokens (prompt, cached or not, plus output) one incident may use before it is escalated.
     llm_incident_token_budget: int = 1_500_000
     agent_max_steps: int = 8
+    # Evaluation only (M7): tenants whose incidents are investigated by a variant of the agents,
+    # e.g. '{"lab-single": "single"}' (app/agents/variants.py). Every other tenant: "default".
+    eval_tenant_variants: dict[str, str] = {}
     # Queue an investigation for every new incident. Off: triage only (no model access, or
     # a load test of the ingest path).
     auto_investigate: bool = True

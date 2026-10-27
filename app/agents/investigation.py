@@ -1,5 +1,8 @@
 """One incident's investigation: coordinator -> three investigators in parallel -> synthesizer.
 
+(Or, for the evaluation's single-agent variant, one agent with every tool that writes the
+diagnosis itself; app/agents/variants.py.)
+
 Every agent run is checkpointed (agent_runs) and its output written to the blackboard in
 the same transaction. When the job runs again after a crash or a lost lease, finished agents
 are skipped and their output is read back, so no completed investigator is ever asked again;
@@ -26,6 +29,7 @@ from app.agents.citations import Checked, check_diagnosis, check_report
 from app.agents.loop import AgentFailed, AgentRun, AgentSpec, BudgetExceeded, Deps, run_agent
 from app.agents.schemas import INVESTIGATORS, Diagnosis, Finding, InvestigatorReport, Plan
 from app.agents.store import Entry
+from app.agents.variants import DEFAULT, Variant
 from app.llm.types import LLMError
 from app.tools.compress import iso
 
@@ -79,6 +83,10 @@ class IncidentView:
 class AgentConfig:
     model_for: Callable[[str], str]
     max_steps: int = 8
+    variant: Variant = DEFAULT
+
+    def model(self, role: str) -> str:
+        return self.variant.models.get(role) or self.model_for(role)
 
 
 @dataclass
@@ -95,21 +103,22 @@ DEFAULT_BRIEFS = {
 }
 
 
+CheckFn = Callable[[Any, dict[str, str]], Awaitable[Checked[Any]]]
+ToEntries = Callable[[Any, AgentRun], tuple[list[Entry], dict[str, Any]]]
+# Runs one agent unless a checkpoint says it already finished; its blackboard entries, or None if it failed.
+Once = Callable[[AgentSpec, str, CheckFn, ToEntries], Awaitable[list[Entry] | None]]
+
+
 async def investigate(incident: IncidentView, deps: Deps, config: AgentConfig) -> Outcome:
     outcome = Outcome()
     runs = await deps.store.runs(incident.id)
     board = await deps.store.entries(incident.id)
 
-    async def once(
-        spec: AgentSpec,
-        task: str,
-        check: Callable[[Any, dict[str, str]], Awaitable[Checked[Any]]],
-        to_entries: Callable[[Any, AgentRun], tuple[list[Entry], dict[str, Any]]],
-    ) -> list[Entry] | None:
+    async def once(spec: AgentSpec, task: str, check: CheckFn, to_entries: ToEntries) -> list[Entry] | None:
         if spec.name in runs and runs[spec.name].status == "done":
             outcome.agents[spec.name] = "reused"
             return [e for e in board if e.author == spec.name]
-        model = config.model_for(spec.name)
+        model = config.model(spec.name)
         await deps.store.start_run(incident.tenant_id, incident.id, spec.name, model, spec.prompt.version)
         try:
             run = await run_agent(spec, task, model=model, deps=deps, check=check)
@@ -136,6 +145,9 @@ async def investigate(incident: IncidentView, deps: Deps, config: AgentConfig) -
         return entries
 
     try:
+        if config.variant.mode == "single":
+            dx_entries = await _solo(incident, deps, config, once)
+            return _concluded(outcome, dx_entries)
         # 1. Plan.
         plan_entries = await once(
             AgentSpec("coordinator", prompts.coordinator(), (), Plan, max_steps=1),
@@ -191,7 +203,9 @@ async def investigate(incident: IncidentView, deps: Deps, config: AgentConfig) -
 
         summaries = {name: run.result.get("report_summary", "") for name, run in runs.items()}
         dx_entries = await once(
-            AgentSpec("synthesizer", prompts.synthesizer(), (), Diagnosis, max_steps=1),
+            AgentSpec(
+                "synthesizer", config.variant.prompt("synthesizer", prompts.synthesizer), (), Diagnosis, max_steps=1
+            ),
             _synthesizer_task(incident, plan, findings, summaries, evidence_tools),
             check_dx,
             lambda dx, _: ([Entry("diagnosis", "synthesizer", dx.model_dump(), sorted(dx.cited()))], {}),
@@ -200,6 +214,10 @@ async def investigate(incident: IncidentView, deps: Deps, config: AgentConfig) -
         outcome.escalate = f"token budget exhausted ({e})"
         return outcome
 
+    return _concluded(outcome, dx_entries)
+
+
+def _concluded(outcome: Outcome, dx_entries: list[Entry] | None) -> Outcome:
     if not dx_entries:
         outcome.escalate = "the synthesizer could not produce a diagnosis"
         return outcome
@@ -207,6 +225,26 @@ async def investigate(incident: IncidentView, deps: Deps, config: AgentConfig) -
     if not outcome.diagnosis.root_causes:
         outcome.escalate = "no root cause candidate is supported by the evidence"
     return outcome
+
+
+SOLO = "solo"
+
+
+async def _solo(incident: IncidentView, deps: Deps, config: AgentConfig, once: Once) -> list[Entry] | None:
+    """The single-agent variant: every investigator's tools and their steps together, and
+    the synthesizer's answer at the end. Its citations may name anything it was shown."""
+    tools = tuple(t for focus in INVESTIGATORS for t in INVESTIGATOR_TOOLS[focus])
+    spec = AgentSpec(SOLO, prompts.solo(), tools, Diagnosis, max_steps=config.max_steps * len(INVESTIGATORS))
+
+    async def check(dx: Diagnosis, shown: dict[str, str]) -> Checked[Diagnosis]:
+        return check_diagnosis(dx, await deps.store.evidence_tools(incident.id, dx.cited()), shown)
+
+    return await once(
+        spec,
+        incident.describe(),
+        check,
+        lambda dx, _: ([Entry("diagnosis", SOLO, dx.model_dump(), sorted(dx.cited()))], {}),
+    )
 
 
 async def _accept(value: Any, _: dict[str, str]) -> Checked[Any]:

@@ -8,6 +8,7 @@ import signal
 
 from sqlalchemy import text
 
+from app.agents import variants
 from app.core.config import Settings, get_settings
 from app.db.engine import make_engine
 
@@ -19,6 +20,8 @@ from .runner import Handler, Worker
 async def serve(
     settings: Settings, services: AgentServices | None = None, extra_handlers: dict[str, Handler] | None = None
 ) -> None:
+    for name in settings.eval_tenant_variants.values():
+        variants.get(name)  # an unknown variant stops the worker here, not each investigation later
     engine = make_engine(settings)
     services = services or AgentServices.from_settings(settings)
     try:
