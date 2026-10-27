@@ -1,0 +1,172 @@
+/*
+ * Design tokens: direction A, "quiet dark", with a matching light theme.
+ *
+ * Every colour, size and duration the components use comes from here. Raw values live
+ * only in this file; components use the Tailwind utilities generated from the @theme
+ * block below (bg-panel, text-muted, rounded-md, duration-base, ...).
+ *
+ * Each token holds its light and dark value in light-dark(); the theme follows the system
+ * unless the page sets data-theme="light" or "dark" on <html>.
+ * Text pairs are checked for WCAG AA (4.5:1 for body text) on the surfaces they sit on;
+ * tokens.test.ts recomputes the ratios.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Surfaces, from the page down to raised controls. */
+  --c-bg: light-dark(#f7f8f9, #0e0f11);
+  --c-rail: light-dark(#f1f2f4, #0b0c0e);
+  --c-panel: light-dark(#ffffff, #15161a);
+  --c-sunken: light-dark(#f3f4f6, #121316);
+  --c-raised: light-dark(#ebedf0, #1b1d22);
+  --c-overlay: light-dark(rgb(15 16 18 / 0.32), rgb(0 0 0 / 0.5));
+
+  /* Lines. */
+  --c-line: light-dark(#e3e5e9, #23252b);
+  --c-line-strong: light-dark(#cfd2d8, #2e3138);
+  --c-line-soft: light-dark(#eceef1, #1f2126);
+
+  /* Text. */
+  --c-fg: light-dark(#16171a, #e8e9ec);
+  --c-fg-2: light-dark(#3a3e45, #c5c9d0);
+  --c-muted: light-dark(#5c626c, #9ba1ab);
+  --c-faint: light-dark(#646a74, #8a909a);
+
+  /* Accent: the one colour that means "act here". */
+  --c-accent: light-dark(#4a55c2, #5e6ad2);
+  --c-accent-hover: light-dark(#3f49ad, #525ec8);
+  --c-accent-fg: light-dark(#ffffff, #ffffff);
+  --c-accent-text: light-dark(#3e49b8, #a9afff);
+  --c-accent-soft: light-dark(#eceefc, #1d1f38);
+  --c-accent-line: light-dark(#c5c9f2, #3b3f86);
+  --c-focus: light-dark(#4a55c2, #8b93ff);
+
+  /* Semantic tones: text on its soft background, with a border. */
+  --c-success: light-dark(#1c7a50, #6fcf9f);
+  --c-success-soft: light-dark(#e7f5ee, #10231a);
+  --c-success-line: light-dark(#b5e0c9, #1f4a33);
+  --c-warning: light-dark(#7d5c00, #f2c94c);
+  --c-warning-soft: light-dark(#fdf5dc, #221d0c);
+  --c-warning-line: light-dark(#ecd78f, #574a1c);
+  --c-danger: light-dark(#b9302f, #f5a3a3);
+  --c-danger-soft: light-dark(#fdecec, #2a1416);
+  --c-danger-line: light-dark(#f2c0bf, #4a2326);
+  --c-critical: light-dark(#a24c0b, #f2994a);
+  --c-critical-soft: light-dark(#fdf0e5, #24180e);
+  --c-critical-line: light-dark(#f1cda9, #5a3a1e);
+
+  /* Data marks (sparklines, bars): may be lighter than text, never carry meaning alone. */
+  --c-mark: light-dark(#4a55c2, #8b93ff);
+  --c-mark-muted: light-dark(#a3a8b3, #5b606a);
+  --c-mark-danger: light-dark(#d6403f, #eb5757);
+  --c-mark-track: light-dark(#e3e5e9, #23252b);
+
+  /* Diff lines in the evidence drawer. */
+  --c-del: light-dark(#fbeaea, #2a1416);
+  --c-del-fg: light-dark(#9e2524, #f5a3a3);
+  --c-add: light-dark(#e6f4ec, #11261b);
+  --c-add-fg: light-dark(#17673f, #8fdcb2);
+
+  --sh-drawer: -16px 0 48px light-dark(rgb(15 16 18 / 0.12), rgb(0 0 0 / 0.45));
+  --sh-pop: 0 8px 24px light-dark(rgb(15 16 18 / 0.12), rgb(0 0 0 / 0.45));
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-*: initial;
+  --color-bg: var(--c-bg);
+  --color-rail: var(--c-rail);
+  --color-panel: var(--c-panel);
+  --color-sunken: var(--c-sunken);
+  --color-raised: var(--c-raised);
+  --color-overlay: var(--c-overlay);
+  --color-line: var(--c-line);
+  --color-line-strong: var(--c-line-strong);
+  --color-line-soft: var(--c-line-soft);
+  --color-fg: var(--c-fg);
+  --color-fg-2: var(--c-fg-2);
+  --color-muted: var(--c-muted);
+  --color-faint: var(--c-faint);
+  --color-accent: var(--c-accent);
+  --color-accent-hover: var(--c-accent-hover);
+  --color-accent-fg: var(--c-accent-fg);
+  --color-accent-text: var(--c-accent-text);
+  --color-accent-soft: var(--c-accent-soft);
+  --color-accent-line: var(--c-accent-line);
+  --color-focus: var(--c-focus);
+  --color-success: var(--c-success);
+  --color-success-soft: var(--c-success-soft);
+  --color-success-line: var(--c-success-line);
+  --color-warning: var(--c-warning);
+  --color-warning-soft: var(--c-warning-soft);
+  --color-warning-line: var(--c-warning-line);
+  --color-danger: var(--c-danger);
+  --color-danger-soft: var(--c-danger-soft);
+  --color-danger-line: var(--c-danger-line);
+  --color-critical: var(--c-critical);
+  --color-critical-soft: var(--c-critical-soft);
+  --color-critical-line: var(--c-critical-line);
+  --color-mark: var(--c-mark);
+  --color-mark-muted: var(--c-mark-muted);
+  --color-mark-danger: var(--c-mark-danger);
+  --color-mark-track: var(--c-mark-track);
+  --color-del: var(--c-del);
+  --color-del-fg: var(--c-del-fg);
+  --color-add: var(--c-add);
+  --color-add-fg: var(--c-add-fg);
+  --color-white: #ffffff;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  /* Type scale (size / line height). */
+  --text-*: initial;
+  --text-2xs: 11px;
+  --text-2xs--line-height: 16px;
+  --text-xs: 12px;
+  --text-xs--line-height: 18px;
+  --text-sm: 13px;
+  --text-sm--line-height: 20px;
+  --text-base: 14px;
+  --text-base--line-height: 22px;
+  --text-md: 15px;
+  --text-md--line-height: 22px;
+  --text-lg: 18px;
+  --text-lg--line-height: 26px;
+  --text-xl: 24px;
+  --text-xl--line-height: 32px;
+  --text-2xl: 36px;
+  --text-2xl--line-height: 44px;
+
+  /* 4 px grid: p-1 = 4px, p-5 = 20px. */
+  --spacing: 4px;
+
+  --radius-*: initial;
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-full: 9999px;
+
+  --shadow-*: initial;
+  --shadow-drawer: var(--sh-drawer);
+  --shadow-pop: var(--sh-pop);
+
+  /* Motion. Durations and curves; motion.ts mirrors them for Motion's JS animations. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+}
