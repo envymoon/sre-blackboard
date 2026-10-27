@@ -13,7 +13,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from app.tools.base import Tool, ToolArgs, ToolContext, ToolError, ToolOutcome, canonical_json, sha256_hex
+from app.tools.base import Tool, ToolArgs, ToolContext, ToolError, ToolOutcome, canonical_json, sha256_hex, without_nul
 from app.tools.compress import MAX_SUMMARY_CHARS, bound
 from app.tools.evidence import EvidenceRecord, EvidenceSink, ToolCallRecord, evidence_id
 from app.tools.sources import Source
@@ -78,7 +78,8 @@ class ToolRegistry:
         fetched = await self.source.fetch(tool, args, ctx.agent)
         outcome.attempts = fetched.attempts
         outcome.fetched_at = fetched.fetched_at
-        raw_json = canonical_json(fetched.raw)
+        raw = without_nul(fetched.raw)
+        raw_json = canonical_json(raw)
         size = len(raw_json.encode())
         if size > tool.max_result_bytes:
             raise ToolError(
@@ -87,7 +88,7 @@ class ToolRegistry:
                 "narrow the query (fewer series, a shorter window, a more specific filter)",
             )
         try:
-            summary = tool.summarize(fetched.raw, args)
+            summary = tool.summarize(raw, args)
         except (KeyError, TypeError, ValueError, IndexError) as e:
             raise ToolError("backend_error", f"unexpected response shape from {tool.backend}: {e!r}") from e
         summary, truncated = bound(summary, self.max_summary_chars)
@@ -98,7 +99,7 @@ class ToolRegistry:
             incident_id=ctx.incident_id,
             tool=tool.name,
             args=outcome.args,
-            result=fetched.raw,
+            result=raw,
             result_hash=result_hash,
             result_bytes=size,
             summary=summary,

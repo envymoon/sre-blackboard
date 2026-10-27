@@ -15,7 +15,7 @@ afterEach(() => vi.useRealTimers());
 describe("Replay", () => {
   it("shows only what existed at the clock's time", async () => {
     const r = new Replay(bundle);
-    r.seek(Date.parse((bundle.responses[base] as Incident).created_at) + 100);
+    expect(await r.get<Incident[]>("/api/v1/incidents")).toEqual([]);
     expect((await r.get<Incident>(base)).state).toBe("RECEIVED");
     expect(await r.get<Plan[]>(`${base}/plans`)).toEqual([]);
 

@@ -1,8 +1,8 @@
 import { m } from "motion/react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
-import { duration, tokens, usd } from "@/lib/format";
+import { duration, time, tokens, usd } from "@/lib/format";
 import type { AgentRun, LlmStep, ToolCall } from "@/lib/types";
 import { duration as d, ease } from "@/styles/motion";
 import { Chevron } from "./Diagnosis";
@@ -98,9 +98,23 @@ function AgentRow({ run, open, onToggle }: { run: AgentRun; open: boolean; onTog
           <li className="font-mono text-2xs text-faint">
             {run.model} · {run.prompt_version}
           </li>
-          {run.llm_calls.map((s) => (
-            <Step key={s.step_no} step={s} />
-          ))}
+          {run.llm_calls.map((s, i) => {
+            // Step numbers start over when the job was retried: the steps before are from the
+            // attempt that failed, kept because they happened (and cost tokens).
+            const restarted = i > 0 && s.step_no <= run.llm_calls[i - 1]!.step_no;
+            return (
+              <Fragment key={`${s.created_at}-${i}`}>
+                {restarted && (
+                  <li className="flex items-center gap-2 text-xs text-warning">
+                    <span className="h-px flex-1 bg-warning-line" aria-hidden="true" />
+                    Restarted at {time(s.created_at)} UTC: the job was retried
+                    <span className="h-px flex-1 bg-warning-line" aria-hidden="true" />
+                  </li>
+                )}
+                <Step step={s} />
+              </Fragment>
+            );
+          })}
           {run.error && <li className="text-sm text-danger">{run.error}</li>}
         </m.ol>
       )}
