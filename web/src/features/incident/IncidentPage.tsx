@@ -119,8 +119,10 @@ function Header({ incident, agents }: { incident: Incident; agents: AgentRun[] |
   );
 }
 
-/** The incident's SLI as the metrics investigator first fetched it, if it has. */
+/** The SLI the alert fired on (error ratio or p95 latency), as the metrics investigator first fetched it. */
 function Sli({ incident, agents }: { incident: Incident; agents: AgentRun[] | undefined }) {
+  const isRatio = incident.labels.slo !== "latency";
+  const metric = isRatio ? "sli_error_ratio" : "sli_latency_p95_ms";
   const call = agents
     ?.flatMap((r) => r.llm_calls.flatMap((s) => s.tools))
     .find(
@@ -128,13 +130,12 @@ function Sli({ incident, agents }: { incident: Incident; agents: AgentRun[] | un
         t.tool === "prom_range" &&
         t.evidence_id &&
         typeof t.args.query === "string" &&
-        t.args.query.includes("sli_") &&
+        t.args.query.includes(metric) &&
         t.args.query.includes(`"${incident.service}"`),
     );
   const ev = useEvidence(call?.evidence_id ?? null);
   const series = (ev.data?.summary as { series?: { shape: number[]; last: number; max: number }[] } | undefined)
     ?.series?.[0];
-  const isRatio = String(call?.args.query ?? "").includes("error");
   const box = "flex h-[66px] w-[284px] items-center gap-3.5 rounded-lg border border-line bg-panel px-3.5";
   if (!series) {
     return (
