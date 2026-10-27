@@ -8,6 +8,7 @@ accept [--tag T | NAMES]   the M2 acceptance run (see scripts/lab/accept.py)
 eval [--shard i/n | IDS]   the M7 evaluation over eval/scenarios (see scripts/lab/evaluate.py)
 env                        settings for the read-only tools (make lab-env writes them to .lab.env)
 fixtures DIR --run ID      turn a lab-recordings branch checkout into the contract test fixtures
+eval-import DIR --run ID   an evaluation's results and recordings into eval/ (the CI replay and baseline)
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 from scripts.lab import accept
 from scripts.lab.cluster import Lab
@@ -299,6 +301,47 @@ def cmd_fixtures(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_eval_import(args: argparse.Namespace) -> int:
+    """Copy one live evaluation (a lab-recordings/eval-<id> checkout) into eval/.
+
+    The observations go to eval/results/run-<id>.json; with --baseline the run is added to
+    eval/baseline.json. The recordings of the default variant, and of the variants named
+    with --variants, replace eval/recordings (what CI replays on every pull request).
+    """
+    import shutil
+
+    src, repo = Path(args.dir), Path(args.repo)
+    result = src / f"run-{args.run}.json"
+    results_dir, recordings = repo / "eval" / "results", repo / "eval" / "recordings"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(result, results_dir / result.name)
+    print(f"observations: {results_dir / result.name}")
+    if args.baseline:
+        baseline = repo / "eval" / "baseline.json"
+        doc: dict[str, Any] = (
+            json.loads(baseline.read_text()) if baseline.exists() else {"variant": "default", "results": []}
+        )
+        entry = f"eval/results/{result.name}"
+        if entry not in doc["results"]:
+            doc["results"].append(entry)
+        baseline.write_text(json.dumps(doc, indent=2) + "\n")
+        print(f"baseline: {', '.join(doc['results'])}")
+    if recordings.exists():
+        shutil.rmtree(recordings)
+    keep = set(args.variants)
+    for scenario in sorted(p for p in (src / "agent").iterdir() if p.is_dir() and p.name != "cases"):
+        if (scenario / "incidents.json").exists():
+            out = recordings / scenario.name
+            out.mkdir(parents=True)
+            for f in ("incidents.json", "llm.jsonl.gz", "tools.jsonl.gz"):
+                shutil.copyfile(scenario / f, out / f)
+        for variant in sorted(p for p in scenario.iterdir() if p.is_dir() and p.name in keep):
+            shutil.copytree(variant, recordings / scenario.name / variant.name)
+    size = sum(f.stat().st_size for f in recordings.rglob("*") if f.is_file()) if recordings.exists() else 0
+    print(f"recordings: {recordings} ({size / 1e6:.1f} MB)")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m scripts.lab", description=__doc__.split("\n")[0])
     parser.add_argument("--lab-url", default=os.environ.get("LAB_URL", "http://localhost:18080"))
@@ -367,6 +410,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--run", required=True, help="the Actions run id, kept in the manifest")
     p.add_argument("--out", default="tests/fixtures/lab")
     p.set_defaults(func=cmd_fixtures)
+
+    p = sub.add_parser("eval-import", help="an evaluation run's results and recordings into eval/")
+    p.add_argument("dir", help="a checkout of lab-recordings/eval-<run id>")
+    p.add_argument("--run", required=True)
+    p.add_argument("--repo", default=".")
+    p.add_argument("--baseline", action="store_true", help="add the run to eval/baseline.json")
+    p.add_argument("--variants", nargs="*", default=[], help="also keep these variants' recordings")
+    p.set_defaults(func=cmd_eval_import)
 
     args = parser.parse_args(argv)
     code: int = args.func(args)
