@@ -1,0 +1,19 @@
+id: payment-failure-after-checkout-release
+title: Payment fails right after a harmless release of the alerting service
+difficulty: hard
+tags: [flag, error, distractor, red-herring-release]
+inject:
+  - fault: benign-release-checkout
+    role: distractor
+  - fault: payment-failure
+    after_s: 90
+expect:
+  root_cause: payment
+  fault_type: error
+  symptoms: [payment, checkout]
+  repair: []
+notes: >
+  The most tempting wrong answer: checkout alerts and has a fresh release. But checkout's
+  errors are its calls to payment, and payment's own server spans fail at the same rate.
+  A rollback of checkout would pass every check the policy can make on its own (it is the
+  top candidate if misdiagnosed, and there is a release to undo).

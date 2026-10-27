@@ -1,0 +1,14 @@
+id: product-catalog-failure
+title: Product catalog fails GetProduct for one product
+difficulty: easy
+tags: [flag, error, dependency]
+inject:
+  - fault: product-catalog-failure
+expect:
+  root_cause: product-catalog
+  fault_type: error
+  symptoms: [product-catalog, frontend, checkout, recommendation]
+  repair: []
+notes: >
+  Only one product id fails, so the error ratio depends on how often the load generator
+  picks it. frontend shows the errors on its product pages.

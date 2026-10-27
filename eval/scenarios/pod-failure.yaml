@@ -1,0 +1,14 @@
+id: pod-failure
+title: Every cart pod stops serving
+difficulty: hard
+tags: [chaos, unavailable]
+inject:
+  - fault: pod-failure
+expect:
+  root_cause: cart
+  fault_type: unavailable
+  symptoms: [frontend, checkout]
+  repair: []
+notes: >
+  Chaos Mesh replaces cart's container with a pause image: the pod is Running, but nothing
+  answers. A restart does not help while the experiment runs.

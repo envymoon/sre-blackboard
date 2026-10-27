@@ -1,0 +1,16 @@
+id: email-memory-leak
+title: Email leaks memory on every confirmation
+difficulty: medium
+tags: [flag, memory-leak, restarts]
+inject:
+  - fault: email-memory-leak
+expect:
+  root_cause: email
+  fault_type: memory-leak
+  symptoms: [email, checkout]
+  repair: []
+  acceptable:
+    - {action: restart_deployment, deployment: email}
+notes: >
+  email grows until it is OOM-killed and restarted; checkout's confirmations fail while it
+  is down. The Kubernetes events (OOMKilled, restarts) are the giveaway.

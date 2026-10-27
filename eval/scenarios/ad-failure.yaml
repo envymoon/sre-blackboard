@@ -1,0 +1,12 @@
+id: ad-failure
+title: Ad fails one in ten GetAds calls
+difficulty: easy
+tags: [flag, error, leaf]
+inject:
+  - fault: ad-failure
+expect:
+  root_cause: ad
+  fault_type: error
+  symptoms: [ad, frontend]
+  repair: []
+notes: ad is a leaf service; frontend shows ads but handles their failure.

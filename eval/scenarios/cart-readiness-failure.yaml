@@ -1,0 +1,14 @@
+id: cart-readiness-failure
+title: Cart fails its readiness probe and drops out of its Service
+difficulty: hard
+tags: [flag, unavailable, kubernetes]
+inject:
+  - fault: cart-readiness-failure
+expect:
+  root_cause: cart
+  fault_type: unavailable
+  symptoms: [frontend, checkout]
+  repair: []
+notes: >
+  cart stops receiving traffic, so its own metrics go quiet rather than red; the errors are
+  in its callers. The Kubernetes events (readiness probe failed) point at cart.

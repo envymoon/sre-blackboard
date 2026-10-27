@@ -1,0 +1,15 @@
+id: frontend-bad-release
+title: A frontend release points its recommendation client at a dead port
+difficulty: hard
+tags: [release, error, repairable, healthy-dependency]
+inject:
+  - fault: frontend-bad-release
+expect:
+  root_cause: frontend
+  fault_type: bad-deploy
+  symptoms: [frontend, frontend-proxy]
+  repair:
+    - {action: rollout_undo, deployment: frontend}
+notes: >
+  frontend's calls to recommendation fail, but recommendation is healthy and its traffic
+  just drops. Blaming recommendation is the trap; the change is in frontend's rollout history.

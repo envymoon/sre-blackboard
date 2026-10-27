@@ -1,0 +1,15 @@
+id: recommendation-cache-failure
+title: Recommendation's cache leaks memory and slows down
+difficulty: medium
+tags: [flag, memory-leak, latency]
+inject:
+  - fault: recommendation-cache-failure
+expect:
+  root_cause: recommendation
+  fault_type: memory-leak
+  symptoms: [recommendation, frontend]
+  repair: []
+  acceptable:
+    # Starts the leak over: buys time while the flag stays on.
+    - {action: restart_deployment, deployment: recommendation}
+notes: recommendation's cache grows without bound; its calls to product-catalog are normal.

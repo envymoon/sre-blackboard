@@ -109,7 +109,8 @@ class Lab:
         m = fault.mechanism
         if isinstance(m, FlagFault):
             flags = flags if flags is not None else self.flags()
-            return bool(flags.get(m.flag, {}).get("defaultVariant", "off") != "off")
+            # Exactly this variant: payment-failure and payment-failure-10 share one flag.
+            return bool(flags.get(m.flag, {}).get("defaultVariant", "off") == m.variant)
         if isinstance(m, ChaosFault):
             out = self.kubectl("get", m.kind.lower(), fault.chaos_name(), "--ignore-not-found", "-o", "name")
             return bool(out.strip())

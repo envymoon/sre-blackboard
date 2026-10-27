@@ -1,0 +1,14 @@
+id: payment-failure-10
+title: Payment rejects one in ten charges
+difficulty: medium
+tags: [flag, error, dependency, weak-signal]
+inject:
+  - fault: payment-failure-10
+expect:
+  root_cause: payment
+  fault_type: error
+  symptoms: [payment, checkout]
+  repair: []
+notes: >
+  The same flag at 10%. The error ratio is about a fifth of the 50% case, so the signal is
+  thinner and the alerts may be slow burns only.

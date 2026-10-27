@@ -1,0 +1,16 @@
+id: network-delay
+title: One second of network delay on product-catalog
+difficulty: hard
+tags: [chaos, network, latency, fan-out]
+inject:
+  - fault: network-delay
+expect:
+  root_cause: product-catalog
+  fault_type: network-latency
+  symptoms: [product-catalog, recommendation, checkout, frontend, frontend-proxy]
+  repair: []
+notes: >
+  Chaos Mesh delays every packet to product-catalog's pod. Its callers slow down, and so do
+  its own client spans to its database and to flagd (same link). The agent sees no Chaos
+  Mesh objects (the tools filter them out), only the effects. The acceptance fault since M2;
+  product-catalog's own incident tends to blame its database.

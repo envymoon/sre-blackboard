@@ -14,9 +14,9 @@ from functools import partial
 
 import httpx
 
+from app.agents import variants
 from app.agents.investigation import AgentConfig, Outcome, investigate
 from app.agents.loop import Deps
-from app.agents import variants
 from app.agents.store import PgAgentStore
 from app.core.config import Settings
 from app.db import incidents, investigations

@@ -1,0 +1,14 @@
+id: cpu-stress
+title: CPU stress inside the recommendation pod
+difficulty: medium
+tags: [chaos, saturation]
+inject:
+  - fault: cpu-stress
+expect:
+  root_cause: recommendation
+  fault_type: saturation
+  symptoms: [recommendation, frontend]
+  repair: []
+  acceptable:
+    - {action: scale_deployment, deployment: recommendation}
+notes: Two stress workers at full load inside the pod; recommendation slows down.
