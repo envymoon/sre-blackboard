@@ -85,6 +85,7 @@ Vite（Rollup）对每个 `import()` 生成独立 chunk。路由用 React Router
 | 等待审批的提示条 | 横幅插在页面顶部，把整页往下推 | 改成固定定位的浮层，只做 opacity 和 translateY |
 | tailwind-merge 不认识自定义字号 | `text-sm text-muted` 被当成冲突，字号被删 | `extendTailwindMerge` 注册自定义字号 |
 | 正在看的事件从列表里消失 | 默认"Open"筛选，事件一解决就被筛掉了 | 当前打开的事件始终保留在列表里；回放默认"All" |
+| 工具结果里的 NUL 字符 | 第一个真实案例里，每个调查员的步骤编号都从 1 重新开始过一次。查 worker 日志：一条日志或 span 属性带了 U+0000，Postgres 的 jsonb 存不了，证据写入失败，整个调查 job 失败重跑（payment-failure 的调查重试用完后直接死信） | 工具注册表在算哈希、做摘要、入库之前把 NUL 换成 U+FFFD，存下的结果和哈希仍然一致；加了回归测试。控制台在步骤编号重新开始的地方画一条"job 重试了"的分隔线，失败那次的步骤也保留（它们确实发生过、也花了 token） |
 | 深色悬停色对比度不够 | 白字在 `#6c77dc` 上只有 3.95:1 | 悬停改为更深的 `#525ec8`；测试防回退 |
 
 ## 4. 验收结果
@@ -100,6 +101,8 @@ Vite（Rollup）对每个 `import()` 生成独立 chunk。路由用 React Router
 | 深浅主题 AA | 文字对比度 ≥ 4.5:1 | 38 对组合 × 2 套主题，单元测试通过 |
 | 动画 | 只用 transform 和 opacity，尊重 reduced-motion | 进度条 scaleX、抽屉 translateX、入场 opacity + translate；骨架和"实时"圆点只改 opacity |
 | 实时更新 | SSE 增量、局部刷新 | 真实 API 联调：事件出现在列表里并滑入；调查期间只有调用树和诊断频繁刷新；从控制台批准后走到 RESOLVED |
+
+Pages 回放用的案例来自第 40458701488 次实验环境运行：坏版本发布 06:56:48 告警，06:59:13 诊断为 checkout（90%），06:59:20 提出 `rollout_undo checkout`（R3，需审批），06:59:22 批准，06:59:25 回滚完成，07:01:25 SLO 连续 3 次健康，RESOLVED；28 次模型调用、43.7 万 token、0.062 美元，审计链 81 行校验通过。50 条证据里 15 条原始结果超过 64 KB 没有放进导出（摘要、大小、哈希都在）。
 
 端到端联调的做法：一个临时 Postgres，真实的 API、worker 和执行器进程，模型和工具回放第 18 次运行的录音，Kubernetes 和 Prometheus 用测试替身；Playwright 用 approver token 登录控制台，等事件出现、点开、等计划、填评论、批准、等 RESOLVED。
 
