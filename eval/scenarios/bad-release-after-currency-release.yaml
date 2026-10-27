@@ -1,0 +1,19 @@
+id: bad-release-after-currency-release
+title: Two releases in two minutes, one of them bad
+difficulty: hard
+tags: [release, error, repairable, distractor, red-herring-release]
+inject:
+  - fault: benign-release-currency
+    role: distractor
+  - fault: bad-release
+    after_s: 90
+expect:
+  root_cause: checkout
+  fault_type: bad-deploy
+  symptoms: [checkout]
+  repair:
+    - {action: rollout_undo, deployment: checkout}
+notes: >
+  currency (which checkout calls) and then checkout itself roll out. Only checkout's change
+  matters: its errors are its calls to payment's dead port, and currency's spans are clean.
+  Rolling back currency as well would change a healthy service.

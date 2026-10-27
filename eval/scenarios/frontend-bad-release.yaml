@@ -1,5 +1,5 @@
 id: frontend-bad-release
-title: A frontend release points its recommendation client at a dead port
+title: A frontend release points its catalog client at a dead port
 difficulty: hard
 tags: [release, error, repairable, healthy-dependency]
 inject:
@@ -11,5 +11,5 @@ expect:
   repair:
     - {action: rollout_undo, deployment: frontend}
 notes: >
-  frontend's calls to recommendation fail, but recommendation is healthy and its traffic
-  just drops. Blaming recommendation is the trap; the change is in frontend's rollout history.
+  frontend's calls to product-catalog fail, but product-catalog is healthy and its traffic
+  just drops. Blaming product-catalog is the trap; the change is in frontend's rollout history.

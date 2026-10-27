@@ -94,6 +94,14 @@ CATALOGUE: tuple[Fault, ...] = (
         mechanism=FlagFault("paymentFailure", "10%"),
     ),
     Fault(
+        name="payment-failure-25",
+        description="payment rejects one in four charges",
+        root_cause="payment",
+        fault_type="error",
+        symptoms=("payment", "checkout"),
+        mechanism=FlagFault("paymentFailure", "25%"),
+    ),
+    Fault(
         name="payment-failure-100",
         description="payment rejects every charge",
         root_cause="payment",
@@ -214,6 +222,45 @@ CATALOGUE: tuple[Fault, ...] = (
         symptoms=("frontend", "checkout"),
         mechanism=ChaosFault("PodChaos", {"action": "pod-failure", "mode": "all", "selector": _selector("cart")}),
     ),
+    # More of the same chaos on busier paths (M7): delay and outage of what many requests touch.
+    *(
+        Fault(
+            name=f"network-delay-{service}",
+            description=f"1s of added network latency on {service}",
+            root_cause=service,
+            fault_type="network-latency",
+            symptoms=(service, *callers),
+            mechanism=ChaosFault(
+                "NetworkChaos",
+                {
+                    "action": "delay",
+                    "mode": "all",
+                    "selector": _selector(service),
+                    "delay": {"latency": "1000ms", "jitter": "100ms", "correlation": "0"},
+                    "direction": "to",
+                },
+            ),
+        )
+        for service, callers in (
+            ("cart", ("checkout", "frontend", "frontend-proxy")),
+            ("currency", ("checkout", "frontend", "frontend-proxy")),
+            ("shipping", ("checkout", "frontend", "frontend-proxy")),
+        )
+    ),
+    *(
+        Fault(
+            name=f"pod-failure-{service}",
+            description=f"every {service} pod stops serving (container replaced by a pause image)",
+            root_cause=service,
+            fault_type="unavailable",
+            symptoms=callers,
+            mechanism=ChaosFault("PodChaos", {"action": "pod-failure", "mode": "all", "selector": _selector(service)}),
+        )
+        for service, callers in (
+            ("currency", ("frontend", "frontend-proxy", "checkout")),
+            ("product-catalog", ("frontend", "frontend-proxy", "checkout", "recommendation")),
+        )
+    ),
     Fault(
         name="cpu-stress",
         description="CPU stress inside the recommendation pod",
@@ -251,18 +298,33 @@ CATALOGUE: tuple[Fault, ...] = (
     # process starts and passes its probes, so the rollout completes and only requests fail.
     Fault(
         name="frontend-bad-release",
-        description="a frontend rollout points its recommendation client at a dead port",
+        description="a frontend rollout points its product-catalog client at a dead port",
         root_cause="frontend",
         fault_type="bad-deploy",
-        # recommendation itself stays healthy: it never sees the requests.
+        # product-catalog itself stays healthy: it never sees the requests. (The first version
+        # broke the recommendation client: too little traffic to page, eval run 40542803104.)
         symptoms=("frontend", "frontend-proxy"),
         mechanism=ReleaseFault(
             deployment="frontend",
             container="frontend",
-            env={"RECOMMENDATION_ADDR": "recommendation:9999"},
-            change_cause="frontend config release: recommendation client moved to port 9999",
+            env={"PRODUCT_CATALOG_ADDR": "product-catalog:9999"},
+            change_cause="frontend config release: catalog client moved to port 9999",
         ),
         repair=("rollout_undo", "frontend"),
+    ),
+    Fault(
+        name="checkout-cart-bad-release",
+        description="a checkout rollout points its cart client at a dead port",
+        root_cause="checkout",
+        fault_type="bad-deploy",
+        symptoms=("checkout",),
+        mechanism=ReleaseFault(
+            deployment="checkout",
+            container="checkout",
+            env={"CART_ADDR": "cart:9999"},
+            change_cause="checkout config release: cart client moved to port 9999",
+        ),
+        repair=("rollout_undo", "checkout"),
     ),
     Fault(
         name="recommendation-bad-release",

@@ -1,0 +1,13 @@
+id: network-delay-shipping
+title: One second of network delay on shipping
+difficulty: hard
+tags: [chaos, network, latency, fan-out]
+inject:
+  - fault: network-delay-shipping
+expect:
+  root_cause: shipping
+  fault_type: network-latency
+  symptoms: [shipping, checkout, frontend, frontend-proxy]
+  repair: []
+notes: >
+  checkout asks shipping for a quote and to ship each order; checkout and the frontend's cart page slow down. quote, behind shipping, is healthy.

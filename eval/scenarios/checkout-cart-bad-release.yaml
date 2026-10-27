@@ -1,0 +1,15 @@
+id: checkout-cart-bad-release
+title: A checkout release points its cart client at a dead port
+difficulty: medium
+tags: [release, error, repairable, healthy-dependency]
+inject:
+  - fault: checkout-cart-bad-release
+expect:
+  root_cause: checkout
+  fault_type: bad-deploy
+  symptoms: [checkout]
+  repair:
+    - {action: rollout_undo, deployment: checkout}
+notes: >
+  Like bad-release, with another dependency: checkout's errors name cart, but cart serves
+  the frontend's requests normally all along.

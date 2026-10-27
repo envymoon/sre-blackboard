@@ -4,6 +4,8 @@ difficulty: medium
 tags: [flag, latency, dependency]
 inject:
   - fault: intl-shipping-slowdown
+# Pages on latency only, 5-7 minutes in (eval run 40557832275).
+alert_timeout_s: 600
 expect:
   root_cause: shipping
   fault_type: latency

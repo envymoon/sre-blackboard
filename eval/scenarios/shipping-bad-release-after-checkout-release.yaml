@@ -1,0 +1,18 @@
+id: shipping-bad-release-after-checkout-release
+title: A bad shipping release right after a harmless checkout release
+difficulty: hard
+tags: [release, error, repairable, distractor, red-herring-release]
+inject:
+  - fault: benign-release-checkout
+    role: distractor
+  - fault: shipping-bad-release
+    after_s: 90
+expect:
+  root_cause: shipping
+  fault_type: bad-deploy
+  symptoms: [shipping, checkout, frontend, frontend-proxy]
+  repair:
+    - {action: rollout_undo, deployment: shipping}
+notes: >
+  checkout alerts first and has the more recent-looking release; the rollout to undo is
+  shipping's, whose quote client dials a dead port.

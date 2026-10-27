@@ -1,0 +1,13 @@
+id: network-delay-cart
+title: One second of network delay on cart
+difficulty: hard
+tags: [chaos, network, latency, fan-out]
+inject:
+  - fault: network-delay-cart
+expect:
+  root_cause: cart
+  fault_type: network-latency
+  symptoms: [cart, checkout, frontend, frontend-proxy]
+  repair: []
+notes: >
+  cart's callers slow down: the frontend on every cart view, checkout on every order. cart's own server spans barely change (the delay is on the link to it), and valkey-cart is a tempting wrong answer.

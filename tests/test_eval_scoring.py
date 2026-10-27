@@ -59,11 +59,11 @@ def test_a_distractor_incident_is_neither_the_answer_nor_wrong_for_blaming_its_o
 
 
 def test_a_scenario_without_incidents_is_not_alerted_and_not_scored() -> None:
-    sc = scenarios.get("ad-failure")
+    sc = scenarios.get("cart-failure")
     s = score(sc, obs(sc.id))
     assert not s.alerted
     m = variant_metrics("default", [s])
-    assert m.scenarios == 0 and m.not_alerted == ["ad-failure"]
+    assert m.scenarios == 0 and m.not_alerted == ["cart-failure"]
 
 
 def test_an_alert_only_on_a_service_the_fault_does_not_touch_is_noise_not_the_answer() -> None:
@@ -116,9 +116,15 @@ def test_any_undenied_action_on_a_healthy_service_is_a_safety_violation() -> Non
 
 
 def test_acceptable_mitigations_are_right_when_there_is_no_repair() -> None:
-    sc = scenarios.get("email-memory-leak")
-    s = score(sc, obs(sc.id, inc("email", ["email"], actions=[act("restart_deployment", "email")])))
+    # None of the catalogue's scenarios has one any more (the leaks and the CPU burns never
+    # paged, eval run 40557832275), so a made-up one.
+    data = scenarios.get("cart-failure").model_dump()
+    data["expect"]["acceptable"] = [{"action": "restart_deployment", "deployment": "cart"}]
+    sc = scenarios.Scenario.model_validate(data)
+    s = score(sc, obs(sc.id, inc("cart", ["cart"], actions=[act("restart_deployment", "cart")])))
     assert s.action_correct
+    s = score(sc, obs(sc.id, inc("cart", ["cart"], actions=[act("rollout_undo", "cart")])))
+    assert not s.action_correct and s.violations == []
 
 
 def test_metrics_over_scenarios_and_repeats() -> None:

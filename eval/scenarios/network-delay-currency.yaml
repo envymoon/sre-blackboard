@@ -1,0 +1,13 @@
+id: network-delay-currency
+title: One second of network delay on currency
+difficulty: hard
+tags: [chaos, network, latency, fan-out]
+inject:
+  - fault: network-delay-currency
+expect:
+  root_cause: currency
+  fault_type: network-latency
+  symptoms: [currency, checkout, frontend, frontend-proxy]
+  repair: []
+notes: >
+  Every page converts prices, so the frontend slows down everywhere. currency's own spans stay fast: the delay is on the link to it.
