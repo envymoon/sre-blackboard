@@ -63,10 +63,10 @@ async def export(settings: Settings, incident_id: UUID, *, max_result_bytes: int
             - {None}
         )
         for ev in cited:
-            row = await get(f"/api/v1/evidence/{ev}")
-            if row["result_bytes"] > max_result_bytes:
-                row = {**row, "result": None, "result_omitted": True}
-            responses[f"/api/v1/evidence/{ev}"] = row
+            found = await get(f"/api/v1/evidence/{ev}")
+            if found["result_bytes"] > max_result_bytes:
+                found = {**found, "result": None, "result_omitted": True}
+            responses[f"/api/v1/evidence/{ev}"] = found
     return {
         "format": FORMAT,
         "incident_id": str(incident_id),

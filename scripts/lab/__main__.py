@@ -128,7 +128,8 @@ def cmd_accept(args: argparse.Namespace) -> int:
     if args.remediate:
         from scripts.lab.remediate import Remediator
 
-        remediator = Remediator(engine, get_settings(), args.tenant, api_url=args.api_url)
+        cases = Path(args.record_agents) / "cases" if args.record_agents else None
+        remediator = Remediator(engine, get_settings(), args.tenant, api_url=args.api_url, cases=cases)
     results = accept.run(
         lab,
         engine,
