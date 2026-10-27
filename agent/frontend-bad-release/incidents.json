@@ -1,0 +1,214 @@
+{
+ "annotations": {
+  "796474b4-7684-4fc0-8fcc-03a28143e7cc": {
+   "description": "Error ratio over 30m is above 6x the 1% error budget (slow burn).",
+   "summary": "checkout is failing 7.499% of requests (30m)"
+  }
+ },
+ "expected": {
+  "796474b4-7684-4fc0-8fcc-03a28143e7cc": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_5fd84319bc9a5f38"
+      ],
+      "statement": "checkout's 5m error ratio was about 0.25-0.31 over the last hour (0.2551 at 17:09:34Z), well above the 1% budget."
+     },
+     {
+      "evidence_ids": [
+       "ev_7172e2621f29217d",
+       "ev_ab07ef785a523823"
+      ],
+      "statement": "checkout's 1m error ratio peaked at 0.737 at 17:07:08Z and has been about 0 since about 17:08Z, so the burn is intermittent or receding while the 5m ratio lags."
+     },
+     {
+      "evidence_ids": [
+       "ev_42a5a70bc6aa93f3",
+       "ev_4efb920fe8612693",
+       "ev_68ab55e9936e7e88",
+       "ev_632f0fcd89fa996a"
+      ],
+      "statement": "checkout's client EmptyCart calls to cart have a 27.8% error ratio (17:09:51Z) and p95 rose to 15000 ms from about 3 ms. Charge (payment) and Convert (currency) show no notable errors."
+     },
+     {
+      "evidence_ids": [
+       "ev_2a46a45b65b875d2",
+       "ev_34baabf979d4c80b",
+       "ev_78d4c378ae83a94d"
+      ],
+      "statement": "Cart logs 'Wasn't able to connect to redis' 7 times between 16:55:55Z and 17:08:27Z, after one 'Successfully connected to Redis' at 16:43:09Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_f9ce8ea4df0aaf55",
+       "ev_d9c111fc5690bd95",
+       "ev_386aed020282a344"
+      ],
+      "statement": "Checkout's EmptyCart trace spans fail with cart's Redis error. In one trace, cart's EmptyCart server span lasts about 651 s with error=true. In another, checkout's EmptyCart span lasts about 434 s."
+     },
+     {
+      "evidence_ids": [
+       "ev_33775e0dbbcb9377",
+       "ev_2d3cf87348b05424",
+       "ev_a968aa255bce4569",
+       "ev_610323ce8d50430b"
+      ],
+      "statement": "Cart's own server spans show low error counts (about 3% error ratio, p95 2-4 ms outside a spike to 15 s around 17:02Z), so most EmptyCart failures are visible from checkout's side."
+     },
+     {
+      "evidence_ids": [
+       "ev_98fe00c2e4940450",
+       "ev_6fdf695844cf86b3"
+      ],
+      "statement": "All 18 flagd flags are off, and no flagd warnings appear in the window."
+     },
+     {
+      "evidence_ids": [
+       "ev_5e189d17e75dfc9c",
+       "ev_cb81960d049293f7",
+       "ev_915b59f2aa5db129",
+       "ev_7071c816d153a2af",
+       "ev_b7568a6f9b97012c",
+       "ev_93f45308cb7d9e1f"
+      ],
+      "statement": "No checkout, cart, payment, currency, shipping, product-catalog, kafka or valkey-cart rollout occurred in the window. Each has a single revision created around 16:42Z. The only namespace warnings are unrelated readiness probes."
+     },
+     {
+      "evidence_ids": [
+       "ev_42df716508452406",
+       "ev_550621b0f793b78f",
+       "ev_9c88ae3a09dcf9c7",
+       "ev_2e49885335410ffa"
+      ],
+      "statement": "checkout's own errors are downstream of cart: 'Failed to send message to Kafka ... context canceled' and email 'context canceled' warnings, with 'publish orders' failing after the cart call has hung. Kafka logs no errors in the window."
+     },
+     {
+      "evidence_ids": [
+       "ev_c7fc8fc939ac42b0",
+       "ev_5ec11fe9fd6fd9b5"
+      ],
+      "statement": "frontend's GET /api/recommendations shows about 48-50% errors, and its client calls to recommendation show about 58% errors. This is outside checkout's path."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check valkey-cart pod status, restarts, OOMKilled, readiness, and its Service endpoints. Read valkey-cart container logs and its INFO stats (connected_clients, used_memory, maxclients).",
+      "statement": "valkey-cart is down, restarting, out of memory, or has its maxclients limit reached, so cart's Redis connections fail from about 16:55Z onward."
+     },
+     {
+      "how_to_verify": "From a cart pod, test redis-cli PING against the configured REDIS_ADDR and resolve the service name. Check cart's env config and the Service endpoints, and look for NetworkPolicy changes.",
+      "statement": "Network or DNS between cart and valkey-cart (NetworkPolicy, Service endpoints, or the REDIS_ADDR config on cart) broke around 16:55Z."
+     },
+     {
+      "how_to_verify": "Group checkout client spans by peer.service or server.address and the full span name, then match them to the dependency.",
+      "statement": "The 11% POST client-span error ratio from checkout is probably also a cart-path call, but its target is unidentified."
+     },
+     {
+      "how_to_verify": "Query recommendation server spans and logs, and product-catalog errors, over the same window.",
+      "statement": "frontend's recommendation errors (about 58%) are a separate fault in the recommendation service or product-catalog and are not part of this incident."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_68ab55e9936e7e88",
+       "ev_632f0fcd89fa996a",
+       "ev_2a46a45b65b875d2",
+       "ev_42a5a70bc6aa93f3"
+      ],
+      "statement": "checkout is the victim of the cart path, not the root cause. Its dependencies payment, currency, shipping, product-catalog, email and kafka look healthy from checkout's side, and the cart call is the only failing path. Since cart is itself failing its Redis connection, the fault is one hop further down."
+     },
+     {
+      "evidence_ids": [
+       "ev_98fe00c2e4940450",
+       "ev_915b59f2aa5db129",
+       "ev_9640836052fdab5d"
+      ],
+      "statement": "The fault is not a feature flag or a recent rollout. Flags are all off, and no rollout or change falls inside the 30-minute window before the alert."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Cart cannot reliably reach its Redis backend (valkey-cart) since about 16:55Z. Its connection attempts fail, so EmptyCart requests stall for minutes and fail, which checkout sees as a hung EmptyCart call. The cause is either cart's connection path or config, or valkey-cart's availability, and the evidence cannot yet separate them.",
+      "confidence": 0.45,
+      "evidence_ids": [
+       "ev_2a46a45b65b875d2",
+       "ev_34baabf979d4c80b",
+       "ev_78d4c378ae83a94d",
+       "ev_f9ce8ea4df0aaf55",
+       "ev_d9c111fc5690bd95",
+       "ev_386aed020282a344"
+      ],
+      "service": "cart"
+     },
+     {
+      "cause": "valkey-cart (Redis) may be down, unreachable, or overloaded, which is what cart's Redis connection errors would look like. This is unconfirmed because valkey-cart has no logs or traces in the window and its own state was not checked.",
+      "confidence": 0.3,
+      "evidence_ids": [
+       "ev_06728e38183f89e0",
+       "ev_c9510187aef51dda",
+       "ev_eeb39cb33315733f"
+      ],
+      "service": "valkey-cart"
+     }
+    ],
+    "summary": "checkout's availability burn (about 7.5% over 30m) comes from its EmptyCart calls to cart. Those calls hang for minutes and fail with \"Wasn't able to connect to redis\". Cart's Redis connection errors began at 16:55:55Z and continue to 17:08:27Z. Checkout's Kafka, email and frontend-proxy errors are downstream symptoms. No flag, rollout or Kubernetes change in the window explains it. The fault sits on the cart-to-valkey-cart Redis path, and valkey-cart itself is unverified because it emits no logs or traces. Checkout is the victim, not the cause."
+   },
+   "findings": 20,
+   "plan": {
+    "actions": [],
+    "alternatives": [
+     {
+      "action": "rollout_undo",
+      "why_not": "Cart has only revision 1, created 16:42Z, before the Redis errors began at 16:55Z (ev_7071c816d153a2af). valkey-cart also has no rollout in the window (ev_d0b5407a20f87ad9). No release is cited, so a rollback would not fix it."
+     },
+     {
+      "action": "restart_deployment",
+      "why_not": "A cart restart might clear a stuck Redis connection pool, but the evidence points to valkey-cart being unavailable or the cart-to-Redis path being broken. Restarting cart would not address that and is not supported as a fix. A human can consider it after checking valkey-cart and the config."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "The failures are connection errors, not capacity. Cart's own server spans show a low error ratio, and nothing shows it is short of replicas."
+     },
+     {
+      "action": "none",
+      "why_not": "Taking no action leaves the burn running. The burn is receding (the 1m ratio is about 0 since 17:08Z), but the 5m ratio still lags, so a human needs to act on the root cause."
+     }
+    ],
+    "no_action_reason": "No listed action matches the evidence. The likely root cause is valkey-cart being unavailable, or an unreachable Redis path from cart. A human should check valkey-cart pod status, restarts and logs, confirm its Service has endpoints, check NetworkPolicies, and verify cart's REDIS_ADDR.",
+    "summary": "No action is proposed. The evidence shows no release on cart or valkey-cart near 16:55Z and no valkey-cart warnings, so neither rollback nor restart is supported by the data. A human should check valkey-cart's pod health, Service endpoints and NetworkPolicy, and cart's REDIS_ADDR config, since the fault sits on the cart-to-valkey-cart path."
+   },
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": "2026-10-27 17:11:48.810199+00:00",
+   "created_at": "2026-10-27 17:09:18.015335+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "796474b4-7684-4fc0-8fcc-03a28143e7cc",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "slow",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "warning",
+    "slo": "availability"
+   },
+   "priority": 2,
+   "service": "checkout",
+   "state": "ESCALATED",
+   "tenant_id": "lab",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}

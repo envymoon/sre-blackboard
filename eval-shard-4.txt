@@ -1,0 +1,85 @@
+[eval] 6 scenario(s): cart-failure, frontend-bad-release, payment-failure-10, payment-failure, product-catalog-failure, shipping-bad-release
+[eval] variants: default (lab), 
+[baseline] watching for 300s with no fault injected
+=== scenario 1/6: cart-failure (medium): Cart fails half of its EmptyCart calls
+[cart-failure] inject: cart fails half of EmptyCart calls (bad store)
+[cart-failure] no alert within 300s
+[cart-failure] recover
+[cart-failure] all alerts resolved 220.3s after recovery
+[cart-failure] closed 0 incident(s)
+=== cart-failure: lab check FAILED; 0 incident(s)
+=== scenario 2/6: frontend-bad-release (hard): A frontend release points its recommendation client at a dead port
+[frontend-bad-release] inject: a frontend rollout points its recommendation client at a dead port
+[frontend-bad-release] alert ErrorBudgetBurn[slow] on checkout after 189.9s
+[frontend-bad-release] escalated ErrorBudgetBurn/checkout: root causes cart 45%, valkey-cart 30%; 23 model calls, 295,668 tokens, $0.047 (root cause candidate: cart (45%): Cart cannot reliably reach its Redis backend (valkey-cart) since about 16:55Z. Its connection attempts fail, so EmptyCart requests stall for minutes and fail, which checkout sees as a hung EmptyCart call. The cause is either cart's connection path or config, or valkey-cart's availability, and the evidence cannot yet separate them.)
+[frontend-bad-release] recorded 23 model steps, 45 tool answers
+[frontend-bad-release] answer: cart - wrong (expected frontend)
+[frontend-bad-release] plan for ErrorBudgetBurn/checkout: no action -> deny; failed checks: actions: the plan has no actions
+[frontend-bad-release] recover
+[frontend-bad-release] all alerts resolved 30.9s after recovery
+[frontend-bad-release] closed 0 incident(s)
+[frontend-bad-release] no alert on an expected service (frontend, frontend-proxy)
+=== frontend-bad-release: lab check FAILED; 1 incident(s)
+=== scenario 3/6: payment-failure-10 (medium): Payment rejects one in ten charges
+[payment-failure-10] inject: payment rejects one in ten charges
+[payment-failure-10] no alert within 300s
+[payment-failure-10] recover
+[payment-failure-10] all alerts resolved 275.2s after recovery
+[payment-failure-10] closed 0 incident(s)
+=== payment-failure-10: lab check FAILED; 0 incident(s)
+=== scenario 4/6: payment-failure (easy): Payment rejects half of all charges
+[payment-failure] inject: payment rejects half of all charges
+[payment-failure] alert ErrorBudgetBurn[fast] on checkout after 172.3s
+[payment-failure] alert ErrorBudgetBurn[fast] on payment after 172.3s
+[payment-failure] escalated ErrorBudgetBurn/checkout: root causes payment 75%, cart 30%; 19 model calls, 299,223 tokens, $0.043 (root cause candidate: payment (75%): Charge rejects gold-loyalty requests with 'Invalid token' at roughly 30-50% of calls, starting about 17:15Z. Most likely the paymentFailure flag at 50%, which is the only enabled flag; not yet confirmed by flag turn-on time or by spans tying the error to the flag.)
+[payment-failure] escalated ErrorBudgetBurn/payment: root causes payment 70%, cart 35%; 20 model calls, 289,855 tokens, $0.043 (root cause candidate: payment (70%): Charge handler rejects a large share of requests with 'Invalid token' for gold-tier users (fast errors, no dependency errors, latency flat). Most likely induced by the paymentFailure flagd flag at 50% (fault injection), not by a rollout, since payment has a single revision from 16:42Z.)
+[payment-failure] recorded 39 model steps, 70 tool answers
+[payment-failure] answer: payment - correct
+[payment-failure] plan for ErrorBudgetBurn/checkout: no action -> deny; failed checks: actions: the plan has no actions
+[payment-failure] plan for ErrorBudgetBurn/payment: no action -> deny; failed checks: actions: the plan has no actions
+[payment-failure] recover
+[payment-failure] all alerts resolved 295.3s after recovery
+[payment-failure] closed 0 incident(s)
+=== payment-failure: ok; 2 incident(s)
+=== scenario 5/6: product-catalog-failure (easy): Product catalog fails GetProduct for one product
+[product-catalog-failure] inject: product-catalog fails GetProduct for one product
+[product-catalog-failure] no alert within 300s
+[product-catalog-failure] recover
+[product-catalog-failure] all alerts resolved 0.0s after recovery
+[product-catalog-failure] closed 0 incident(s)
+=== product-catalog-failure: lab check FAILED; 0 incident(s)
+=== scenario 6/6: shipping-bad-release (medium): A shipping release points its quote client at a dead port
+[shipping-bad-release] inject: a shipping rollout points its quote client at a dead port
+[shipping-bad-release] alert ErrorBudgetBurn[fast] on checkout after 126.2s
+[shipping-bad-release] alert ErrorBudgetBurn[fast] on shipping after 156.2s
+[shipping-bad-release] alert LatencyP95High on shipping after 171.2s
+[shipping-bad-release] alert LatencyP95High on checkout after 171.2s
+[shipping-bad-release] awaiting_approval ErrorBudgetBurn/checkout: root causes shipping 60%, cart 45%; 27 model calls, 538,718 tokens, $0.075
+[shipping-bad-release] awaiting_approval ErrorBudgetBurn/shipping: root causes shipping 60%, quote 30%; 19 model calls, 283,770 tokens, $0.042
+[shipping-bad-release] awaiting_approval LatencyP95High/shipping: root causes shipping 75%, quote 20%, checkout 20%; 21 model calls, 306,017 tokens, $0.044
+[shipping-bad-release] awaiting_approval LatencyP95High/frontend-proxy: root causes shipping 80%, quote 25%; 24 model calls, 433,442 tokens, $0.065
+[shipping-bad-release] awaiting_approval LatencyP95High/frontend: root causes shipping 70%, quote 20%; 21 model calls, 394,556 tokens, $0.058
+[shipping-bad-release] recorded 112 model steps, 215 tool answers
+[shipping-bad-release] answer: shipping - correct
+[shipping-bad-release] plan for ErrorBudgetBurn/checkout: rollout_undo shipping -> require_approval (R3); approved by lab-approver
+[shipping-bad-release] plan for ErrorBudgetBurn/shipping: rollout_undo shipping -> require_approval (R3); approved by lab-approver
+[shipping-bad-release] plan for LatencyP95High/shipping: rollout_undo shipping -> require_approval (R3); approved by lab-approver
+[shipping-bad-release] plan for LatencyP95High/frontend-proxy: rollout_undo shipping -> require_approval (R3); approved by lab-approver
+[shipping-bad-release] plan for LatencyP95High/frontend: rollout_undo shipping -> require_approval (R3); approved by lab-approver
+[shipping-bad-release] checkout: RESOLVED (checkout error ratio over 1m is 0 ratio, below 0.06, for 3 checks in a row) 130s after the decision
+[shipping-bad-release] execution succeeded: rollout_undo shipping (revision 2 -> 3)
+[shipping-bad-release] console case: lab-out/eval/agent/cases/shipping-bad-release-checkout.json
+[shipping-bad-release] shipping: ESCALATED (roll shipping back from revision 2 to the template of revision 1: failed: HTTP 422 from PATCH /apis/apps/v1/namespaces/otel-demo/deployments/shipping: the server rejected our request due to an error in our request. to undo rollout_undo: roll the Deployment back to the revision it was on before) 131s after the decision
+[shipping-bad-release] execution failed: rollout_undo shipping (revision 2 -> None): HTTP 422 from PATCH /apis/apps/v1/namespaces/otel-demo/deployments/shipping: the server rejected our request due to an error in our request
+[shipping-bad-release] shipping: ESCALATED (roll shipping back from revision 2 to the template of revision 1: failed: HTTP 422 from PATCH /apis/apps/v1/namespaces/otel-demo/deployments/shipping: the server rejected our request due to an error in our request. to undo rollout_undo: roll the Deployment back to the revision it was on before) 131s after the decision
+[shipping-bad-release] execution failed: rollout_undo shipping (revision 2 -> None): HTTP 422 from PATCH /apis/apps/v1/namespaces/otel-demo/deployments/shipping: the server rejected our request due to an error in our request
+[shipping-bad-release] frontend-proxy: ESCALATED (rollout_undo shipping failed before any change: shipping has no revision 1 (known: [2, 3]). to undo rollout_undo: roll the Deployment back to the revision it was on before) 131s after the decision
+[shipping-bad-release] execution failed: rollout_undo shipping (revision None -> None): shipping has no revision 1 (known: [2, 3])
+[shipping-bad-release] frontend: ESCALATED (rollout_undo shipping failed before any change: shipping has no revision 1 (known: [2, 3]). to undo rollout_undo: roll the Deployment back to the revision it was on before) 131s after the decision
+[shipping-bad-release] execution failed: rollout_undo shipping (revision None -> None): shipping has no revision 1 (known: [2, 3])
+[shipping-bad-release] recover
+[shipping-bad-release] nothing to recover: sre-blackboard already repaired it
+[shipping-bad-release] all alerts resolved 321.1s after recovery
+[shipping-bad-release] closed 0 incident(s)
+=== shipping-bad-release: ok; 5 incident(s)
+[eval] 6 observation(s) in lab-out/eval/results.json

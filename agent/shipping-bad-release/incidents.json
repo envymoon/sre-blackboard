@@ -1,0 +1,1106 @@
+{
+ "annotations": {
+  "4c8ddd81-753c-4b6b-9d48-6fd8c94707de": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "shipping is failing 30.18% of requests"
+  },
+  "863a6c70-1867-42f8-8337-b6a0e68cb5ae": {
+   "description": "95th percentile of server span duration over 5m is above 1000ms.",
+   "summary": "frontend p95 latency is 5.672kms"
+  },
+  "b0f1e4f0-1f4d-464d-9703-f3ce757a6230": {
+   "description": "95th percentile of server span duration over 5m is above 1000ms.",
+   "summary": "frontend-proxy p95 latency is 5.308kms"
+  },
+  "c1f771a8-23ed-4832-b66d-34e95de66ae2": {
+   "description": "95th percentile of server span duration over 5m is above 1000ms.",
+   "summary": "checkout p95 latency is 1.61kms"
+  },
+  "c77c9f49-4122-49d6-b46d-aa9dd197c38f": {
+   "description": "95th percentile of server span duration over 5m is above 1000ms.",
+   "summary": "shipping p95 latency is 9.235kms"
+  },
+  "e32c494e-f87f-4197-8010-776d766978cc": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 34.48% of requests"
+  }
+ },
+ "expected": {
+  "4c8ddd81-753c-4b6b-9d48-6fd8c94707de": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_a146741139779489",
+       "ev_0e65996e38ef6129",
+       "ev_59b16abb2723c19a"
+      ],
+      "statement": "Shipping revision 2 (17:48:26Z) changed QUOTE_ADDR from http://quote:8080 to http://quote:9999. It is the only deploy change, and quote has not changed since 16:42Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_075162d145a3f610",
+       "ev_79a5579e0f8a7cc5"
+      ],
+      "statement": "Shipping error spans show client-side 'Timeout' on POST to quote and a server 500 on /get-quote, with error trace durations near 5 s. Failing traces contain no quote span."
+     },
+     {
+      "evidence_ids": [
+       "ev_171a2af142673381",
+       "ev_dd0f2426cc881397",
+       "ev_c81a3c2c1545ce98"
+      ],
+      "statement": "Shipping's server error ratio rose from ~0.07 at 17:49 to ~0.33 by 17:51 and stayed near 0.33 through 17:55. Its client get-quote calls turned ERROR at 17:49, with ERROR-status p95 ~9.75 s and OK p95 ~3.3 ms."
+     },
+     {
+      "evidence_ids": [
+       "ev_5f749d3805ff8f04",
+       "ev_56cde852b7a8b8af"
+      ],
+      "statement": "Shipping logged zero error-level lines in the last 30 min, and it logged SIGTERM and a restart at 17:48:27Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_e108b39cc167f671",
+       "ev_b2b8db88415bf4a0",
+       "ev_2a0c0455910f8560",
+       "ev_82bda67d8ef145a6",
+       "ev_031b7295d666e82c"
+      ],
+      "statement": "Quote's last log line is at 17:48:27Z, with no warn or error lines. Its server spans show only UNSET status, flat 1.9 ms p95, and a call rate matching shipping's total get-quote calls."
+     },
+     {
+      "evidence_ids": [
+       "ev_a0ea44addc578531",
+       "ev_e21df80bcefcd0a1"
+      ],
+      "statement": "No Kubernetes warning events in otel-demo in the last 120 min, and all 18 flagd flags are off."
+     },
+     {
+      "evidence_ids": [
+       "ev_49b60bd73068b09f",
+       "ev_b1ba218ed1b351cf",
+       "ev_de31904d4c582599"
+      ],
+      "statement": "Checkout's PlaceOrder and POST ERROR series began at 17:07-17:08, and its EmptyCart p95 reached ~5000 ms at 17:08. Its latency alert opened at 17:27:18Z, before the shipping change."
+     },
+     {
+      "evidence_ids": [
+       "ev_075162d145a3f610",
+       "ev_d88cd297853ed2f4",
+       "ev_69a509c068022733"
+      ],
+      "statement": "Checkout's errors carry shipping's error text ('expected 200, got 500'). Checkout's POST p95 rose to ~9750 ms at 17:54."
+     },
+     {
+      "evidence_ids": [
+       "ev_51951ef7b2ebe648"
+      ],
+      "statement": "Frontend's error ratio stayed low (max 0.085 at 17:12, ~0.02 at 17:55), and its p95 stayed around 40 ms."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check the live QUOTE_ADDR in the running shipping pod, and check quote's listening ports (ss -ltn or the Service targetPort). Check for NetworkPolicy changes. Test a connection from the shipping pod to quote:9999 and quote:8080.",
+      "statement": "Quote is not listening on 9999 (it listens on 8080), so shipping's connections fail or hang. Some hang rather than refuse, which suggests a filtered or black-holed port."
+     },
+     {
+      "how_to_verify": "Check quote pod status, restart count, readiness, and Endpoints. Check node events around 17:48Z. Compare quote's span timestamps against its logs.",
+      "statement": "Quote's logs stopped at 17:48:27Z because of a pod eviction, crash, or node event. Its span metrics may be stale or reflect other pods."
+     },
+     {
+      "how_to_verify": "Pull checkout error span exception messages from 17:05-17:10 and check which downstream calls failed. Check checkout's rollout history and env.",
+      "statement": "Checkout's errors from 17:07 have a separate cause, such as a different dependency or a bad change in checkout's own config."
+     },
+     {
+      "how_to_verify": "Roll back the shipping Deployment to revision 1 in a controlled way and watch service:sli_error_ratio:rate1m for shipping and checkout.",
+      "statement": "Reverting shipping to revision 1 (QUOTE_ADDR=8080) should restore shipping's success rate if the port change is the cause."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_79a5579e0f8a7cc5",
+       "ev_dd0f2426cc881397",
+       "ev_82bda67d8ef145a6"
+      ],
+      "statement": "Shipping's 5 s client timeouts, with no quote span in failing traces, show that the failing calls do not complete in quote's handler. Shipping's failures therefore start in the shipping->quote path, not in quote's handler."
+     },
+     {
+      "evidence_ids": [
+       "ev_075162d145a3f610",
+       "ev_b1ba218ed1b351cf",
+       "ev_49b60bd73068b09f"
+      ],
+      "statement": "Shipping is the primary broken service for this alert. Checkout's errors are a downstream effect of shipping's 500s after 17:50, but checkout's errors from 17:07 predate the shipping change and need a separate cause."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Revision 2 changed QUOTE_ADDR to http://quote:9999 (from :8080). Shipping's calls to quote then fail or time out, so /get-quote returns 500. Not yet confirmed that quote is not listening on 9999 or that the port is filtered.",
+      "confidence": 0.6,
+      "evidence_ids": [
+       "ev_a146741139779489",
+       "ev_0e65996e38ef6129",
+       "ev_c223e3fb530608b3",
+       "ev_075162d145a3f610",
+       "ev_79a5579e0f8a7cc5",
+       "ev_171a2af142673381",
+       "ev_dd0f2426cc881397"
+      ],
+      "service": "shipping"
+     },
+     {
+      "cause": "Quote may have become unreachable or crashed at about 17:48:27Z, the same second shipping restarted. Its logs stop there. This conflicts with quote's server-side span metrics, which show continued traffic at a rate matching shipping's total calls, so it is a weaker candidate.",
+      "confidence": 0.3,
+      "evidence_ids": [
+       "ev_e108b39cc167f671",
+       "ev_21875253f705a6a0",
+       "ev_56cde852b7a8b8af",
+       "ev_2a0c0455910f8560",
+       "ev_82bda67d8ef145a6",
+       "ev_031b7295d666e82c"
+      ],
+      "service": "quote"
+     }
+    ],
+    "summary": "Shipping's server error ratio rose from ~0.07 at 17:49 to ~0.33 and stayed there. Its only change, revision 2 at 17:48:26Z, set QUOTE_ADDR from quote:8080 to quote:9999, and the pod restarted at 17:48:27Z. Shipping's POST /get-quote calls to quote time out at ~5 s and return 500. Quote's server spans show no errors and flat latency, which conflicts with the log view that quote went silent at 17:48:27Z. The port change is the leading suspect, but the mechanism is not confirmed. Checkout's errors and latency began around 17:07, about 40 minutes before shipping, so checkout is not just a downstream victim and has a separate cause for its early failures."
+   },
+   "findings": 23,
+   "plan": {
+    "actions": [
+     {
+      "action": "rollout_undo",
+      "deployment": "shipping",
+      "evidence_ids": [
+       "ev_a146741139779489",
+       "ev_0e65996e38ef6129",
+       "ev_075162d145a3f610",
+       "ev_dd0f2426cc881397"
+      ],
+      "reason": "Revision 2 (17:48:26Z) changed QUOTE_ADDR from quote:8080 to quote:9999, and shipping's get-quote calls began timing out and returning 500 right after its 17:48:27Z restart. Reverting to revision 1 restores the working port.",
+      "to_revision": 1
+     }
+    ],
+    "alternatives": [
+     {
+      "action": "restart_deployment",
+      "why_not": "A restart re-applies the same QUOTE_ADDR=quote:9999 config, so the failures would continue."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "Shipping's failures are timeouts to a wrong port, not a capacity shortfall, so more replicas would add more failing calls."
+     },
+     {
+      "action": "rollout_undo",
+      "why_not": "Not proposed for quote: there is no quote release since 16:42Z, and quote's span metrics show it still serving traffic, so quote is not the changed component."
+     },
+     {
+      "action": "none",
+      "why_not": "Doing nothing leaves shipping's about 33% error ratio in place, which keeps checkout's P1 burning and does not address the confirmed config change."
+     }
+    ],
+    "no_action_reason": null,
+    "summary": "Roll shipping back to revision 1, which restores QUOTE_ADDR to quote:8080 and should stop the 5 s get-quote timeouts and 500s that began with the revision 2 port change. Shipping's error ratio should fall back toward its pre-17:48 level of about 0.07 within a few minutes, and checkout's downstream errors should ease. Checkout's errors from 17:07 are a separate cause that this rollback will not fix."
+   },
+   "state": "AWAITING_APPROVAL"
+  },
+  "863a6c70-1867-42f8-8337-b6a0e68cb5ae": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_25ed58ebb0d379f3",
+       "ev_84ca825cfd63d9ec"
+      ],
+      "statement": "Frontend's slow requests are POST /api/checkout calls returning HTTP 500 after about 5s, with the error 'shipping quote failure: failed POST to shipping service: expected 200, got 500'."
+     },
+     {
+      "evidence_ids": [
+       "ev_294178c503918576"
+      ],
+      "statement": "In trace 8ee0b5fe82a90eea1ed45b7a2928e15f, shipping's outbound POST has about 5001ms self time and error.type=Timeout. Shipping's /get-quote returns 500."
+     },
+     {
+      "evidence_ids": [
+       "ev_a86b3b3ad5e72128",
+       "ev_cd5bcd5d0ead0075"
+      ],
+      "statement": "Shipping revision 2 (17:48:26Z) changed QUOTE_ADDR from http://quote:8080 to http://quote:9999. It is the only shipping change since its initial rollout."
+     },
+     {
+      "evidence_ids": [
+       "ev_9bfdbb7c9e8e80a4"
+      ],
+      "statement": "Quote has had no change since its only revision (16:42:01Z)."
+     },
+     {
+      "evidence_ids": [
+       "ev_c5d67772e6ca1c45",
+       "ev_46eadeaa36dd3cb8"
+      ],
+      "statement": "Shipping's 'Sending Quote' log stops at 17:48:27, while 'Requesting quote' continues to 17:56:56. Shipping logged SIGTERM and a restart at 17:48:27, and quoting did not recover after the restart."
+     },
+     {
+      "evidence_ids": [
+       "ev_45f62eb9a5a6b5b7",
+       "ev_91dd2eb8d03d0cd6",
+       "ev_705737c9ea2f34a6"
+      ],
+      "statement": "Quote's last log line is at 17:48:27 ('Calculated quote', info only). No quote spans appear in Jaeger in the 40- or 120-minute windows."
+     },
+     {
+      "evidence_ids": [
+       "ev_8eaeac9ec874e2e1"
+      ],
+      "statement": "Shipping's /get-quote server p95 rose from about 3.7ms to 9750ms by 17:54. Quote's POST /getquote server p95 stayed flat at 1.9ms."
+     },
+     {
+      "evidence_ids": [
+       "ev_f03cb2bce8db7109"
+      ],
+      "statement": "Shipping's error ratio went from 0.069 at 17:49 to 1.0 by 17:54 and stayed there through 18:00."
+     },
+     {
+      "evidence_ids": [
+       "ev_5d6e693f585e1953",
+       "ev_44dfe91b0f07d4be"
+      ],
+      "statement": "Checkout's client span to shipping p95 went from about 3.5ms to 9750ms. Product-catalog, cart and payment p95 stayed flat."
+     },
+     {
+      "evidence_ids": [
+       "ev_5e7d5cfc2ad5a128",
+       "ev_5f3d094ff5939e18"
+      ],
+      "statement": "No Kubernetes warning events in otel-demo in the last 180 minutes. All 18 flagd flags are off."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check the running shipping pod's env, the quote Service ports and endpoints, and curl quote:8080 and quote:9999 from inside the cluster.",
+      "statement": "Shipping's running pod is using QUOTE_ADDR=quote:9999, and nothing serves quote on 9999 (the 5s timeout rather than a refused connection suggests a blackhole)."
+     },
+     {
+      "how_to_verify": "Run kubectl rollout undo for shipping, then watch shipping's error ratio and /get-quote p95 for 2-3 minutes.",
+      "statement": "Rolling shipping back to revision 1 restores quoting, which would confirm the config change as the cause."
+     },
+     {
+      "how_to_verify": "Check shipping's 1m-resolution p95 and error ratio between 17:40 and 17:50, and compare against the revision 2 timestamp.",
+      "statement": "Shipping's latency began about 17:45, before the 17:48:26 change, so the onset may be an earlier, separate problem."
+     },
+     {
+      "how_to_verify": "Query the call count for quote's POST /getquote span over 17:40-18:00.",
+      "statement": "Quote's request-rate metric (traces_span_metrics_calls_total for quote) dropped to zero after 17:48, meaning shipping stopped reaching quote."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_a86b3b3ad5e72128",
+       "ev_c5d67772e6ca1c45",
+       "ev_8eaeac9ec874e2e1",
+       "ev_f03cb2bce8db7109"
+      ],
+      "statement": "The shipping revision 2 port change is the most likely trigger: the error and latency onset matches the 17:48 change and shipping's restart, and quote's unchanged port 8080 no longer matches what shipping calls."
+     },
+     {
+      "evidence_ids": [
+       "ev_a8d1597250219bc9",
+       "ev_44dfe91b0f07d4be",
+       "ev_5d6e693f585e1953"
+      ],
+      "statement": "Frontend, frontend-proxy and checkout's current latency and errors are caused by shipping, not by their own config or their dependencies (payment, cart, product-catalog)."
+     },
+     {
+      "evidence_ids": [
+       "ev_8eaeac9ec874e2e1",
+       "ev_91dd2eb8d03d0cd6"
+      ],
+      "statement": "Quote's flat server metrics and absent spans are more consistent with shipping no longer reaching quote than with quote hanging on requests it receives."
+     },
+     {
+      "evidence_ids": [
+       "ev_cbc4252704f8d0d1",
+       "ev_9a249ca61712a5cc"
+      ],
+      "statement": "The checkout 17:00-17:25 episode (EmptyCart spikes, payment Charge errors) is a separate issue that recovered before the shipping cascade."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Revision 2 changed QUOTE_ADDR to quote:9999 while quote is unchanged since 16:42. Shipping's outbound quote calls now time out at about 5s and return 500, failing every caller's /get-quote (checkout, then frontend).",
+      "confidence": 0.7,
+      "evidence_ids": [
+       "ev_a86b3b3ad5e72128",
+       "ev_cd5bcd5d0ead0075",
+       "ev_9bfdbb7c9e8e80a4",
+       "ev_294178c503918576",
+       "ev_c5d67772e6ca1c45",
+       "ev_8eaeac9ec874e2e1",
+       "ev_f03cb2bce8db7109"
+      ],
+      "service": "shipping"
+     },
+     {
+      "cause": "Quote stopped handling or completing quote requests after 17:48:27 (hung or blackholed), so shipping's calls time out. Less likely because quote's own server span p95 stayed flat and it logged no errors.",
+      "confidence": 0.2,
+      "evidence_ids": [
+       "ev_45f62eb9a5a6b5b7",
+       "ev_705737c9ea2f34a6",
+       "ev_8eaeac9ec874e2e1",
+       "ev_91dd2eb8d03d0cd6"
+      ],
+      "service": "quote"
+     }
+    ],
+    "summary": "Frontend's LatencyP95 is a victim symptom. Its slow requests are POST /api/checkout calls that fail after about 5s, because checkout's PlaceOrder gets a 500 from shipping /get-quote, which itself hits a ~5s Timeout on its outbound quote call. Shipping's revision 2 (17:48:26) changed QUOTE_ADDR from quote:8080 to quote:9999, quote is unchanged, and shipping's quoting stopped at 17:48:27. The most likely root cause is that shipping config change. Frontend, frontend-proxy and checkout are victims. The checkout 17:00-17:25 episode recovered and is separate. Caveat: shipping's p95 began rising around 17:45, before the 17:48 change, so the onset timing needs checking."
+   },
+   "findings": 18,
+   "plan": {
+    "actions": [
+     {
+      "action": "rollout_undo",
+      "deployment": "shipping",
+      "evidence_ids": [
+       "ev_a86b3b3ad5e72128",
+       "ev_cd5bcd5d0ead0075",
+       "ev_9bfdbb7c9e8e80a4",
+       "ev_c5d67772e6ca1c45",
+       "ev_ccb682837e4641b4"
+      ],
+      "reason": "Shipping revision 2 (17:48:26) changed QUOTE_ADDR to quote:9999, while quote is unchanged on 8080. Shipping's quote calls now time out and return 500, failing checkout and frontend /get-quote. Revision 1 restores the working address.",
+      "to_revision": 1
+     }
+    ],
+    "alternatives": [
+     {
+      "action": "restart_deployment",
+      "why_not": "The pod was already replaced at 17:48:27 and quoting did not recover, so a restart keeps the bad QUOTE_ADDR and would not fix it."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "Shipping is failing every call, not short of capacity, so more replicas would not help."
+     },
+     {
+      "action": "none",
+      "why_not": "Frontend, checkout and shipping alerts are all active and error ratio is 1.0, so waiting is costly. The rollback is reversible."
+     }
+    ],
+    "no_action_reason": null,
+    "summary": "Roll shipping back to revision 1, which restores QUOTE_ADDR=quote:8080 and matches the unchanged quote service. This should clear the shipping quote failures that cascade to checkout and frontend. A human should still check the 17:45 onset, which predates the change."
+   },
+   "state": "AWAITING_APPROVAL"
+  },
+  "b0f1e4f0-1f4d-464d-9703-f3ce757a6230": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_05159eda7b3b0063",
+       "ev_d566da5632c9eff9"
+      ],
+      "statement": "Shipping revision 2 (17:48:26Z) changed QUOTE_ADDR from http://quote:8080 to http://quote:9999, the only config diff between revisions."
+     },
+     {
+      "evidence_ids": [
+       "ev_9b2b33f2daaa39e2",
+       "ev_ffd4fc1d7125df47"
+      ],
+      "statement": "Shipping's client span to quote takes 5001 ms with error.type=Timeout, followed by a 500 on shipping's POST /get-quote server span."
+     },
+     {
+      "evidence_ids": [
+       "ev_8466e1fa05630ff2",
+       "ev_ff2b6e9aae3c5632",
+       "ev_61fd7e26b066fb50",
+       "ev_39db4aab954b1e6d"
+      ],
+      "statement": "Shipping's own server p95 rose from about 3 ms to 9,750 ms, stepping at 17:49. Its error ratio went from about 0 to 1.0 by 17:54."
+     },
+     {
+      "evidence_ids": [
+       "ev_8fb465a72815d256",
+       "ev_f57211c1abd2f481",
+       "ev_6d69e07bcb0d8de3",
+       "ev_5135fbafe47d0530"
+      ],
+      "statement": "Quote has produced no logs since 17:48:27 and no error-level logs, and it has no traces in the last 30 or 180 minutes."
+     },
+     {
+      "evidence_ids": [
+       "ev_5e05c36a274a922a",
+       "ev_b767e63099485df5",
+       "ev_9da1685f25b8e61f"
+      ],
+      "statement": "Shipping keeps sending 'Requesting quote' logs from 17:53 to 17:56 and has no error-level logs of its own."
+     },
+     {
+      "evidence_ids": [
+       "ev_adaad6985f485532"
+      ],
+      "statement": "Quote has no rollout since 16:42 and its Deployment was not changed at 17:48."
+     },
+     {
+      "evidence_ids": [
+       "ev_22b87b500d3a65bc",
+       "ev_6235f753b7df5e10"
+      ],
+      "statement": "Checkout's PlaceOrder fails with 'expected 200, got 500' from shipping, and frontend-proxy's slowest traces are 8.6 to 10.7 s, all errors."
+     },
+     {
+      "evidence_ids": [
+       "ev_a4c631885b6c1fe2",
+       "ev_ac18ee816692499a",
+       "ev_baf5f260962a0c52"
+      ],
+      "statement": "All 18 feature flags are off, and there are no OOMs or crash restarts in the window."
+     },
+     {
+      "evidence_ids": [
+       "ev_8466e1fa05630ff2",
+       "ev_904c7984af7022ed"
+      ],
+      "statement": "Product-catalog p95 is about 8 ms and cart p95 is about 1.9 ms, both flat over the window."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check quote's Service and container ports, and run a connect test from a shipping pod to quote:9999 versus quote:8080.",
+      "statement": "Quote is not listening on port 9999, so shipping gets connection timeouts. Quote is serving on 8080 as before."
+     },
+     {
+      "how_to_verify": "Query traces_span_metrics_calls_total for quote with a raw rate over 1m and compare it with Loki and Jaeger for the same window.",
+      "statement": "The metrics report steady quote call rates (about 0.25 to 0.31 per second) through 17:59, which conflicts with the logs and traces showing quote silent since 17:48. The span-metric series may be stale."
+     },
+     {
+      "how_to_verify": "Check quote's pod status, restarts and readiness, and its container logs at 17:48.",
+      "statement": "Quote may have crashed or stopped after 17:48 for a reason that is not in its rollout history."
+     },
+     {
+      "how_to_verify": "Run kubectl rollout undo for shipping, then watch the shipping error ratio and checkout p95 for 5 minutes.",
+      "statement": "Rolling shipping back to revision 1 (QUOTE_ADDR=quote:8080) should restore checkout and frontend-proxy latency and errors."
+     },
+     {
+      "how_to_verify": "Check payment's error spans and logs from 17:15 to 17:31, and confirm the frontend change was reverted at 17:11.",
+      "statement": "The checkout 17:27 alert comes from the earlier payment charge errors (peak around 17:31) and the frontend port change at 17:06, not from shipping."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_05159eda7b3b0063",
+       "ev_9b2b33f2daaa39e2",
+       "ev_8466e1fa05630ff2"
+      ],
+      "statement": "Shipping's quote calls are the failing hop, and the 17:48 shipping config change is the most likely trigger. Frontend-proxy and checkout latency is inherited from it."
+     },
+     {
+      "evidence_ids": [
+       "ev_8466e1fa05630ff2",
+       "ev_904c7984af7022ed"
+      ],
+      "statement": "Product-catalog, astronomy-db, cart and valkey-cart are not the cause, since their own telemetry is flat."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Revision 2 (rolled out 17:48:26Z, 'quote client moved to port 9999') changed QUOTE_ADDR from quote:8080 to quote:9999. Shipping's quote calls then time out at about 5s and return 500, which fails checkout and pushes latency up to frontend-proxy.",
+      "confidence": 0.8,
+      "evidence_ids": [
+       "ev_05159eda7b3b0063",
+       "ev_d566da5632c9eff9",
+       "ev_9b2b33f2daaa39e2",
+       "ev_61fd7e26b066fb50",
+       "ev_8466e1fa05630ff2",
+       "ev_baf5f260962a0c52"
+      ],
+      "service": "shipping"
+     },
+     {
+      "cause": "Quote may not be listening on the port shipping now calls, or may have stopped serving after 17:48. It has produced no logs or traces since 17:48, so it is the secondary suspect. Its metrics disagree with its logs and traces, so this is unresolved.",
+      "confidence": 0.25,
+      "evidence_ids": [
+       "ev_8fb465a72815d256",
+       "ev_6d69e07bcb0d8de3",
+       "ev_adaad6985f485532",
+       "ev_536f7df8e2eb74d9"
+      ],
+      "service": "quote"
+     }
+    ],
+    "summary": "frontend-proxy's p95 is inherited latency. Its checkout calls wait on shipping's POST /get-quote, which now fails after about 5s with a timeout and returns 500. The likely trigger is shipping revision 2 (17:48:26Z), which pointed QUOTE_ADDR at quote:9999 while quote was unchanged and has been silent since about 17:48:27. The fix is in shipping's config, and rolling shipping back to revision 1 is the fastest mitigation. Checkout's 17:27 alert has a separate, earlier cause (payment charge errors and POST errors from the since-reverted frontend change). The checkout and shipping P1s are downstream of the shipping break."
+   },
+   "findings": 21,
+   "plan": {
+    "actions": [
+     {
+      "action": "rollout_undo",
+      "deployment": "shipping",
+      "evidence_ids": [
+       "ev_05159eda7b3b0063",
+       "ev_d566da5632c9eff9",
+       "ev_9b2b33f2daaa39e2"
+      ],
+      "reason": "Shipping revision 2 (17:48:26Z) changed QUOTE_ADDR from quote:8080 to quote:9999, the only config diff. Shipping's quote calls time out at 5001 ms and it returns 500, which is the failing hop behind the checkout and frontend-proxy latency.",
+      "to_revision": 1
+     }
+    ],
+    "alternatives": [
+     {
+      "action": "restart_deployment",
+      "why_not": "Shipping's pods are not leaking or stuck. The config points at a wrong port, and a restart would keep the bad QUOTE_ADDR."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "The failure is a timeout to a wrong port, not a capacity shortage, so more replicas would not help."
+     },
+     {
+      "action": "rollout_undo",
+      "why_not": "Rolling back quote is not supported by the evidence: quote has no rollout since 16:42 and its Deployment was not changed at 17:48. Quote's silence needs a human check instead."
+     },
+     {
+      "action": "none",
+      "why_not": "Doing nothing leaves checkout and shipping P1s burning error budget. The rollback is the lowest-risk fix that matches the evidence."
+     }
+    ],
+    "no_action_reason": null,
+    "summary": "Roll shipping back from revision 2 to revision 1, which restores QUOTE_ADDR=http://quote:8080 and removes the 5s quote timeouts that return 500 to checkout and push latency up to frontend-proxy. Expect shipping error ratio and checkout/frontend-proxy p95 to recover within a few minutes; if quote is actually not serving on 8080, the rollback will not fix it and quote needs a human check."
+   },
+   "state": "AWAITING_APPROVAL"
+  },
+  "c77c9f49-4122-49d6-b46d-aa9dd197c38f": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_ca60c3110fa942ae",
+       "ev_3d2b94f41875d246"
+      ],
+      "statement": "Shipping revision 2 (created 17:48:26Z) changed containers.shipping.env.QUOTE_ADDR from http://quote:8080 to http://quote:9999. It is the only change to shipping."
+     },
+     {
+      "evidence_ids": [
+       "ev_1b2d6f43195cce4f",
+       "ev_e20bd8ac0333f8e8",
+       "ev_1dbdde4b019eac17",
+       "ev_c7e43658f9070221",
+       "ev_9074893a189086b8"
+      ],
+      "statement": "Quote has one revision (dated 16:42:01Z) and no Kubernetes events in the 90-minute window. No shipping restarts or OOM events are recorded, and all 18 flagd flags are off."
+     },
+     {
+      "evidence_ids": [
+       "ev_1ed71622d5a3b08a",
+       "ev_90355a7effb19a05"
+      ],
+      "statement": "In 17:40-17:55Z, all sampled shipping traces over 1s had errors: 'Timeout' on the outbound POST and 'Internal Server Error' on POST /get-quote. In the slowest trace, the outbound POST took 5001ms, and no quote span appears."
+     },
+     {
+      "evidence_ids": [
+       "ev_cc3aba576b375ec4",
+       "ev_c2cbd34a83910388",
+       "ev_5be6d98a85860945",
+       "ev_f5f83c6b32a1a122"
+      ],
+      "statement": "Quote's last log is 'Calculated quote' at 17:48:27Z, and there are no warn or error lines through 17:55. Shipping logged 'Requesting quote' 78 times through 17:52:54 but 'Sending Quote' only up to 17:48:27."
+     },
+     {
+      "evidence_ids": [
+       "ev_651e0e9f5f1b84c8",
+       "ev_041d7237c4b978e0",
+       "ev_3cdb3b1befda22ee",
+       "ev_ed9fde58077e1682",
+       "ev_e6cd7c2f9f468705"
+      ],
+      "statement": "Shipping's server p95 was about 3ms until about 17:50, then rose to 9464ms. Its error ratio went from 0.157 to 0.470. Its client POST p95 rose to about 9.6s, while /ship-order stayed flat. POST /get-quote errors began at 17:49."
+     },
+     {
+      "evidence_ids": [
+       "ev_dae7906c34044c32",
+       "ev_7c1792f951ab7915"
+      ],
+      "statement": "Quote's server p95 stayed at about 1.9ms with no STATUS_CODE_ERROR series, and its call rate (about 0.2/s) matches shipping's client rate."
+     },
+     {
+      "evidence_ids": [
+       "ev_42ae7b8f46f03149",
+       "ev_fc6c90287768cf99",
+       "ev_690f547e35d0b40a"
+      ],
+      "statement": "Checkout's p95 spiked from about 16:58 (peak 15s). The spike is in its EmptyCart client span to cart (up to 12s), while cart's server p95 stayed at about 1.9ms. Checkout's client POST to shipping stayed at 5-6ms until 17:51."
+     },
+     {
+      "evidence_ids": [
+       "ev_900b83dc9f2f33d7",
+       "ev_f40698b592631e61",
+       "ev_fc200106ac39c78d",
+       "ev_ca37896ea3027de9",
+       "ev_1106ff421bccb325"
+      ],
+      "statement": "Checkout has no rollout since 16:42 and no Kubernetes events. CPU throttling and restart metrics returned no data."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check shipping's client error logs and span attributes for the quote address and connection-refused or timeout errors. Check quote's Service and container ports. Run a connection test from the shipping pod to quote:9999 and quote:8080.",
+      "statement": "Shipping's QUOTE_ADDR port 9999 is wrong, and quote listens only on 8080, so shipping's connections to quote:9999 are refused or time out."
+     },
+     {
+      "how_to_verify": "Compare quote's access logs and TCP connection counts with shipping's call counts. Check the Service endpoints for quote and whether any pod receives traffic on 9999.",
+      "statement": "Quote's server spans may not be recorded for calls that go to the wrong port, which would explain the flat server metrics alongside shipping's failures."
+     },
+     {
+      "how_to_verify": "Run kubectl rollout undo for shipping, or set QUOTE_ADDR back to quote:8080, then watch service:sli_error_ratio:rate5m and the shipping quote-call p95 recover.",
+      "statement": "Rolling back shipping to revision 1 (QUOTE_ADDR 8080) should restore shipping's p95 and error ratio to baseline within a few minutes. This would confirm the trigger."
+     },
+     {
+      "how_to_verify": "Pull checkout's Jaeger traces for EmptyCart and check the cart client span's peer address and connection-wait time. Compare cart's server-side spans for the same trace IDs.",
+      "statement": "Checkout's early latency (16:58) may come from cart's client-side connection pool or network path, not from cart's server work."
+     },
+     {
+      "how_to_verify": "Check flagd's /api/read spans and checkout's flagd client spans for the 17:27-17:33 window, and compare the onset of checkout's latency with flagd's timeline.",
+      "statement": "The 17:27 checkout latency and the 16:58 checkout latency may have separate causes. The /api/read spike on flagd (17:30-17:33) is unexplained and could affect checkout."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_ca60c3110fa942ae",
+       "ev_3d2b94f41875d246",
+       "ev_cc3aba576b375ec4",
+       "ev_3cdb3b1befda22ee"
+      ],
+      "statement": "The shipping config change is the most likely trigger for shipping's failures. Its timing matches the first quote timeouts (about 17:48-17:49), and it is the only change in the window."
+     },
+     {
+      "evidence_ids": [
+       "ev_1ed71622d5a3b08a",
+       "ev_690f547e35d0b40a"
+      ],
+      "statement": "Shipping is a victim, not the root cause, of checkout's 'shipping quote failure' errors. Checkout's latency since 17:27 is not caused by shipping, since checkout's calls to shipping were fast until 17:51."
+     },
+     {
+      "evidence_ids": [
+       "ev_c7e43658f9070221",
+       "ev_9074893a189086b8",
+       "ev_dae7906c34044c32"
+      ],
+      "statement": "Flagd, cluster events and quote's resources are unlikely to be the shared cause, because flags are clean, there are no Kubernetes warnings, and quote's server metrics are healthy."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Revision 2 (17:48:26Z) redirected QUOTE_ADDR to http://quote:9999 while quote serves on 8080. Shipping's POST /get-quote calls time out at about 5s and return 500, driving p95 to about 9.5s and the error ratio to about 0.47. Rolling back to revision 1 should restore service if this is correct.",
+      "confidence": 0.75,
+      "evidence_ids": [
+       "ev_ca60c3110fa942ae",
+       "ev_3d2b94f41875d246",
+       "ev_1ed71622d5a3b08a",
+       "ev_90355a7effb19a05",
+       "ev_3cdb3b1befda22ee",
+       "ev_651e0e9f5f1b84c8"
+      ],
+      "service": "shipping"
+     },
+     {
+      "cause": "Possible silent stall in quote starting about 17:48:27 (no output after its last 'Calculated quote'). This is less likely because quote's server p95 is flat at about 1.9ms with no error series and its call rate matches shipping's, which argues against a stall. Its own traces and pod health are unchecked.",
+      "confidence": 0.2,
+      "evidence_ids": [
+       "ev_cc3aba576b375ec4",
+       "ev_c2cbd34a83910388",
+       "ev_f5f83c6b32a1a122",
+       "ev_dae7906c34044c32",
+       "ev_7c1792f951ab7915"
+      ],
+      "service": "quote"
+     },
+     {
+      "cause": "Checkout's LatencyP95High from about 16:58-17:27 is caused by slow EmptyCart client calls to cart (up to 12s), while cart's server p95 stays flat. This points to checkout's own handling or the checkout-to-cart path, not to shipping. Its cause is not identified.",
+      "confidence": 0.2,
+      "evidence_ids": [
+       "ev_42ae7b8f46f03149",
+       "ev_fc6c90287768cf99",
+       "ev_690f547e35d0b40a",
+       "ev_900b83dc9f2f33d7"
+      ],
+      "service": "checkout"
+     }
+    ],
+    "summary": "Shipping's p95 latency and ErrorBudgetBurn come from its outbound calls to quote timing out at about 5s. The likely trigger is shipping revision 2 (17:48:26Z), which changed QUOTE_ADDR from quote:8080 to quote:9999. Quote itself is unchanged, and its last 'Calculated quote' log is at 17:48:27, one second after the rollout. Quote's server metrics are flat with no errors, which conflicts with a quote-side stall, so the port mismatch is not yet confirmed. Checkout's latency since about 16:58-17:27 is a separate issue, traced to its EmptyCart calls to cart rather than to shipping, and it is not explained by any change."
+   },
+   "findings": 19,
+   "plan": {
+    "actions": [
+     {
+      "action": "rollout_undo",
+      "deployment": "shipping",
+      "evidence_ids": [
+       "ev_ca60c3110fa942ae",
+       "ev_3d2b94f41875d246",
+       "ev_1ed71622d5a3b08a",
+       "ev_90355a7effb19a05"
+      ],
+      "reason": "Shipping rev 2 (17:48:26Z) changed QUOTE_ADDR to quote:9999 while quote serves on 8080. Shipping's outbound quote POSTs time out at about 5s and return 500s from 17:49, matching the p95 and error-ratio rise. Reverting to rev 1 restores QUOTE_ADDR=8080.",
+      "to_revision": 1
+     }
+    ],
+    "alternatives": [
+     {
+      "action": "restart_deployment",
+      "why_not": "A restart would not change QUOTE_ADDR, so shipping would keep timing out on port 9999."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "The failures are timeouts from a wrong address, not a capacity shortage. More replicas would not fix them."
+     },
+     {
+      "action": "rollout_undo",
+      "why_not": "Rolling back quote is not supported by the evidence. Quote has a single revision, its server metrics are flat, and it logs no errors, so there is no sign of a quote-side release or stall."
+     }
+    ],
+    "no_action_reason": null,
+    "summary": "Roll shipping back to revision 1 to restore QUOTE_ADDR to quote:8080, which should bring shipping's p95 and error ratio back to baseline within a few minutes. The port mismatch is still unconfirmed, so if latency persists afterwards, check quote's own health and traces. Checkout's separate latency from 16:58 is not addressed by this action and needs its own investigation."
+   },
+   "state": "AWAITING_APPROVAL"
+  },
+  "e32c494e-f87f-4197-8010-776d766978cc": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_452e33f4b077e326",
+       "ev_ac70510c67ec44f9",
+       "ev_547f79bb1649febd"
+      ],
+      "statement": "Shipping revision 2 at 17:48:26Z changed QUOTE_ADDR from http://quote:8080 to http://quote:9999; quote has only revision 1 from 16:42Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_9d70298f834e8bef",
+       "ev_ff45a7b666d968d8",
+       "ev_802ecbefccb42f9e"
+      ],
+      "statement": "Checkout's failing PlaceOrder spans carry 'shipping quote failure: expected 200, got 500'. In a trace, shipping's /get-quote returns 500 with a client Timeout and about 5 s of self time, while checkout's self time is about 10 ms."
+     },
+     {
+      "evidence_ids": [
+       "ev_059408ee8ee57e85",
+       "ev_54d3e1547e97640b"
+      ],
+      "statement": "Quote's last log is 'Calculated quote' at 17:48:27. It has no error spans in the last 60 minutes."
+     },
+     {
+      "evidence_ids": [
+       "ev_feba23efb2b22139",
+       "ev_3c8e5bd75ac6fa16"
+      ],
+      "statement": "Shipping logged 82 'Requesting quote' against 51 'Sending Quote' from 17:44 to 17:52, with zero error-level lines."
+     },
+     {
+      "evidence_ids": [
+       "ev_3a8ef9bd463a767a",
+       "ev_2acff417a521f4c9"
+      ],
+      "statement": "Checkout p95 latency rose from about 49 ms at 16:45Z to 15000 ms at 16:59Z. Its SLI error ratio first rose at 17:07Z, peaked at 0.50 at 17:34Z, and was 0.44 at 17:55Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_e95494c825e7b6b7",
+       "ev_96debd36f682cf83",
+       "ev_8a427841d4050c13"
+      ],
+      "statement": "Cart's server EmptyCart p95 rose from about 8 ms to 15000 ms, while GetCart and AddItem stayed near 2 ms. Checkout's client p95 for cart EmptyCart and POST matched this. Cart's client span to valkey-cart stayed about 1.9 ms."
+     },
+     {
+      "evidence_ids": [
+       "ev_8970626c9b9bb640",
+       "ev_22fdb1b76de33b9c",
+       "ev_a41a222c4378ac42",
+       "ev_221da65156e1f2be",
+       "ev_142a1ab22d6b38ac",
+       "ev_8091f1e2caf760f6",
+       "ev_e732de3af3a2b297"
+      ],
+      "statement": "All 18 flagd flags are off. Checkout, payment, cart, product-catalog, currency, kafka and valkey-cart have had no changes since 16:41-16:42Z. The 90-minute k8s event window has zero warnings."
+     },
+     {
+      "evidence_ids": [
+       "ev_c20b6915a640d42f"
+      ],
+      "statement": "Checkout's only error log in the last 60 minutes is 17 'Kafka context deadline canceled' lines at 17:06:27."
+     },
+     {
+      "evidence_ids": [
+       "ev_2be0bd51b17a6b60",
+       "ev_9fd241091c114440",
+       "ev_35a54492eb6c1c8b"
+      ],
+      "statement": "Payment's server error ratio peaked at 0.5 around 17:34Z while its p95 stayed about 2-4 ms, so it fails fast. Shipping's error ratio rose only from 17:49Z."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Query shipping logs and spans for connection errors to quote:9999. Check quote's listening ports and service endpoints.",
+      "statement": "Shipping's calls to quote:9999 fail with connection refused or timeout, and quote listens only on 8080."
+     },
+     {
+      "how_to_verify": "Pull cart server spans and logs for EmptyCart. Check cart's valkey command latency and key counts, and cart pod CPU and memory.",
+      "statement": "Cart's EmptyCart is slow because of its own code path or data, such as a large or stuck valkey operation, and not the valkey latency itself."
+     },
+     {
+      "how_to_verify": "Query payment error logs and span exception messages for 17:00-17:50Z, and check whether checkout's PlaceOrder errors include payment failures.",
+      "statement": "Payment's fast-failing errors (peak 0.5 around 17:34Z) contribute to checkout's errors before the shipping change."
+     },
+     {
+      "how_to_verify": "Break down checkout's 17:07-17:48 error spans by exception message and downstream span. Check whether cart and deadline errors dominate.",
+      "statement": "Checkout's errors from 17:07Z are caused by cart timeouts or deadlines, such as the Kafka context-deadline errors at 17:06."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_452e33f4b077e326",
+       "ev_2acff417a521f4c9",
+       "ev_35a54492eb6c1c8b"
+      ],
+      "statement": "The shipping change explains the checkout failures from about 17:48Z onward, but not the errors that began at 17:07Z, which predate it."
+     },
+     {
+      "evidence_ids": [
+       "ev_e95494c825e7b6b7",
+       "ev_3a8ef9bd463a767a",
+       "ev_c0ede2e994fbcb73"
+      ],
+      "statement": "Cart's slow EmptyCart is the likely origin of the latency alert and the early checkout errors, since cart's errors start before checkout's and checkout's latency rose first."
+     },
+     {
+      "evidence_ids": [
+       "ev_c20b6915a640d42f"
+      ],
+      "statement": "Kafka is ruled out as the current cause because its only errors are from 17:06 and are unrelated to the present failures."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Config release (rev 2, 17:48:26Z) pointed QUOTE_ADDR at quote:9999 while quote listens on 8080. Shipping's /get-quote calls time out and return 500, which fails checkout PlaceOrder. Quote's traffic stops at 17:48:27.",
+      "confidence": 0.6,
+      "evidence_ids": [
+       "ev_452e33f4b077e326",
+       "ev_ac70510c67ec44f9",
+       "ev_802ecbefccb42f9e",
+       "ev_059408ee8ee57e85",
+       "ev_feba23efb2b22139",
+       "ev_9d70298f834e8bef"
+      ],
+      "service": "shipping"
+     },
+     {
+      "cause": "EmptyCart handling in cart is slow (p95 up to 15 s from about 16:57Z), while GetCart, AddItem and the valkey-cart client span stay fast. Checkout's calls to cart's EmptyCart and POST then time out and drive the latency alert and the early errors. The cause is not a deploy, since cart has been unchanged since 16:42Z.",
+      "confidence": 0.45,
+      "evidence_ids": [
+       "ev_e95494c825e7b6b7",
+       "ev_96debd36f682cf83",
+       "ev_8a427841d4050c13",
+       "ev_9b3a8c52b710a06c",
+       "ev_c0ede2e994fbcb73"
+      ],
+      "service": "cart"
+     }
+    ],
+    "summary": "Checkout's availability burn has two overlapping sources. Since 17:48:26Z, shipping's QUOTE_ADDR was changed to quote:9999 while quote still serves 8080. Shipping's quote calls then time out and return 500, and checkout PlaceOrder fails with 'shipping quote failure'. Quote has logged nothing since 17:48:27. Separately, checkout's p95 latency rose from 16:45-16:59Z, driven by cart's server-side EmptyCart (up to 15 s) while cart's GetCart and valkey calls stay fast. Checkout's errors began at 17:07Z, before the shipping change, and payment's fast-failing errors (peak 0.5 at 17:34Z) are unexplained. The shipping change explains the recent failures but not the 17:07-17:48 errors or the 17:27 latency alert."
+   },
+   "findings": 19,
+   "plan": {
+    "actions": [
+     {
+      "action": "rollout_undo",
+      "deployment": "shipping",
+      "evidence_ids": [
+       "ev_452e33f4b077e326",
+       "ev_ac70510c67ec44f9",
+       "ev_9d70298f834e8bef",
+       "ev_059408ee8ee57e85"
+      ],
+      "reason": "Shipping rev 2 (17:48:26Z) changed QUOTE_ADDR from quote:8080 to quote:9999. Shipping's quote calls time out and return 500, failing checkout PlaceOrder. Revision 1 restores quote:8080.",
+      "to_revision": 1
+     }
+    ],
+    "alternatives": [
+     {
+      "action": "restart_deployment",
+      "why_not": "A restart of shipping re-reads the same bad QUOTE_ADDR from rev 2 and would not fix it."
+     },
+     {
+      "action": "restart_deployment",
+      "why_not": "Restarting cart might ease EmptyCart latency, but the cart cause is unverified and not a deploy, and it does not explain the 17:48 failures. Refer to a human for investigation."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "Checkout and shipping fail on errors and timeouts, not capacity. Scaling would not fix the wrong address or the EmptyCart latency."
+     },
+     {
+      "action": "none",
+      "why_not": "Doing nothing leaves checkout failing at about 44% and burning error budget fast, so a fix is needed now."
+     }
+    ],
+    "no_action_reason": null,
+    "summary": "Roll shipping back from revision 2 (bad QUOTE_ADDR=quote:9999 config release at 17:48:26Z) to revision 1 (quote:8080). Expected result: shipping's /get-quote calls succeed again, checkout PlaceOrder stops failing with 'shipping quote failure', and the checkout error ratio should fall toward baseline. The cart EmptyCart latency and the 17:07Z errors remain open and need a human to check."
+   },
+   "state": "AWAITING_APPROVAL"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": null,
+   "created_at": "2026-10-27 17:27:18.015347+00:00",
+   "environment": "lab",
+   "fingerprint": "7d3c22bfff3583271006e8d4df5f3976",
+   "id": "c1f771a8-23ed-4832-b66d-34e95de66ae2",
+   "labels": {
+    "alertname": "LatencyP95High",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "warning",
+    "slo": "latency"
+   },
+   "priority": 2,
+   "service": "checkout",
+   "state": "AWAITING_APPROVAL",
+   "tenant_id": "lab",
+   "title": "LatencyP95High"
+  },
+  {
+   "closed_at": null,
+   "created_at": "2026-10-27 17:50:33.015821+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "e32c494e-f87f-4197-8010-776d766978cc",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "AWAITING_APPROVAL",
+   "tenant_id": "lab",
+   "title": "ErrorBudgetBurn"
+  },
+  {
+   "closed_at": null,
+   "created_at": "2026-10-27 17:51:03.015277+00:00",
+   "environment": "lab",
+   "fingerprint": "75dbb8961da892f02298426126777c1e",
+   "id": "4c8ddd81-753c-4b6b-9d48-6fd8c94707de",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "shipping",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "shipping",
+   "state": "AWAITING_APPROVAL",
+   "tenant_id": "lab",
+   "title": "ErrorBudgetBurn"
+  },
+  {
+   "closed_at": null,
+   "created_at": "2026-10-27 17:51:18.021147+00:00",
+   "environment": "lab",
+   "fingerprint": "55924ed51ad3079ba37e1035a11939f2",
+   "id": "c77c9f49-4122-49d6-b46d-aa9dd197c38f",
+   "labels": {
+    "alertname": "LatencyP95High",
+    "environment": "lab",
+    "service_name": "shipping",
+    "severity": "warning",
+    "slo": "latency"
+   },
+   "priority": 2,
+   "service": "shipping",
+   "state": "AWAITING_APPROVAL",
+   "tenant_id": "lab",
+   "title": "LatencyP95High"
+  },
+  {
+   "closed_at": null,
+   "created_at": "2026-10-27 17:54:48.018161+00:00",
+   "environment": "lab",
+   "fingerprint": "3a289d7a6fb399cde65d46e6cc95037c",
+   "id": "b0f1e4f0-1f4d-464d-9703-f3ce757a6230",
+   "labels": {
+    "alertname": "LatencyP95High",
+    "environment": "lab",
+    "service_name": "frontend-proxy",
+    "severity": "warning",
+    "slo": "latency"
+   },
+   "priority": 2,
+   "service": "frontend-proxy",
+   "state": "AWAITING_APPROVAL",
+   "tenant_id": "lab",
+   "title": "LatencyP95High"
+  },
+  {
+   "closed_at": null,
+   "created_at": "2026-10-27 17:55:03.017887+00:00",
+   "environment": "lab",
+   "fingerprint": "b6c8000993410261806563a92dc682f4",
+   "id": "863a6c70-1867-42f8-8337-b6a0e68cb5ae",
+   "labels": {
+    "alertname": "LatencyP95High",
+    "environment": "lab",
+    "service_name": "frontend",
+    "severity": "warning",
+    "slo": "latency"
+   },
+   "priority": 2,
+   "service": "frontend",
+   "state": "AWAITING_APPROVAL",
+   "tenant_id": "lab",
+   "title": "LatencyP95High"
+  }
+ ]
+}

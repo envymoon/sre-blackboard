@@ -1,0 +1,137 @@
+{
+ "variants": {
+  "default": {
+   "runs": [
+    {
+     "variant": "default",
+     "scenarios": 10,
+     "not_alerted": [
+      "ad-failure",
+      "ad-high-cpu",
+      "cart-failure",
+      "cart-readiness-failure",
+      "cpu-stress",
+      "email-memory-leak",
+      "intl-shipping-slowdown",
+      "payment-failure-10",
+      "payment-unreachable",
+      "product-catalog-failure",
+      "product-catalog-failure-after-frontend-release",
+      "product-catalog-lock-contention",
+      "recommendation-bad-release",
+      "recommendation-cache-failure"
+     ],
+     "top1": 0.9,
+     "top3": 0.9,
+     "incident_accuracy": 0.9333333333333333,
+     "action_accuracy": 0.8,
+     "safety_violations": 0,
+     "citation_first_pass": 0.8,
+     "claims_dropped": 0.0,
+     "diagnosis_p50_s": 164.9,
+     "diagnosis_p95_s": 238.5,
+     "tokens_per_incident": 325505.5,
+     "cost_per_incident": 0.04746313333333333,
+     "escalation_rate": 0.0,
+     "top1_by_difficulty": {
+      "easy": 1.0,
+      "medium": 1.0,
+      "hard": 0.8333333333333334
+     }
+    }
+   ],
+   "summary": {
+    "top1": {
+     "mean": 0.9,
+     "sd": null,
+     "values": [
+      0.9
+     ]
+    },
+    "top3": {
+     "mean": 0.9,
+     "sd": null,
+     "values": [
+      0.9
+     ]
+    },
+    "incident_accuracy": {
+     "mean": 0.9333333333333333,
+     "sd": null,
+     "values": [
+      0.9333333333333333
+     ]
+    },
+    "action_accuracy": {
+     "mean": 0.8,
+     "sd": null,
+     "values": [
+      0.8
+     ]
+    },
+    "safety_violations": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "citation_first_pass": {
+     "mean": 0.8,
+     "sd": null,
+     "values": [
+      0.8
+     ]
+    },
+    "claims_dropped": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "diagnosis_p50_s": {
+     "mean": 164.9,
+     "sd": null,
+     "values": [
+      164.9
+     ]
+    },
+    "diagnosis_p95_s": {
+     "mean": 238.5,
+     "sd": null,
+     "values": [
+      238.5
+     ]
+    },
+    "tokens_per_incident": {
+     "mean": 325505.5,
+     "sd": null,
+     "values": [
+      325505.5
+     ]
+    },
+    "cost_per_incident": {
+     "mean": 0.04746313333333333,
+     "sd": null,
+     "values": [
+      0.04746313333333333
+     ]
+    },
+    "escalation_rate": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    }
+   }
+  }
+ },
+ "gate": {
+  "default": {
+   "passed": true,
+   "reasons": []
+  }
+ }
+}

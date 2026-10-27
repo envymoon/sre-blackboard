@@ -1,0 +1,84 @@
+[eval] 6 scenario(s): bad-release, email-memory-leak, network-delay, payment-failure-after-currency-release, product-catalog-failure-after-frontend-release, recommendation-cache-failure
+[eval] variants: default (lab), 
+[baseline] watching for 300s with no fault injected
+=== scenario 1/6: bad-release (easy): A checkout release points its payment client at a dead port
+[bad-release] inject: a checkout rollout points its payment client at a port nobody listens on
+[bad-release] alert ErrorBudgetBurn[fast] on checkout after 133.3s
+[bad-release] awaiting_approval ErrorBudgetBurn/checkout: root causes checkout 90%; 19 model calls, 263,989 tokens, $0.042
+[bad-release] recorded 19 model steps, 39 tool answers
+[bad-release] answer: checkout - correct
+[bad-release] plan for ErrorBudgetBurn/checkout: rollout_undo checkout -> require_approval (R3); approved by lab-approver
+[bad-release] checkout: RESOLVED (checkout error ratio over 1m is 0 ratio, below 0.06, for 3 checks in a row) 130s after the decision
+[bad-release] execution succeeded: rollout_undo checkout (revision 2 -> 3)
+[bad-release] console case: lab-out/eval/agent/cases/bad-release-checkout.json
+[bad-release] recover
+[bad-release] nothing to recover: sre-blackboard already repaired it
+[bad-release] all alerts resolved 285.9s after recovery
+[bad-release] closed 0 incident(s)
+=== bad-release: ok; 1 incident(s)
+=== scenario 2/6: email-memory-leak (medium): Email leaks memory on every confirmation
+[email-memory-leak] inject: email leaks memory on every confirmation until it is OOM-killed
+[email-memory-leak] no alert within 300s
+[email-memory-leak] recover
+[email-memory-leak] all alerts resolved 0.0s after recovery
+[email-memory-leak] closed 0 incident(s)
+=== email-memory-leak: lab check FAILED; 0 incident(s)
+=== scenario 3/6: network-delay (hard): One second of network delay on product-catalog
+[network-delay] inject: 1s of added network latency on product-catalog
+[network-delay] alert LatencyP95High on recommendation after 159.3s
+[network-delay] alert LatencyP95High on product-catalog after 189.3s
+[network-delay] alert LatencyP95High on frontend-proxy after 204.3s
+[network-delay] alert LatencyP95High on checkout after 204.3s
+[network-delay] alert LatencyP95High on frontend after 204.3s
+[network-delay] escalated LatencyP95High/recommendation: root causes product-catalog 55%, astronomy-db 30%; 24 model calls, 483,128 tokens, $0.061 (root cause candidate: product-catalog (55%): Requests are slow inside product-catalog itself (GetProduct and ListProducts self-time about 5-5.7s, beyond about 2s of DB child spans), so its server p95 rose to about 9s. Likely a wait such as a DB connection pool, lock, or internal queue; not yet confirmed.)
+[network-delay] escalated LatencyP95High/product-catalog: root causes product-catalog 50%, astronomy-db 30%; 22 model calls, 339,290 tokens, $0.048 (root cause candidate: product-catalog (50%): Systemic slowdown inside product-catalog itself (for example CPU throttling, connection-pool or lock waits, or an internal stall). Its own GetProduct/ListProducts time is ~4.5-5s in slow traces, and nearly all requests slowed at once with no error signal, no rollout, and no flag change. Not confirmed; pod CPU, throttling, and pool metrics are needed.)
+[network-delay] escalated LatencyP95High/frontend-proxy: root causes product-catalog 70%, astronomy-db 30%; 23 model calls, 386,776 tokens, $0.062 (root cause candidate: product-catalog (70%): product-catalog GetProduct/ListProducts became slow from about 17:12Z. Each request makes several sequential astronomy-db calls of about 2s each, and product-catalog also has large unexplained self-time (about 5.5s per GetProduct). The cause is inside product-catalog's request path (DB call pattern, connection handling, or waiting on DB resources) rather than in an upstream service.)
+[network-delay] escalated LatencyP95High/checkout: root causes product-catalog 70%, astronomy-db 45%; 20 model calls, 276,282 tokens, $0.043 (root cause candidate: product-catalog (70%): GetProduct is slow inside product-catalog itself (about 5.5 s self time per slow trace, server mean about 2.3-3.4 s), with its astronomy-db queries taking about 0.9-2 s each. The slowdown started at about 17:14 with no rollout, flag, or infra change in the window. Checkout and recommendation inherit it.)
+[network-delay] escalated LatencyP95High/frontend: root causes product-catalog 55%; 17 model calls, 230,348 tokens, $0.035 (root cause candidate: product-catalog (55%): product-catalog's PostgreSQL calls (astronomy-db) became slow from about 17:13Z: its astronomy-db client span p95 rose from about 2ms to about 4.7s, and its GetProduct self time is about 5.5s per trace. The trigger is unknown: no rollout or flag change in this service, and the cause is not seen on the database side.)
+[network-delay] recorded 106 model steps, 209 tool answers
+[network-delay] answer: product-catalog - correct
+[network-delay] plan for LatencyP95High/recommendation: no action -> deny; failed checks: actions: the plan has no actions
+[network-delay] plan for LatencyP95High/product-catalog: no action -> deny; failed checks: actions: the plan has no actions
+[network-delay] plan for LatencyP95High/frontend-proxy: no action -> deny; failed checks: actions: the plan has no actions
+[network-delay] plan for LatencyP95High/checkout: no action -> deny; failed checks: actions: the plan has no actions
+[network-delay] plan for LatencyP95High/frontend: no action -> deny; failed checks: actions: the plan has no actions
+[network-delay] recover
+[network-delay] all alerts resolved 315.5s after recovery
+[network-delay] closed 0 incident(s)
+=== network-delay: ok; 5 incident(s)
+=== scenario 4/6: payment-failure-after-currency-release (hard): Payment fails right after an unrelated currency release
+[payment-failure-after-currency-release] distractor: a currency rollout that changes nothing requests depend on
+[payment-failure-after-currency-release] inject: payment rejects half of all charges
+[payment-failure-after-currency-release] alert ErrorBudgetBurn[fast] on payment after 161.1s
+[payment-failure-after-currency-release] alert ErrorBudgetBurn[fast] on checkout after 161.1s
+[payment-failure-after-currency-release] escalated ErrorBudgetBurn/payment: root causes payment 70%, payment 15%; 20 model calls, 311,562 tokens, $0.040 (root cause candidate: payment (70%): The paymentFailure fault-injection flag (enabled, 50% variant) is causing payment's Charge handler to reject about half of gold-loyalty charges with 'Invalid token'. This is the only flag on, and no payment rollout preceded the onset. Flag change time is not yet confirmed.)
+[payment-failure-after-currency-release] escalated ErrorBudgetBurn/checkout: root causes payment 70%, checkout 20%; 16 model calls, 228,473 tokens, $0.033 (root cause candidate: payment (70%): Payment's Charge handler rejects roughly half of requests with 'Invalid token' from 17:28:31Z, failing fast. Likely trigger is the paymentFailure flagd flag at 50%, but the flag's toggle time and the mechanism are unconfirmed.)
+[payment-failure-after-currency-release] escalated ErrorBudgetBurn/checkout: root causes payment 75%, checkout 30%; 21 model calls, 354,969 tokens, $0.050 (root cause candidate: payment (75%): Payment fails about half of its Charge requests with 'Invalid token' for gold-tier users. This matches the paymentFailure flag being ON at variant 50% (runtime flag change, no rollout). The flag is the likely trigger, but its enable time is not confirmed.)
+[payment-failure-after-currency-release] escalated ErrorBudgetBurn/payment: root causes payment 80%, checkout 20%; 17 model calls, 260,006 tokens, $0.035 (root cause candidate: payment (80%): The paymentFailure flag (ENABLED, 50% variant) makes payment's Charge path throw 'Payment request failed. Invalid token' (charge.js:48), with failures concentrated on gold-tier user context. This is a flag-driven fault, not a rollout, restart, or dependency failure.)
+[payment-failure-after-currency-release] recorded 74 model steps, 136 tool answers
+[payment-failure-after-currency-release] answer: payment - correct
+[payment-failure] plan for ErrorBudgetBurn/payment: no action -> deny; failed checks: actions: the plan has no actions
+[payment-failure] plan for ErrorBudgetBurn/checkout: no action -> deny; failed checks: actions: the plan has no actions
+[payment-failure] plan for ErrorBudgetBurn/checkout: no action -> deny; failed checks: actions: the plan has no actions
+[payment-failure] plan for ErrorBudgetBurn/payment: no action -> deny; failed checks: actions: the plan has no actions
+[payment-failure-after-currency-release] recover
+[payment-failure-after-currency-release] all alerts resolved 336.4s after recovery
+[payment-failure-after-currency-release] closed 0 incident(s)
+[payment-failure-after-currency-release] flapping: ErrorBudgetBurn[fast]/checkout, ErrorBudgetBurn[fast]/payment
+=== payment-failure-after-currency-release: lab check FAILED; 4 incident(s)
+=== scenario 5/6: product-catalog-failure-after-frontend-release (hard): Product catalog fails right after a harmless frontend release
+[product-catalog-failure-after-frontend-release] distractor: a frontend rollout that changes nothing requests depend on
+[product-catalog-failure-after-frontend-release] inject: product-catalog fails GetProduct for one product
+[product-catalog-failure-after-frontend-release] no alert within 300s
+[product-catalog-failure-after-frontend-release] recover
+[product-catalog-failure-after-frontend-release] all alerts resolved 0.9s after recovery
+[product-catalog-failure-after-frontend-release] closed 0 incident(s)
+=== product-catalog-failure-after-frontend-release: lab check FAILED; 0 incident(s)
+=== scenario 6/6: recommendation-cache-failure (medium): Recommendation's cache leaks memory and slows down
+[recommendation-cache-failure] inject: recommendation's cache leaks memory and slows down
+[recommendation-cache-failure] no alert within 300s
+[recommendation-cache-failure] recover
+[recommendation-cache-failure] all alerts resolved 0.0s after recovery
+[recommendation-cache-failure] closed 0 incident(s)
+=== recommendation-cache-failure: lab check FAILED; 0 incident(s)
+[eval] 6 observation(s) in lab-out/eval/results.json

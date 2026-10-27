@@ -1,0 +1,53 @@
+[eval] 6 scenario(s): ad-failure, cart-readiness-failure, intl-shipping-slowdown, payment-failure-100, payment-unreachable, product-catalog-lock-contention
+[eval] variants: default (lab), 
+[baseline] watching for 300s with no fault injected
+=== scenario 1/6: ad-failure (easy): Ad fails one in ten GetAds calls
+[ad-failure] inject: ad fails one in ten GetAds calls
+[ad-failure] no alert within 300s
+[ad-failure] recover
+[ad-failure] all alerts resolved 0.0s after recovery
+[ad-failure] closed 0 incident(s)
+=== ad-failure: lab check FAILED; 0 incident(s)
+=== scenario 2/6: cart-readiness-failure (hard): Cart fails its readiness probe and drops out of its Service
+[cart-readiness-failure] inject: cart's readiness probe fails, so it is removed from its Service
+[cart-readiness-failure] no alert within 300s
+[cart-readiness-failure] recover
+[cart-readiness-failure] all alerts resolved 0.0s after recovery
+[cart-readiness-failure] closed 0 incident(s)
+=== cart-readiness-failure: lab check FAILED; 0 incident(s)
+=== scenario 3/6: intl-shipping-slowdown (medium): Shipping sleeps five seconds on every order outside the US
+[intl-shipping-slowdown] inject: shipping sleeps 5s on every order outside the US
+[intl-shipping-slowdown] no alert within 300s
+[intl-shipping-slowdown] recover
+[intl-shipping-slowdown] all alerts resolved 245.2s after recovery
+[intl-shipping-slowdown] closed 0 incident(s)
+=== intl-shipping-slowdown: lab check FAILED; 0 incident(s)
+=== scenario 4/6: payment-failure-100 (easy): Payment rejects every charge
+[payment-failure-100] inject: payment rejects every charge
+[payment-failure-100] alert ErrorBudgetBurn[fast] on checkout after 129.8s
+[payment-failure-100] alert ErrorBudgetBurn[fast] on payment after 129.9s
+[payment-failure-100] escalated ErrorBudgetBurn/checkout: root causes payment 75%, payment 35%; 19 model calls, 248,944 tokens, $0.036 (root cause candidate: payment (75%): Charge path is rejecting requests with 'Invalid token' errors, most likely because the paymentFailure flag is ENABLED at 100%. Observed failure rate is partial (~60% of charges, gold-tier in the messages), which does not fully match a 100% variant, so the exact trigger inside payment is unconfirmed.)
+[payment-failure-100] escalated ErrorBudgetBurn/payment: root causes payment 85%, payment 10%; 19 model calls, 231,688 tokens, $0.037 (root cause candidate: payment (85%): The flagd flag paymentFailure is enabled (variant 100%), which makes payment's PaymentService/Charge fail with 'Invalid token' for gold-tier users. This is a fault injected through configuration, not a code or deployment change. Disabling the flag should stop the errors.)
+[payment-failure-100] recorded 38 model steps, 70 tool answers
+[payment-failure-100] answer: payment - correct
+[payment-failure-100] plan for ErrorBudgetBurn/checkout: no action -> deny; failed checks: actions: the plan has no actions
+[payment-failure-100] plan for ErrorBudgetBurn/payment: no action -> deny; failed checks: actions: the plan has no actions
+[payment-failure-100] recover
+[payment-failure-100] all alerts resolved 285.3s after recovery
+[payment-failure-100] closed 0 incident(s)
+=== payment-failure-100: ok; 2 incident(s)
+=== scenario 5/6: payment-unreachable (hard): Checkout dials a payment address that does not exist
+[payment-unreachable] inject: checkout calls a payment address that does not exist
+[payment-unreachable] no alert within 300s
+[payment-unreachable] recover
+[payment-unreachable] all alerts resolved 0.0s after recovery
+[payment-unreachable] closed 0 incident(s)
+=== payment-unreachable: lab check FAILED; 0 incident(s)
+=== scenario 6/6: product-catalog-lock-contention (medium): Product catalog queries wait on a database lock
+[product-catalog-lock-contention] inject: product-catalog queries wait on a database lock
+[product-catalog-lock-contention] no alert within 300s
+[product-catalog-lock-contention] recover
+[product-catalog-lock-contention] all alerts resolved 0.0s after recovery
+[product-catalog-lock-contention] closed 0 incident(s)
+=== product-catalog-lock-contention: lab check FAILED; 0 incident(s)
+[eval] 6 observation(s) in lab-out/eval/results.json

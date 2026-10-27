@@ -1,0 +1,79 @@
+[eval] 6 scenario(s): ad-high-cpu, cpu-stress, network-delay-with-ad-failure, payment-failure-after-checkout-release, pod-failure, recommendation-bad-release
+[eval] variants: default (lab), 
+[baseline] watching for 300s with no fault injected
+=== scenario 1/6: ad-high-cpu (medium): Ad burns CPU on every request
+[ad-high-cpu] inject: ad burns CPU on every request
+[ad-high-cpu] no alert within 300s
+[ad-high-cpu] recover
+[ad-high-cpu] all alerts resolved 0.0s after recovery
+[ad-high-cpu] closed 0 incident(s)
+=== ad-high-cpu: lab check FAILED; 0 incident(s)
+=== scenario 2/6: cpu-stress (medium): CPU stress inside the recommendation pod
+[cpu-stress] inject: CPU stress inside the recommendation pod
+[cpu-stress] no alert within 300s
+[cpu-stress] recover
+[cpu-stress] all alerts resolved 0.4s after recovery
+[cpu-stress] closed 0 incident(s)
+=== cpu-stress: lab check FAILED; 0 incident(s)
+=== scenario 3/6: network-delay-with-ad-failure (hard): Network delay on product-catalog while ad fails on its own
+[network-delay-with-ad-failure] distractor: ad fails one in ten GetAds calls
+[network-delay-with-ad-failure] inject: 1s of added network latency on product-catalog
+[network-delay-with-ad-failure] alert LatencyP95High on recommendation after 184.7s
+[network-delay-with-ad-failure] alert LatencyP95High on product-catalog after 199.7s
+[network-delay-with-ad-failure] alert LatencyP95High on checkout after 214.7s
+[network-delay-with-ad-failure] alert LatencyP95High on frontend after 214.7s
+[network-delay-with-ad-failure] alert LatencyP95High on frontend-proxy after 214.7s
+[network-delay-with-ad-failure] escalated LatencyP95High/recommendation: root causes product-catalog 60%, astronomy-db 30%; 21 model calls, 260,391 tokens, $0.040 (root cause candidate: product-catalog (60%): Slowdown inside product-catalog on its database path. Its server p95 rose to about 9s and it shows about 5s of self time per call beyond the DB spans, with no errors. Likely candidates are DB connection-pool wait or a blocking query path. This is unconfirmed; there is no change to explain it.)
+[network-delay-with-ad-failure] escalated LatencyP95High/product-catalog: root causes astronomy-db 50%, product-catalog 30%; 19 model calls, 228,971 tokens, $0.036 (root cause candidate: astronomy-db (50%): Database-side slowness on product-catalog's queries (likely lock waits, slow query plans, or I/O/network stall). Each DB call takes 1-4s with low CPU and no errors. Not confirmed from the DB's own side.)
+[network-delay-with-ad-failure] escalated LatencyP95High/checkout: root causes product-catalog 60%, astronomy-db 25%; 24 model calls, 401,021 tokens, $0.057 (root cause candidate: product-catalog (60%): GetProduct (and ListProducts) in product-catalog spend about 5 s per call outside the astronomy-db query, with no errors or CPU pressure. This suggests a wait such as connection-pool exhaustion, lock contention, or blocking in uninstrumented code, starting at about 17:06Z.)
+[network-delay-with-ad-failure] escalated LatencyP95High/frontend: root causes product-catalog 50%, astronomy-db 35%; 23 model calls, 408,915 tokens, $0.057 (root cause candidate: product-catalog (50%): product-catalog is slow in its own handlers and in its DB access path (GetProduct and ListProducts about 4.7-5.7s self-time, DB client spans about 2s each). Its server-side p95 rose from about 10-18ms to about 9s with no error or log signal, no deploy change and flat CPU. This points to something inside the service, such as connection-pool waits, a blocking call or runtime stall, but that is not yet confirmed.)
+[network-delay-with-ad-failure] escalated LatencyP95High/frontend-proxy: root causes product-catalog 55%, astronomy-db 30%; 21 model calls, 365,606 tokens, $0.050 (root cause candidate: product-catalog (55%): product-catalog GetProduct and ListProducts became slow (server p95 from about 16ms to about 9.5s) starting about 17:07-17:08Z. Most time is in its own span self-time rather than the astronomy-db child spans. Its astronomy-db client p95 also jumped from 2-5ms to about 4.6s. It logs no errors or timeouts, so the cause is a slow path inside the service, or a wait it does not show as a child span. Checkout, recommendation, frontend and frontend-proxy inh)
+[network-delay-with-ad-failure] recorded 108 model steps, 207 tool answers
+[network-delay-with-ad-failure] answer: product-catalog - correct
+[network-delay] plan for LatencyP95High/recommendation: no action -> deny; failed checks: actions: the plan has no actions
+[network-delay] plan for LatencyP95High/product-catalog: no action -> deny; failed checks: actions: the plan has no actions
+[network-delay] plan for LatencyP95High/checkout: no action -> deny; failed checks: actions: the plan has no actions
+[network-delay] plan for LatencyP95High/frontend: no action -> deny; failed checks: actions: the plan has no actions
+[network-delay] plan for LatencyP95High/frontend-proxy: no action -> deny; failed checks: actions: the plan has no actions
+[network-delay-with-ad-failure] recover
+[network-delay-with-ad-failure] all alerts resolved 315.6s after recovery
+[network-delay-with-ad-failure] closed 0 incident(s)
+=== network-delay-with-ad-failure: ok; 5 incident(s)
+=== scenario 4/6: payment-failure-after-checkout-release (hard): Payment fails right after a harmless release of the alerting service
+[payment-failure-after-checkout-release] distractor: a checkout rollout that changes nothing requests depend on
+[payment-failure-after-checkout-release] inject: payment rejects half of all charges
+[payment-failure-after-checkout-release] alert ErrorBudgetBurn[fast] on payment after 145.1s
+[payment-failure-after-checkout-release] alert ErrorBudgetBurn[fast] on checkout after 205.1s
+[payment-failure-after-checkout-release] escalated ErrorBudgetBurn/payment: root causes payment 55%, checkout 15%; 18 model calls, 245,832 tokens, $0.033 (root cause candidate: payment (55%): payment's Charge path rejects gold-loyalty users with 'Invalid token' on about 22% of calls. The most likely trigger is the paymentFailure flag being ON (50% variant), though the mechanism linking that flag to a gold-only token rejection is unverified.)
+[payment-failure-after-checkout-release] escalated ErrorBudgetBurn/checkout: root causes payment 75%, checkout 8%; 16 model calls, 180,992 tokens, $0.027 (root cause candidate: payment (75%): Payment fails about half of Charge requests, most likely because the paymentFailure flag is ON at 50% in flagd. Payment logs the error at warn level, which hides it from error-level searches. Flag switch-on time and the link from this flag to the message are not yet verified.)
+[payment-failure-after-checkout-release] recorded 34 model steps, 58 tool answers
+[payment-failure-after-checkout-release] answer: payment - correct
+[payment-failure] plan for ErrorBudgetBurn/payment: no action -> deny; failed checks: actions: the plan has no actions
+[payment-failure] plan for ErrorBudgetBurn/checkout: no action -> deny; failed checks: actions: the plan has no actions
+[payment-failure-after-checkout-release] recover
+[payment-failure-after-checkout-release] all alerts resolved 297.0s after recovery
+[payment-failure-after-checkout-release] closed 0 incident(s)
+=== payment-failure-after-checkout-release: ok; 2 incident(s)
+=== scenario 5/6: pod-failure (hard): Every cart pod stops serving
+[pod-failure] inject: every cart pod stops serving (container replaced by a pause image)
+[pod-failure] alert ErrorBudgetBurn[fast] on checkout after 127.3s
+[pod-failure] awaiting_approval ErrorBudgetBurn/checkout: root causes cart 70%; 26 model calls, 392,260 tokens, $0.061
+[pod-failure] awaiting_approval ErrorBudgetBurn/frontend: root causes cart 80%, cart 40%; 26 model calls, 483,811 tokens, $0.069
+[pod-failure] awaiting_approval ErrorBudgetBurn/frontend-proxy: root causes cart 75%, checkout 25%; 22 model calls, 340,662 tokens, $0.054
+[pod-failure] recorded 74 model steps, 138 tool answers
+[pod-failure] answer: cart - correct
+[pod-failure] plan for ErrorBudgetBurn/checkout: restart_deployment cart -> require_approval (R2)
+[pod-failure] plan for ErrorBudgetBurn/frontend: restart_deployment cart -> require_approval (R2)
+[pod-failure] plan for ErrorBudgetBurn/frontend-proxy: restart_deployment cart -> require_approval (R2)
+[pod-failure] recover
+[pod-failure] all alerts resolved 400.7s after recovery
+[pod-failure] closed 3 incident(s)
+=== pod-failure: ok; 3 incident(s)
+=== scenario 6/6: recommendation-bad-release (medium): A recommendation release points its catalog client at a dead port
+[recommendation-bad-release] inject: a recommendation rollout points its product-catalog client at a dead port
+[recommendation-bad-release] no alert within 300s
+[recommendation-bad-release] recover
+[recommendation-bad-release] all alerts resolved 161.0s after recovery
+[recommendation-bad-release] closed 2 incident(s)
+=== recommendation-bad-release: lab check FAILED; 0 incident(s)
+[eval] 6 observation(s) in lab-out/eval/results.json

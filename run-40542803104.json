@@ -1,0 +1,1167 @@
+{
+ "commit": "6a64e97602bc384355d51f9c2a510c53712cd5df",
+ "kind": "live",
+ "observations": [
+  {
+   "alerts": [],
+   "error": null,
+   "first_alert_s": null,
+   "incidents": [],
+   "lab_ok": false,
+   "run": "40542803104",
+   "scenario": "ad-failure",
+   "variant": "default"
+  },
+  {
+   "alerts": [],
+   "error": null,
+   "first_alert_s": null,
+   "incidents": [],
+   "lab_ok": false,
+   "run": "40542803104",
+   "scenario": "ad-high-cpu",
+   "variant": "default"
+  },
+  {
+   "alerts": [
+    "ErrorBudgetBurn[fast]/checkout"
+   ],
+   "error": null,
+   "first_alert_s": 133.3,
+   "incidents": [
+    {
+     "actions": [
+      {
+       "action": "rollout_undo",
+       "deployment": "checkout",
+       "risk": "R3",
+       "verdict": "require_approval"
+      }
+     ],
+     "answers": 5,
+     "calls": 19,
+     "confidences": [
+      0.9
+     ],
+     "cost_usd": 0.041957,
+     "dropped": 0,
+     "executions": [
+      {
+       "action": "rollout_undo",
+       "deployment": "checkout",
+       "status": "succeeded"
+      }
+     ],
+     "first_pass": 5,
+     "incident_id": "e599efa5-74d7-4a09-b3f9-97dfffed309d",
+     "investigation_s": 143.0,
+     "kept": 30,
+     "opened_s": 133.3,
+     "outcome": "diagnosed",
+     "priority": 1,
+     "reason": "root cause candidate: checkout (90%): Revision 2 config release set PAYMENT_ADDR to payment:9999, but payment serves on 8080. Every PaymentService/Charge call times out on dial, so about 43% of PlaceOrder requests fail. Fix: revert PAYMENT_ADDR to payment:8080 or roll back to revision 1.",
+     "root_causes": [
+      "checkout"
+     ],
+     "service": "checkout",
+     "tokens": 263989
+    }
+   ],
+   "lab_ok": true,
+   "run": "40542803104",
+   "scenario": "bad-release",
+   "variant": "default"
+  },
+  {
+   "alerts": [],
+   "error": null,
+   "first_alert_s": null,
+   "incidents": [],
+   "lab_ok": false,
+   "run": "40542803104",
+   "scenario": "cart-failure",
+   "variant": "default"
+  },
+  {
+   "alerts": [],
+   "error": null,
+   "first_alert_s": null,
+   "incidents": [],
+   "lab_ok": false,
+   "run": "40542803104",
+   "scenario": "cart-readiness-failure",
+   "variant": "default"
+  },
+  {
+   "alerts": [],
+   "error": null,
+   "first_alert_s": null,
+   "incidents": [],
+   "lab_ok": false,
+   "run": "40542803104",
+   "scenario": "cpu-stress",
+   "variant": "default"
+  },
+  {
+   "alerts": [],
+   "error": null,
+   "first_alert_s": null,
+   "incidents": [],
+   "lab_ok": false,
+   "run": "40542803104",
+   "scenario": "email-memory-leak",
+   "variant": "default"
+  },
+  {
+   "alerts": [
+    "ErrorBudgetBurn[slow]/checkout"
+   ],
+   "error": null,
+   "first_alert_s": 189.9,
+   "incidents": [
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 23,
+     "confidences": [
+      0.45,
+      0.3
+     ],
+     "cost_usd": 0.047445,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 4,
+     "incident_id": "796474b4-7684-4fc0-8fcc-03a28143e7cc",
+     "investigation_s": 130.6,
+     "kept": 34,
+     "opened_s": 189.9,
+     "outcome": "diagnosed",
+     "priority": 2,
+     "reason": "root cause candidate: cart (45%): Cart cannot reliably reach its Redis backend (valkey-cart) since about 16:55Z. Its connection attempts fail, so EmptyCart requests stall for minutes and fail, which checkout sees as a hung EmptyCart call. The cause is either cart's connection path or config, or valkey-cart's availability, and the evidence cannot yet separate them.",
+     "root_causes": [
+      "cart",
+      "valkey-cart"
+     ],
+     "service": "checkout",
+     "tokens": 295668
+    }
+   ],
+   "lab_ok": false,
+   "run": "40542803104",
+   "scenario": "frontend-bad-release",
+   "variant": "default"
+  },
+  {
+   "alerts": [],
+   "error": null,
+   "first_alert_s": null,
+   "incidents": [],
+   "lab_ok": false,
+   "run": "40542803104",
+   "scenario": "intl-shipping-slowdown",
+   "variant": "default"
+  },
+  {
+   "alerts": [
+    "LatencyP95High/recommendation",
+    "LatencyP95High/product-catalog",
+    "LatencyP95High/frontend-proxy",
+    "LatencyP95High/checkout",
+    "LatencyP95High/frontend"
+   ],
+   "error": null,
+   "first_alert_s": 159.3,
+   "incidents": [
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 24,
+     "confidences": [
+      0.55,
+      0.3
+     ],
+     "cost_usd": 0.061432,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 3,
+     "incident_id": "e4d91e67-06bb-45cc-b33d-764bd9b38680",
+     "investigation_s": 238.5,
+     "kept": 33,
+     "opened_s": 159.3,
+     "outcome": "diagnosed",
+     "priority": 2,
+     "reason": "root cause candidate: product-catalog (55%): Requests are slow inside product-catalog itself (GetProduct and ListProducts self-time about 5-5.7s, beyond about 2s of DB child spans), so its server p95 rose to about 9s. Likely a wait such as a DB connection pool, lock, or internal queue; not yet confirmed.",
+     "root_causes": [
+      "product-catalog",
+      "astronomy-db"
+     ],
+     "service": "recommendation",
+     "tokens": 483128
+    },
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 22,
+     "confidences": [
+      0.5,
+      0.3
+     ],
+     "cost_usd": 0.04789,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 5,
+     "incident_id": "b2abcc82-5c15-427c-873b-67769bc430ad",
+     "investigation_s": 170.2,
+     "kept": 35,
+     "opened_s": 189.3,
+     "outcome": "diagnosed",
+     "priority": 2,
+     "reason": "root cause candidate: product-catalog (50%): Systemic slowdown inside product-catalog itself (for example CPU throttling, connection-pool or lock waits, or an internal stall). Its own GetProduct/ListProducts time is ~4.5-5s in slow traces, and nearly all requests slowed at once with no error signal, no rollout, and no flag change. Not confirmed; pod CPU, throttling, and pool metrics are needed.",
+     "root_causes": [
+      "product-catalog",
+      "astronomy-db"
+     ],
+     "service": "product-catalog",
+     "tokens": 339290
+    },
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 23,
+     "confidences": [
+      0.7,
+      0.3
+     ],
+     "cost_usd": 0.061884,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 4,
+     "incident_id": "ec7ed7b0-bc5e-46f2-9307-9dbe9cb309a4",
+     "investigation_s": 237.8,
+     "kept": 36,
+     "opened_s": 204.3,
+     "outcome": "diagnosed",
+     "priority": 2,
+     "reason": "root cause candidate: product-catalog (70%): product-catalog GetProduct/ListProducts became slow from about 17:12Z. Each request makes several sequential astronomy-db calls of about 2s each, and product-catalog also has large unexplained self-time (about 5.5s per GetProduct). The cause is inside product-catalog's request path (DB call pattern, connection handling, or waiting on DB resources) rather than in an upstream service.",
+     "root_causes": [
+      "product-catalog",
+      "astronomy-db"
+     ],
+     "service": "frontend-proxy",
+     "tokens": 386776
+    },
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 20,
+     "confidences": [
+      0.7,
+      0.45
+     ],
+     "cost_usd": 0.042782,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 5,
+     "incident_id": "1d7e9ef6-c2e7-4655-91f8-3bee505b677d",
+     "investigation_s": 215.2,
+     "kept": 33,
+     "opened_s": 204.3,
+     "outcome": "diagnosed",
+     "priority": 2,
+     "reason": "root cause candidate: product-catalog (70%): GetProduct is slow inside product-catalog itself (about 5.5 s self time per slow trace, server mean about 2.3-3.4 s), with its astronomy-db queries taking about 0.9-2 s each. The slowdown started at about 17:14 with no rollout, flag, or infra change in the window. Checkout and recommendation inherit it.",
+     "root_causes": [
+      "product-catalog",
+      "astronomy-db"
+     ],
+     "service": "checkout",
+     "tokens": 276282
+    },
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 17,
+     "confidences": [
+      0.55
+     ],
+     "cost_usd": 0.035146,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 5,
+     "incident_id": "53083e3d-8274-4adc-9765-358e15957d91",
+     "investigation_s": 192.4,
+     "kept": 35,
+     "opened_s": 204.3,
+     "outcome": "diagnosed",
+     "priority": 2,
+     "reason": "root cause candidate: product-catalog (55%): product-catalog's PostgreSQL calls (astronomy-db) became slow from about 17:13Z: its astronomy-db client span p95 rose from about 2ms to about 4.7s, and its GetProduct self time is about 5.5s per trace. The trigger is unknown: no rollout or flag change in this service, and the cause is not seen on the database side.",
+     "root_causes": [
+      "product-catalog"
+     ],
+     "service": "frontend",
+     "tokens": 230348
+    }
+   ],
+   "lab_ok": true,
+   "run": "40542803104",
+   "scenario": "network-delay",
+   "variant": "default"
+  },
+  {
+   "alerts": [
+    "LatencyP95High/recommendation",
+    "LatencyP95High/product-catalog",
+    "LatencyP95High/checkout",
+    "LatencyP95High/frontend",
+    "LatencyP95High/frontend-proxy"
+   ],
+   "error": null,
+   "first_alert_s": 184.7,
+   "incidents": [
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 21,
+     "confidences": [
+      0.6,
+      0.3
+     ],
+     "cost_usd": 0.039725,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 4,
+     "incident_id": "d327fcbb-a35f-4ad9-a4f1-b8ed2df9d1c8",
+     "investigation_s": 115.0,
+     "kept": 34,
+     "opened_s": 184.7,
+     "outcome": "diagnosed",
+     "priority": 2,
+     "reason": "root cause candidate: product-catalog (60%): Slowdown inside product-catalog on its database path. Its server p95 rose to about 9s and it shows about 5s of self time per call beyond the DB spans, with no errors. Likely candidates are DB connection-pool wait or a blocking query path. This is unconfirmed; there is no change to explain it.",
+     "root_causes": [
+      "product-catalog",
+      "astronomy-db"
+     ],
+     "service": "recommendation",
+     "tokens": 260391
+    },
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 19,
+     "confidences": [
+      0.5,
+      0.3
+     ],
+     "cost_usd": 0.035585,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 4,
+     "incident_id": "d749dc0b-8eba-4b02-bbdf-5666cb46432c",
+     "investigation_s": 166.6,
+     "kept": 32,
+     "opened_s": 199.7,
+     "outcome": "diagnosed",
+     "priority": 2,
+     "reason": "root cause candidate: astronomy-db (50%): Database-side slowness on product-catalog's queries (likely lock waits, slow query plans, or I/O/network stall). Each DB call takes 1-4s with low CPU and no errors. Not confirmed from the DB's own side.",
+     "root_causes": [
+      "astronomy-db",
+      "product-catalog"
+     ],
+     "service": "product-catalog",
+     "tokens": 228971
+    },
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 24,
+     "confidences": [
+      0.6,
+      0.25
+     ],
+     "cost_usd": 0.057291,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 3,
+     "incident_id": "206a8a6c-096b-4c9a-8ff3-7f0f52aaa8ca",
+     "investigation_s": 228.9,
+     "kept": 32,
+     "opened_s": 214.7,
+     "outcome": "diagnosed",
+     "priority": 2,
+     "reason": "root cause candidate: product-catalog (60%): GetProduct (and ListProducts) in product-catalog spend about 5 s per call outside the astronomy-db query, with no errors or CPU pressure. This suggests a wait such as connection-pool exhaustion, lock contention, or blocking in uninstrumented code, starting at about 17:06Z.",
+     "root_causes": [
+      "product-catalog",
+      "astronomy-db"
+     ],
+     "service": "checkout",
+     "tokens": 401021
+    },
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 23,
+     "confidences": [
+      0.5,
+      0.35
+     ],
+     "cost_usd": 0.057082,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 3,
+     "incident_id": "df04a542-139b-4eed-a7ca-5d34020c6563",
+     "investigation_s": 275.8,
+     "kept": 33,
+     "opened_s": 214.7,
+     "outcome": "diagnosed",
+     "priority": 2,
+     "reason": "root cause candidate: product-catalog (50%): product-catalog is slow in its own handlers and in its DB access path (GetProduct and ListProducts about 4.7-5.7s self-time, DB client spans about 2s each). Its server-side p95 rose from about 10-18ms to about 9s with no error or log signal, no deploy change and flat CPU. This points to something inside the service, such as connection-pool waits, a blocking call or runtime stall, but that is not yet confirmed.",
+     "root_causes": [
+      "product-catalog",
+      "astronomy-db"
+     ],
+     "service": "frontend",
+     "tokens": 408915
+    },
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 21,
+     "confidences": [
+      0.55,
+      0.3
+     ],
+     "cost_usd": 0.049804,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 5,
+     "incident_id": "ff363b9e-6975-46a4-bbae-ab3f85519438",
+     "investigation_s": 266.4,
+     "kept": 33,
+     "opened_s": 214.7,
+     "outcome": "diagnosed",
+     "priority": 2,
+     "reason": "root cause candidate: product-catalog (55%): product-catalog GetProduct and ListProducts became slow (server p95 from about 16ms to about 9.5s) starting about 17:07-17:08Z. Most time is in its own span self-time rather than the astronomy-db child spans. Its astronomy-db client p95 also jumped from 2-5ms to about 4.6s. It logs no errors or timeouts, so the cause is a slow path inside the service, or a wait it does not show as a child span. Checkout, recommendation, frontend and frontend-proxy inh",
+     "root_causes": [
+      "product-catalog",
+      "astronomy-db"
+     ],
+     "service": "frontend-proxy",
+     "tokens": 365606
+    }
+   ],
+   "lab_ok": true,
+   "run": "40542803104",
+   "scenario": "network-delay-with-ad-failure",
+   "variant": "default"
+  },
+  {
+   "alerts": [
+    "ErrorBudgetBurn[fast]/checkout",
+    "ErrorBudgetBurn[fast]/payment"
+   ],
+   "error": null,
+   "first_alert_s": 172.3,
+   "incidents": [
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 19,
+     "confidences": [
+      0.75,
+      0.3
+     ],
+     "cost_usd": 0.042958,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 4,
+     "incident_id": "19548852-f4fb-486e-af1a-86aa50e0d4fa",
+     "investigation_s": 176.0,
+     "kept": 34,
+     "opened_s": 172.3,
+     "outcome": "diagnosed",
+     "priority": 1,
+     "reason": "root cause candidate: payment (75%): Charge rejects gold-loyalty requests with 'Invalid token' at roughly 30-50% of calls, starting about 17:15Z. Most likely the paymentFailure flag at 50%, which is the only enabled flag; not yet confirmed by flag turn-on time or by spans tying the error to the flag.",
+     "root_causes": [
+      "payment",
+      "cart"
+     ],
+     "service": "checkout",
+     "tokens": 299223
+    },
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 20,
+     "confidences": [
+      0.7,
+      0.35
+     ],
+     "cost_usd": 0.043113,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 4,
+     "incident_id": "3dd89f71-e4cf-404e-ac02-2b588536f4ef",
+     "investigation_s": 121.4,
+     "kept": 34,
+     "opened_s": 172.3,
+     "outcome": "diagnosed",
+     "priority": 1,
+     "reason": "root cause candidate: payment (70%): Charge handler rejects a large share of requests with 'Invalid token' for gold-tier users (fast errors, no dependency errors, latency flat). Most likely induced by the paymentFailure flagd flag at 50% (fault injection), not by a rollout, since payment has a single revision from 16:42Z.",
+     "root_causes": [
+      "payment",
+      "cart"
+     ],
+     "service": "payment",
+     "tokens": 289855
+    }
+   ],
+   "lab_ok": true,
+   "run": "40542803104",
+   "scenario": "payment-failure",
+   "variant": "default"
+  },
+  {
+   "alerts": [],
+   "error": null,
+   "first_alert_s": null,
+   "incidents": [],
+   "lab_ok": false,
+   "run": "40542803104",
+   "scenario": "payment-failure-10",
+   "variant": "default"
+  },
+  {
+   "alerts": [
+    "ErrorBudgetBurn[fast]/checkout",
+    "ErrorBudgetBurn[fast]/payment"
+   ],
+   "error": null,
+   "first_alert_s": 129.8,
+   "incidents": [
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 19,
+     "confidences": [
+      0.75,
+      0.35
+     ],
+     "cost_usd": 0.035957,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 5,
+     "incident_id": "3db21fb4-73d2-444c-bd5c-ccdc305bc635",
+     "investigation_s": 190.7,
+     "kept": 33,
+     "opened_s": 129.8,
+     "outcome": "diagnosed",
+     "priority": 1,
+     "reason": "root cause candidate: payment (75%): Charge path is rejecting requests with 'Invalid token' errors, most likely because the paymentFailure flag is ENABLED at 100%. Observed failure rate is partial (~60% of charges, gold-tier in the messages), which does not fully match a 100% variant, so the exact trigger inside payment is unconfirmed.",
+     "root_causes": [
+      "payment",
+      "payment"
+     ],
+     "service": "checkout",
+     "tokens": 248944
+    },
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 19,
+     "confidences": [
+      0.85,
+      0.1
+     ],
+     "cost_usd": 0.037085,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 3,
+     "incident_id": "eb474145-da32-4bda-bf5c-85d0c1cd56fc",
+     "investigation_s": 181.9,
+     "kept": 35,
+     "opened_s": 129.9,
+     "outcome": "diagnosed",
+     "priority": 1,
+     "reason": "root cause candidate: payment (85%): The flagd flag paymentFailure is enabled (variant 100%), which makes payment's PaymentService/Charge fail with 'Invalid token' for gold-tier users. This is a fault injected through configuration, not a code or deployment change. Disabling the flag should stop the errors.",
+     "root_causes": [
+      "payment",
+      "payment"
+     ],
+     "service": "payment",
+     "tokens": 231688
+    }
+   ],
+   "lab_ok": true,
+   "run": "40542803104",
+   "scenario": "payment-failure-100",
+   "variant": "default"
+  },
+  {
+   "alerts": [
+    "ErrorBudgetBurn[fast]/payment",
+    "ErrorBudgetBurn[fast]/checkout"
+   ],
+   "error": null,
+   "first_alert_s": 145.1,
+   "incidents": [
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 18,
+     "confidences": [
+      0.55,
+      0.15
+     ],
+     "cost_usd": 0.033132,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 5,
+     "incident_id": "41d84374-e8b3-43a9-9be5-0414383f2065",
+     "investigation_s": 112.4,
+     "kept": 34,
+     "opened_s": 145.1,
+     "outcome": "diagnosed",
+     "priority": 1,
+     "reason": "root cause candidate: payment (55%): payment's Charge path rejects gold-loyalty users with 'Invalid token' on about 22% of calls. The most likely trigger is the paymentFailure flag being ON (50% variant), though the mechanism linking that flag to a gold-only token rejection is unverified.",
+     "root_causes": [
+      "payment",
+      "checkout"
+     ],
+     "service": "payment",
+     "tokens": 245832
+    },
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 16,
+     "confidences": [
+      0.75,
+      0.08
+     ],
+     "cost_usd": 0.026872,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 4,
+     "incident_id": "cffbe5f4-5a2c-496f-bc3a-9107dad86147",
+     "investigation_s": 101.5,
+     "kept": 31,
+     "opened_s": 205.1,
+     "outcome": "diagnosed",
+     "priority": 1,
+     "reason": "root cause candidate: payment (75%): Payment fails about half of Charge requests, most likely because the paymentFailure flag is ON at 50% in flagd. Payment logs the error at warn level, which hides it from error-level searches. Flag switch-on time and the link from this flag to the message are not yet verified.",
+     "root_causes": [
+      "payment",
+      "checkout"
+     ],
+     "service": "checkout",
+     "tokens": 180992
+    }
+   ],
+   "lab_ok": true,
+   "run": "40542803104",
+   "scenario": "payment-failure-after-checkout-release",
+   "variant": "default"
+  },
+  {
+   "alerts": [
+    "ErrorBudgetBurn[fast]/payment",
+    "ErrorBudgetBurn[fast]/checkout"
+   ],
+   "error": null,
+   "first_alert_s": 161.1,
+   "incidents": [
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 20,
+     "confidences": [
+      0.7,
+      0.15
+     ],
+     "cost_usd": 0.040248,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 3,
+     "incident_id": "c0e66e84-c4f5-4439-8f3e-30372c4a94bb",
+     "investigation_s": 234.1,
+     "kept": 35,
+     "opened_s": 161.1,
+     "outcome": "diagnosed",
+     "priority": 1,
+     "reason": "root cause candidate: payment (70%): The paymentFailure fault-injection flag (enabled, 50% variant) is causing payment's Charge handler to reject about half of gold-loyalty charges with 'Invalid token'. This is the only flag on, and no payment rollout preceded the onset. Flag change time is not yet confirmed.",
+     "root_causes": [
+      "payment",
+      "payment"
+     ],
+     "service": "payment",
+     "tokens": 311562
+    },
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 16,
+     "confidences": [
+      0.7,
+      0.2
+     ],
+     "cost_usd": 0.032954,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 4,
+     "incident_id": "732ec12c-544b-4f25-9848-2224d4c0815b",
+     "investigation_s": 164.9,
+     "kept": 35,
+     "opened_s": 161.1,
+     "outcome": "diagnosed",
+     "priority": 1,
+     "reason": "root cause candidate: payment (70%): Payment's Charge handler rejects roughly half of requests with 'Invalid token' from 17:28:31Z, failing fast. Likely trigger is the paymentFailure flagd flag at 50%, but the flag's toggle time and the mechanism are unconfirmed.",
+     "root_causes": [
+      "payment",
+      "checkout"
+     ],
+     "service": "checkout",
+     "tokens": 228473
+    },
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 21,
+     "confidences": [
+      0.75,
+      0.3
+     ],
+     "cost_usd": 0.050405,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 4,
+     "incident_id": "97b32c72-4bb7-472b-81be-e712e6f5a9a2",
+     "investigation_s": 234.7,
+     "kept": 33,
+     "opened_s": 401.1,
+     "outcome": "diagnosed",
+     "priority": 1,
+     "reason": "root cause candidate: payment (75%): Payment fails about half of its Charge requests with 'Invalid token' for gold-tier users. This matches the paymentFailure flag being ON at variant 50% (runtime flag change, no rollout). The flag is the likely trigger, but its enable time is not confirmed.",
+     "root_causes": [
+      "payment",
+      "checkout"
+     ],
+     "service": "checkout",
+     "tokens": 354969
+    },
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 17,
+     "confidences": [
+      0.8,
+      0.2
+     ],
+     "cost_usd": 0.034694,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 5,
+     "incident_id": "d114c985-9add-4c35-a932-2db4684cd6ee",
+     "investigation_s": 145.2,
+     "kept": 34,
+     "opened_s": 491.1,
+     "outcome": "diagnosed",
+     "priority": 1,
+     "reason": "root cause candidate: payment (80%): The paymentFailure flag (ENABLED, 50% variant) makes payment's Charge path throw 'Payment request failed. Invalid token' (charge.js:48), with failures concentrated on gold-tier user context. This is a flag-driven fault, not a rollout, restart, or dependency failure.",
+     "root_causes": [
+      "payment",
+      "checkout"
+     ],
+     "service": "payment",
+     "tokens": 260006
+    }
+   ],
+   "lab_ok": false,
+   "run": "40542803104",
+   "scenario": "payment-failure-after-currency-release",
+   "variant": "default"
+  },
+  {
+   "alerts": [],
+   "error": null,
+   "first_alert_s": null,
+   "incidents": [],
+   "lab_ok": false,
+   "run": "40542803104",
+   "scenario": "payment-unreachable",
+   "variant": "default"
+  },
+  {
+   "alerts": [
+    "ErrorBudgetBurn[fast]/checkout"
+   ],
+   "error": null,
+   "first_alert_s": 127.3,
+   "incidents": [
+    {
+     "actions": [
+      {
+       "action": "restart_deployment",
+       "deployment": "cart",
+       "risk": "R2",
+       "verdict": "require_approval"
+      }
+     ],
+     "answers": 5,
+     "calls": 26,
+     "confidences": [
+      0.7
+     ],
+     "cost_usd": 0.061155,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 2,
+     "incident_id": "e12ec872-6bc1-466a-be5d-b2edaa55bc3e",
+     "investigation_s": 195.9,
+     "kept": 32,
+     "opened_s": 127.3,
+     "outcome": "diagnosed",
+     "priority": 1,
+     "reason": "root cause candidate: cart (70%): cart stopped serving at about 17:38:11 (graceful 'Application is shutting down' with no restart logged), so nothing listens on 8080 and checkout's GetCart and PlaceOrder calls fail with connection refused. The trigger (scale-to-zero, node drain/eviction, or a silent crash) is unconfirmed.",
+     "root_causes": [
+      "cart"
+     ],
+     "service": "checkout",
+     "tokens": 392260
+    },
+    {
+     "actions": [
+      {
+       "action": "restart_deployment",
+       "deployment": "cart",
+       "risk": "R2",
+       "verdict": "require_approval"
+      }
+     ],
+     "answers": 5,
+     "calls": 26,
+     "confidences": [
+      0.8,
+      0.4
+     ],
+     "cost_usd": 0.069341,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 5,
+     "incident_id": "429bba61-da0c-444d-8dfa-e0ee7d0f86bf",
+     "investigation_s": 272.6,
+     "kept": 34,
+     "opened_s": 232.3,
+     "outcome": "diagnosed",
+     "priority": 1,
+     "reason": "root cause candidate: cart (80%): The cart container went down at 17:38:11Z and its replacement is not serving on 10.96.179.217:8080. Callers get ECONNREFUSED or UNAVAILABLE, and cart emits no server spans or logs afterward, which fits a process that never came back up.",
+     "root_causes": [
+      "cart",
+      "cart"
+     ],
+     "service": "frontend",
+     "tokens": 483811
+    },
+    {
+     "actions": [
+      {
+       "action": "restart_deployment",
+       "deployment": "cart",
+       "risk": "R2",
+       "verdict": "require_approval"
+      }
+     ],
+     "answers": 5,
+     "calls": 22,
+     "confidences": [
+      0.75,
+      0.25
+     ],
+     "cost_usd": 0.053613,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 3,
+     "incident_id": "7494add0-ecff-49d1-aad0-e5d7fe8bfbd6",
+     "investigation_s": 305.6,
+     "kept": 32,
+     "opened_s": 232.3,
+     "outcome": "diagnosed",
+     "priority": 1,
+     "reason": "root cause candidate: cart (75%): cart stopped serving at about 17:38:11Z (shutdown logged, no restart seen). Callers get connection refused on cart:8080, so GetCart and AddItem fail across frontend and checkout. The reason for the shutdown is not yet known.",
+     "root_causes": [
+      "cart",
+      "checkout"
+     ],
+     "service": "frontend-proxy",
+     "tokens": 340662
+    }
+   ],
+   "lab_ok": true,
+   "run": "40542803104",
+   "scenario": "pod-failure",
+   "variant": "default"
+  },
+  {
+   "alerts": [],
+   "error": null,
+   "first_alert_s": null,
+   "incidents": [],
+   "lab_ok": false,
+   "run": "40542803104",
+   "scenario": "product-catalog-failure",
+   "variant": "default"
+  },
+  {
+   "alerts": [],
+   "error": null,
+   "first_alert_s": null,
+   "incidents": [],
+   "lab_ok": false,
+   "run": "40542803104",
+   "scenario": "product-catalog-failure-after-frontend-release",
+   "variant": "default"
+  },
+  {
+   "alerts": [],
+   "error": null,
+   "first_alert_s": null,
+   "incidents": [],
+   "lab_ok": false,
+   "run": "40542803104",
+   "scenario": "product-catalog-lock-contention",
+   "variant": "default"
+  },
+  {
+   "alerts": [],
+   "error": null,
+   "first_alert_s": null,
+   "incidents": [],
+   "lab_ok": false,
+   "run": "40542803104",
+   "scenario": "recommendation-bad-release",
+   "variant": "default"
+  },
+  {
+   "alerts": [],
+   "error": null,
+   "first_alert_s": null,
+   "incidents": [],
+   "lab_ok": false,
+   "run": "40542803104",
+   "scenario": "recommendation-cache-failure",
+   "variant": "default"
+  },
+  {
+   "alerts": [
+    "ErrorBudgetBurn[fast]/checkout",
+    "ErrorBudgetBurn[fast]/shipping",
+    "LatencyP95High/shipping",
+    "LatencyP95High/checkout"
+   ],
+   "error": null,
+   "first_alert_s": 126.2,
+   "incidents": [
+    {
+     "actions": [
+      {
+       "action": "rollout_undo",
+       "deployment": "shipping",
+       "risk": "R3",
+       "verdict": "require_approval"
+      }
+     ],
+     "answers": 5,
+     "calls": 27,
+     "confidences": [
+      0.6,
+      0.45
+     ],
+     "cost_usd": 0.075379,
+     "dropped": 0,
+     "executions": [
+      {
+       "action": "rollout_undo",
+       "deployment": "shipping",
+       "status": "succeeded"
+      }
+     ],
+     "first_pass": 2,
+     "incident_id": "e32c494e-f87f-4197-8010-776d766978cc",
+     "investigation_s": 178.5,
+     "kept": 34,
+     "opened_s": 126.2,
+     "outcome": "diagnosed",
+     "priority": 1,
+     "reason": "root cause candidate: shipping (60%): Config release (rev 2, 17:48:26Z) pointed QUOTE_ADDR at quote:9999 while quote listens on 8080. Shipping's /get-quote calls time out and return 500, which fails checkout PlaceOrder. Quote's traffic stops at 17:48:27.",
+     "root_causes": [
+      "shipping",
+      "cart"
+     ],
+     "service": "checkout",
+     "tokens": 538718
+    },
+    {
+     "actions": [
+      {
+       "action": "rollout_undo",
+       "deployment": "shipping",
+       "risk": "R3",
+       "verdict": "require_approval"
+      }
+     ],
+     "answers": 5,
+     "calls": 19,
+     "confidences": [
+      0.6,
+      0.3
+     ],
+     "cost_usd": 0.041817,
+     "dropped": 0,
+     "executions": [
+      {
+       "action": "rollout_undo",
+       "deployment": "shipping",
+       "status": "failed"
+      }
+     ],
+     "first_pass": 5,
+     "incident_id": "4c8ddd81-753c-4b6b-9d48-6fd8c94707de",
+     "investigation_s": 153.0,
+     "kept": 37,
+     "opened_s": 156.2,
+     "outcome": "diagnosed",
+     "priority": 1,
+     "reason": "root cause candidate: shipping (60%): Revision 2 changed QUOTE_ADDR to http://quote:9999 (from :8080). Shipping's calls to quote then fail or time out, so /get-quote returns 500. Not yet confirmed that quote is not listening on 9999 or that the port is filtered.",
+     "root_causes": [
+      "shipping",
+      "quote"
+     ],
+     "service": "shipping",
+     "tokens": 283770
+    },
+    {
+     "actions": [
+      {
+       "action": "rollout_undo",
+       "deployment": "shipping",
+       "risk": "R3",
+       "verdict": "require_approval"
+      }
+     ],
+     "answers": 5,
+     "calls": 21,
+     "confidences": [
+      0.75,
+      0.2,
+      0.2
+     ],
+     "cost_usd": 0.044183,
+     "dropped": 0,
+     "executions": [
+      {
+       "action": "rollout_undo",
+       "deployment": "shipping",
+       "status": "failed"
+      }
+     ],
+     "first_pass": 4,
+     "incident_id": "c77c9f49-4122-49d6-b46d-aa9dd197c38f",
+     "investigation_s": 262.0,
+     "kept": 34,
+     "opened_s": 171.2,
+     "outcome": "diagnosed",
+     "priority": 2,
+     "reason": "root cause candidate: shipping (75%): Revision 2 (17:48:26Z) redirected QUOTE_ADDR to http://quote:9999 while quote serves on 8080. Shipping's POST /get-quote calls time out at about 5s and return 500, driving p95 to about 9.5s and the error ratio to about 0.47. Rolling back to revision 1 should restore service if this is correct.",
+     "root_causes": [
+      "shipping",
+      "quote",
+      "checkout"
+     ],
+     "service": "shipping",
+     "tokens": 306017
+    },
+    {
+     "actions": [
+      {
+       "action": "rollout_undo",
+       "deployment": "shipping",
+       "risk": "R3",
+       "verdict": "require_approval"
+      }
+     ],
+     "answers": 5,
+     "calls": 24,
+     "confidences": [
+      0.8,
+      0.25
+     ],
+     "cost_usd": 0.064714,
+     "dropped": 0,
+     "executions": [
+      {
+       "action": "rollout_undo",
+       "deployment": "shipping",
+       "status": "failed"
+      }
+     ],
+     "first_pass": 4,
+     "incident_id": "b0f1e4f0-1f4d-464d-9703-f3ce757a6230",
+     "investigation_s": 271.5,
+     "kept": 35,
+     "opened_s": 381.2,
+     "outcome": "diagnosed",
+     "priority": 2,
+     "reason": "root cause candidate: shipping (80%): Revision 2 (rolled out 17:48:26Z, 'quote client moved to port 9999') changed QUOTE_ADDR from quote:8080 to quote:9999. Shipping's quote calls then time out at about 5s and return 500, which fails checkout and pushes latency up to frontend-proxy.",
+     "root_causes": [
+      "shipping",
+      "quote"
+     ],
+     "service": "frontend-proxy",
+     "tokens": 433442
+    },
+    {
+     "actions": [
+      {
+       "action": "rollout_undo",
+       "deployment": "shipping",
+       "risk": "R3",
+       "verdict": "require_approval"
+      }
+     ],
+     "answers": 5,
+     "calls": 21,
+     "confidences": [
+      0.7,
+      0.2
+     ],
+     "cost_usd": 0.058251,
+     "dropped": 0,
+     "executions": [
+      {
+       "action": "rollout_undo",
+       "deployment": "shipping",
+       "status": "failed"
+      }
+     ],
+     "first_pass": 4,
+     "incident_id": "863a6c70-1867-42f8-8337-b6a0e68cb5ae",
+     "investigation_s": 247.3,
+     "kept": 35,
+     "opened_s": 396.2,
+     "outcome": "diagnosed",
+     "priority": 2,
+     "reason": "root cause candidate: shipping (70%): Revision 2 changed QUOTE_ADDR to quote:9999 while quote is unchanged since 16:42. Shipping's outbound quote calls now time out at about 5s and return 500, failing every caller's /get-quote (checkout, then frontend).",
+     "root_causes": [
+      "shipping",
+      "quote"
+     ],
+     "service": "frontend",
+     "tokens": 394556
+    }
+   ],
+   "lab_ok": true,
+   "run": "40542803104",
+   "scenario": "shipping-bad-release",
+   "variant": "default"
+  }
+ ],
+ "run": "40542803104"
+}

@@ -1,0 +1,419 @@
+{
+ "annotations": {
+  "19548852-f4fb-486e-af1a-86aa50e0d4fa": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 26.15% of requests"
+  },
+  "3dd89f71-e4cf-404e-ac02-2b588536f4ef": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "payment is failing 26.15% of requests"
+  },
+  "c1f771a8-23ed-4832-b66d-34e95de66ae2": {
+   "description": "95th percentile of server span duration over 5m is above 1000ms.",
+   "summary": "checkout p95 latency is 1.61kms"
+  }
+ },
+ "expected": {
+  "19548852-f4fb-486e-af1a-86aa50e0d4fa": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_7ec73e5673cf23b0",
+       "ev_6e3ec1f062180e5e"
+      ],
+      "statement": "Checkout's failing traces end at payment PaymentService/Charge, which returns error.type=Error with 'Invalid token' for loyalty_level=gold. The error propagates to checkout PlaceOrder and frontend (HTTP 422)."
+     },
+     {
+      "evidence_ids": [
+       "ev_b5852c7cfaa0b5dc",
+       "ev_6a926846ea56888e"
+      ],
+      "statement": "Payment logged the same warn-level exception 33 times between 17:14:23 and 17:31:54, with no error-level lines."
+     },
+     {
+      "evidence_ids": [
+       "ev_29c5594d2c6d43d1",
+       "ev_a0dad9ffc4d7df98"
+      ],
+      "statement": "Payment's server error ratio rose from 0.0158 at 17:15 to 0.47 at 17:32:44, equal to checkout's ratio at the same time."
+     },
+     {
+      "evidence_ids": [
+       "ev_cf902dacb5d223bc",
+       "ev_52153dd5c31de35f",
+       "ev_e291e78213b0600f"
+      ],
+      "statement": "PaymentService/Charge is the only checkout client span with errors. Checkout's Charge client errors start at 17:15:42, matching payment's server-side errors."
+     },
+     {
+      "evidence_ids": [
+       "ev_d9da80da85d611ea",
+       "ev_abcb54c4a7d6acbd"
+      ],
+      "statement": "The flag paymentFailure is ENABLED at variant 50%, and it is the only one of 18 flags that is on."
+     },
+     {
+      "evidence_ids": [
+       "ev_91126d542f7d14da",
+       "ev_ed160a5694d3e743"
+      ],
+      "statement": "checkout and payment each have a single revision, created 16:42Z, so there was no rollout near the alert."
+     },
+     {
+      "evidence_ids": [
+       "ev_2b676ec4b9e648e9",
+       "ev_622b5e100df1e169"
+      ],
+      "statement": "Payment's Kubernetes events are all Normal, and payment's Charge p95 latency stays at about 2 ms, so payment is failing with errors, not slowing."
+     },
+     {
+      "evidence_ids": [
+       "ev_84e5cf53a5b6f4ca"
+      ],
+      "statement": "Checkout's own error logs in the window are old Kafka timeouts from 17:06, not the current payment failures."
+     },
+     {
+      "evidence_ids": [
+       "ev_44e756c6aa937f4e",
+       "ev_3866ded157bae6a9",
+       "ev_f047c68096aab4a8"
+      ],
+      "statement": "Cart's EmptyCart client errors reached about 0.56 at 17:07, with a cart server p95 spike up to 15 s, before payment errors began."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check the flagd flag's change history for the turn-on time (expected about 17:14Z). Check whether payment's Charge code reads paymentFailure and whether its failure path matches the 'Invalid token' message.",
+      "statement": "The paymentFailure flag, enabled at 50%, is what makes payment's Charge reject gold-loyalty requests."
+     },
+     {
+      "how_to_verify": "Pull cart server logs and spans for EmptyCart from 17:05 to 17:12Z, checking for exceptions, Valkey timeouts, or pod restarts. Check cart's pod restart and creation metrics, which returned no data.",
+      "statement": "The earlier cart EmptyCart spike (17:07-17:10Z) is a separate intermittent fault in cart or its valkey-cart backend."
+     },
+     {
+      "how_to_verify": "Compare checkout's p95 latency against cart EmptyCart p95 over 17:00-17:31Z, and check whether the latency alert clears when cart latency recovers.",
+      "statement": "The LatencyP95High alert on checkout is driven by the cart EmptyCart latency spikes rather than by payment, which is not slow."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_29c5594d2c6d43d1",
+       "ev_cf902dacb5d223bc",
+       "ev_7ec73e5673cf23b0",
+       "ev_d9da80da85d611ea"
+      ],
+      "statement": "Payment's Charge errors are the main driver of checkout's current error budget burn. The failures are partial (about 30-50%), which fits the paymentFailure flag at 50%."
+     },
+     {
+      "evidence_ids": [
+       "ev_84e5cf53a5b6f4ca",
+       "ev_6e3ec1f062180e5e"
+      ],
+      "statement": "Checkout is not the root cause. Its errors propagate from payment, and its own logs show only old Kafka timeouts."
+     },
+     {
+      "evidence_ids": [
+       "ev_91126d542f7d14da",
+       "ev_ed160a5694d3e743",
+       "ev_2b676ec4b9e648e9"
+      ],
+      "statement": "No recent deployment caused the incident. The current failure is a runtime behavior change in payment, most likely from a flag."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Charge rejects gold-loyalty requests with 'Invalid token' at roughly 30-50% of calls, starting about 17:15Z. Most likely the paymentFailure flag at 50%, which is the only enabled flag; not yet confirmed by flag turn-on time or by spans tying the error to the flag.",
+      "confidence": 0.75,
+      "evidence_ids": [
+       "ev_d9da80da85d611ea",
+       "ev_7ec73e5673cf23b0",
+       "ev_b5852c7cfaa0b5dc",
+       "ev_29c5594d2c6d43d1",
+       "ev_cf902dacb5d223bc"
+      ],
+      "service": "payment"
+     },
+     {
+      "cause": "Intermittent EmptyCart failures and latency spikes (p95 up to 15 s) between 17:07 and 17:10Z, which caused checkout PlaceOrder errors before payment failed. Cause unknown; cart's own error ratio stays low and valkey-cart looks healthy.",
+      "confidence": 0.3,
+      "evidence_ids": [
+       "ev_44e756c6aa937f4e",
+       "ev_3866ded157bae6a9",
+       "ev_f047c68096aab4a8",
+       "ev_7798f55aa86b3605",
+       "ev_18f730ec5b31b3b1"
+      ],
+      "service": "cart"
+     }
+    ],
+    "summary": "checkout's ~26% error rate (0.47 at 17:32) comes from payment's PaymentService/Charge, which rejects requests with 'Invalid token' for loyalty_level=gold. Payment's own server spans show the same error ratio, and payment's latency and pod health are normal. No checkout or payment rollout occurred. The only enabled flag, paymentFailure at 50%, is the most likely deliberate cause, but the flag's turn-on time and its link to the error are not yet confirmed. An earlier, separate cart EmptyCart error and latency spike (17:07-17:10) preceded the payment errors and is not explained."
+   },
+   "findings": 20,
+   "plan": {
+    "actions": [],
+    "alternatives": [
+     {
+      "action": "rollout_undo",
+      "why_not": "checkout and payment each have a single revision created 16:42Z, well before the 17:15Z onset, so there is no bad release to roll back to."
+     },
+     {
+      "action": "restart_deployment",
+      "why_not": "payment's latency is normal (about 2 ms), its Kubernetes events are all Normal, and the errors are deterministic per request, so a restart would not clear a flag-driven failure and would only reset a healthy process."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "payment is failing with errors, not slowing or saturating, so extra replicas would not reduce the rate of rejected Charge calls."
+     }
+    ],
+    "no_action_reason": "The cause is a feature flag (paymentFailure at 50%), which is outside the actions this tool can take. A human should check flagd and disable paymentFailure if it was not meant to be on in this lab. Separately, the cart EmptyCart spike at 17:07-17:10Z and the LatencyP95High alert on checkout are unexplained and need their own investigation of cart and valkey-cart.",
+    "summary": "Checkout's ErrorBudgetBurn is driven by payment's PaymentService/Charge rejecting gold-loyalty requests ('Invalid token') at about 30-50%, most likely from the paymentFailure flag enabled at 50%. None of rollout_undo, restart_deployment, or scale_deployment addresses a feature flag, so no action is proposed; a human should confirm and disable the flag."
+   },
+   "state": "ESCALATED"
+  },
+  "3dd89f71-e4cf-404e-ac02-2b588536f4ef": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_a628b432c13ffaa0"
+      ],
+      "statement": "payment's server error ratio rose from about 0.02 at 17:15 to 0.31 at 17:31 and held through 17:36. It was zero before about 17:15."
+     },
+     {
+      "evidence_ids": [
+       "ev_0a72b74ba2803a66",
+       "ev_48d45e6947da07f8",
+       "ev_ce24d4c659119c81"
+      ],
+      "statement": "All payment server errors are on oteldemo.PaymentService/Charge. Request rate stayed flat at about 0.22/s, and payment p95 stayed near 1.9 ms."
+     },
+     {
+      "evidence_ids": [
+       "ev_cde433e736d6cd17",
+       "ev_b0820e43965b6d32"
+      ],
+      "statement": "20 error traces in 30 minutes show payment's Charge spans failing with 'Payment request failed. Invalid token. demo.user_context.loyalty_level=gold'. The same message propagates to checkout, frontend and frontend-proxy as HTTP 422."
+     },
+     {
+      "evidence_ids": [
+       "ev_d7f2f4ebf0ccdb98",
+       "ev_3ff997bfcc313ccc"
+      ],
+      "statement": "payment logs 31 warn-level lines with that template (thrown at charge.js:48, first 17:14:23Z, last 17:31:39Z). No error-level lines were found."
+     },
+     {
+      "evidence_ids": [
+       "ev_9f26e256020d6f94",
+       "ev_dfb85c417d8a9d14"
+      ],
+      "statement": "The flagd flag paymentFailure is ENABLED at variant 50% (value 0.5) with targeting false. flag_state gives no change timestamp."
+     },
+     {
+      "evidence_ids": [
+       "ev_e0bd3dc7e195a7b2",
+       "ev_d383c82859e7ff3d",
+       "ev_9e6902c805770c67",
+       "ev_c29c16fdb5777d4f",
+       "ev_219a35a2f8f694cc",
+       "ev_cffbccf4ac8947be"
+      ],
+      "statement": "payment and checkout each have a single revision created 16:42Z, with no restarts or warnings in 120 minutes. flagd has no restarts or warnings either."
+     },
+     {
+      "evidence_ids": [
+       "ev_7ed059b058e76b69",
+       "ev_60fcbd3aad285de8"
+      ],
+      "statement": "checkout's client-side Charge errors toward payment rose from 0.005 at 17:15 to about 0.087 at 17:33, mirroring payment. checkout's Charge p95 stayed around 3.5 to 5.8 ms."
+     },
+     {
+      "evidence_ids": [
+       "ev_ead826032a6d31ea",
+       "ev_c7f411f45a0ab3dc"
+      ],
+      "statement": "payment's client spans show no error series, and flagd's error ratio stayed near 0."
+     },
+     {
+      "evidence_ids": [
+       "ev_bd2e00c8789c5b12",
+       "ev_c481078df9866d44",
+       "ev_9c3ffb83e3d440a7",
+       "ev_8d915c5f2629d5ac"
+      ],
+      "statement": "cart logs 'Wasn't able to connect to redis' 14 to 15 times between 17:02 and 17:31. checkout's slowest trace (4317 ms) spends its time in cart, with EmptyCart at 4290 ms and 1329 ms self time."
+     },
+     {
+      "evidence_ids": [
+       "ev_a628b432c13ffaa0",
+       "ev_7ed059b058e76b69"
+      ],
+      "statement": "checkout's error ratio peaked at 0.31 at 17:07 (POST 0.11, EmptyCart) before falling to about 0 by 17:15 to 17:20. That burst predates payment's errors."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check flagd or flag-config change history for paymentFailure and confirm the flip time is shortly before 17:15Z. Check whether the flag's applicability is limited to loyalty_level=gold, and confirm a flip to OFF restores payment's success ratio.",
+      "statement": "The paymentFailure flag at 50% is the trigger for payment's errors. Its change time is not confirmed, and 'targeting false' plus a gold-only message needs explaining."
+     },
+     {
+      "how_to_verify": "Query kube_pod_container_status_restarts_total for payment and the pod start time for payment-767f6464f-7zl4w, and check the payment logs for startup lines around 17:17Z.",
+      "statement": "payment restarted around 17:17Z (memory fell from about 137 MB to 68 MB), which may reset in-memory state or a flag cache."
+     },
+     {
+      "how_to_verify": "Check valkey-cart pod health, connection counts and logs, and cart's Redis client error span attributes. Confirm whether checkout's latency drops after cart recovers.",
+      "statement": "cart's Redis connection problem is caused by valkey-cart or the network, not by cart itself."
+     },
+     {
+      "how_to_verify": "Correlate checkout's 17:07 error spans with kafka and accounting metrics, which returned no series. Check for broker or network issues in kafka.",
+      "statement": "checkout's 17:07 POST and EmptyCart error burst comes from a separate cause, possibly the Kafka send failures at 17:06Z."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_cde433e736d6cd17",
+       "ev_7ed059b058e76b69",
+       "ev_a628b432c13ffaa0"
+      ],
+      "statement": "payment is the origin of the ErrorBudgetBurn on payment and of the checkout Charge-related errors. checkout's own budget burn at 17:31 is mostly propagated from payment."
+     },
+     {
+      "evidence_ids": [
+       "ev_ead826032a6d31ea",
+       "ev_e0bd3dc7e195a7b2",
+       "ev_ce24d4c659119c81"
+      ],
+      "statement": "The failure is a token validation rule inside payment, not a slowdown or a failing dependency. A rollout is ruled out for onset, which points to configuration or flag-driven behaviour."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Charge handler rejects a large share of requests with 'Invalid token' for gold-tier users (fast errors, no dependency errors, latency flat). Most likely induced by the paymentFailure flagd flag at 50% (fault injection), not by a rollout, since payment has a single revision from 16:42Z.",
+      "confidence": 0.7,
+      "evidence_ids": [
+       "ev_9f26e256020d6f94",
+       "ev_dfb85c417d8a9d14",
+       "ev_cde433e736d6cd17",
+       "ev_d7f2f4ebf0ccdb98",
+       "ev_a628b432c13ffaa0",
+       "ev_0a72b74ba2803a66",
+       "ev_ce24d4c659119c81",
+       "ev_ead826032a6d31ea"
+      ],
+      "service": "payment"
+     },
+     {
+      "cause": "Redis/valkey connectivity errors in cart make cart calls slow, which drives checkout's P2 LatencyP95High and its 17:07 POST/EmptyCart error burst. Cart's own error spans are absent, so this is weaker than the payment cause.",
+      "confidence": 0.35,
+      "evidence_ids": [
+       "ev_bd2e00c8789c5b12",
+       "ev_c481078df9866d44",
+       "ev_9c3ffb83e3d440a7",
+       "ev_8d915c5f2629d5ac"
+      ],
+      "service": "cart"
+     }
+    ],
+    "summary": "payment (lab) is failing about 26-31% of Charge requests with a fast, non-latency 'Invalid token ... loyalty_level=gold' error, starting about 17:15Z. Checkout's payment errors are propagated from payment. The most likely trigger is the paymentFailure flagd flag at 50%, but the flag's change time is unconfirmed and 'targeting false' does not obviously explain a gold-only rule. Checkout's latency and its early 17:07 burst are separate and appear linked to cart's Redis connection errors."
+   },
+   "findings": 20,
+   "plan": {
+    "actions": [],
+    "alternatives": [
+     {
+      "action": "rollout_undo",
+      "why_not": "payment has a single revision from 16:42Z, and its errors started around 17:15Z, so there is no earlier release to roll back to."
+     },
+     {
+      "action": "restart_deployment",
+      "why_not": "The errors are deterministic 'Invalid token' rejections for gold-tier users, not a leak or stuck process. The 17:17Z restart did not stop them."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "Latency is flat at about 1.9 ms and request rate is steady, so this is not a capacity problem."
+     }
+    ],
+    "no_action_reason": "The likely cause is the paymentFailure flagd flag at 50%, and no available action changes flags. A human should check flagd's change history for paymentFailure, set it off or revert it, and confirm payment's error ratio returns to zero. cart's Redis errors are a separate issue to investigate via valkey-cart connectivity.",
+    "summary": "No rollout, restart, or scale action would fix this. payment's Charge errors look like the paymentFailure flagd fault injection at 50%, which is a flag change, not a deployment change. A human should confirm the flag's change history and disable or revert paymentFailure in flagd."
+   },
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": null,
+   "created_at": "2026-10-27 17:27:18.015347+00:00",
+   "environment": "lab",
+   "fingerprint": "7d3c22bfff3583271006e8d4df5f3976",
+   "id": "c1f771a8-23ed-4832-b66d-34e95de66ae2",
+   "labels": {
+    "alertname": "LatencyP95High",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "warning",
+    "slo": "latency"
+   },
+   "priority": 2,
+   "service": "checkout",
+   "state": "AWAITING_APPROVAL",
+   "tenant_id": "lab",
+   "title": "LatencyP95High"
+  },
+  {
+   "closed_at": "2026-10-27 17:34:22.022681+00:00",
+   "created_at": "2026-10-27 17:31:18.016829+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "19548852-f4fb-486e-af1a-86aa50e0d4fa",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "ESCALATED",
+   "tenant_id": "lab",
+   "title": "ErrorBudgetBurn"
+  },
+  {
+   "closed_at": "2026-10-27 17:33:30.597199+00:00",
+   "created_at": "2026-10-27 17:31:18.017740+00:00",
+   "environment": "lab",
+   "fingerprint": "39ef2128c2727979c8123e1c6df98a52",
+   "id": "3dd89f71-e4cf-404e-ac02-2b588536f4ef",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "payment",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "payment",
+   "state": "ESCALATED",
+   "tenant_id": "lab",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}
