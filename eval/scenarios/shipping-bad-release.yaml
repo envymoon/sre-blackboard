@@ -7,7 +7,7 @@ inject:
 expect:
   root_cause: shipping
   fault_type: bad-deploy
-  symptoms: [shipping, checkout, frontend]
+  symptoms: [shipping, checkout, frontend, frontend-proxy]
   repair:
     - {action: rollout_undo, deployment: shipping}
 notes: >

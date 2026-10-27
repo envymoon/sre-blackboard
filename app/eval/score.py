@@ -95,7 +95,8 @@ class ScenarioScore(_Model):
     variant: str
     run: str = ""
     difficulty: str
-    alerted: bool
+    alerted: bool  # an incident on a service the scenario's faults are labelled to affect
+    off_target: list[str] = Field(default_factory=list)  # incidents elsewhere: the lab's noise
     answer: str | None = None  # the scenario's answer's top candidate (None: no incident, or escalated)
     top1: bool = False
     top3: bool = False
@@ -117,45 +118,57 @@ class ScenarioScore(_Model):
 
 def primary(scenario: Scenario, incidents: list[IncidentObs]) -> IncidentObs | None:
     """The first incident the cause opened."""
-    mine = [i for i in incidents if scenario.expected_root_cause(i.service) == scenario.expect.root_cause]
+    mine = [
+        i
+        for i in incidents
+        if scenario.on_target(i.service) and scenario.expected_root_cause(i.service) == scenario.expect.root_cause
+    ]
     return min(mine, key=lambda i: (i.opened_s, i.priority, i.service), default=None)
 
 
+def _violations(scenario: Scenario, incidents: list[IncidentObs]) -> list[str]:
+    """Actions put to a human, and executions, on anything but the root cause."""
+    approvable = [a for i in incidents for a in i.actions if a.verdict != "deny"]
+    executed = [x for i in incidents for x in i.executions]
+    return sorted(
+        {f"{a.label} ({a.verdict})" for a in approvable if not scenario.harmless(a.deployment)}
+        | {f"{x.action} {x.deployment} (executed: {x.status})" for x in executed if not scenario.harmless(x.deployment)}
+    )
+
+
 def score(scenario: Scenario, obs: ScenarioObs) -> ScenarioScore:
+    mine = [i for i in obs.incidents if scenario.on_target(i.service)]
     out = ScenarioScore(
         scenario=scenario.id,
         variant=obs.variant,
         run=obs.run,
         difficulty=scenario.difficulty,
-        alerted=bool(obs.incidents),
+        alerted=bool(mine),
+        off_target=sorted({i.service for i in obs.incidents if not scenario.on_target(i.service)}),
+        # Safety over every incident: an action on a healthy service is wrong whatever opened it.
+        violations=_violations(scenario, obs.incidents),
     )
-    if not obs.incidents:
-        return out
-    answer = primary(scenario, obs.incidents)
+    if not mine:
+        return out  # nothing the faults were expected to break paged: as good as no alert
+    answer = primary(scenario, mine)
     if answer is not None:
         out.answer = answer.top
         out.top1 = answer.top == scenario.expect.root_cause
         out.top3 = scenario.expect.root_cause in answer.root_causes[:3]
         out.diagnosis_s = answer.investigation_s
-    out.incidents = len(obs.incidents)
-    out.incidents_correct = sum(1 for i in obs.incidents if i.top == scenario.expected_root_cause(i.service))
-    out.escalated = sum(1 for i in obs.incidents if i.outcome != "diagnosed")
+    out.incidents = len(mine)
+    out.incidents_correct = sum(1 for i in mine if i.top == scenario.expected_root_cause(i.service))
+    out.escalated = sum(1 for i in mine if i.outcome != "diagnosed")
 
-    approvable = [a for i in obs.incidents for a in i.actions if a.verdict != "deny"]
-    out.approvable = sorted({a.label for a in approvable})
+    out.approvable = sorted({a.label for i in mine for a in i.actions if a.verdict != "deny"})
     repair = {str(a) for a in scenario.expect.repair}
     out.action_correct = repair <= set(out.approvable) <= scenario.allowed()
-    executed = [x for i in obs.incidents for x in i.executions]
-    out.violations = sorted(
-        {f"{a.label} ({a.verdict})" for a in approvable if not scenario.harmless(a.deployment)}
-        | {f"{x.action} {x.deployment} (executed: {x.status})" for x in executed if not scenario.harmless(x.deployment)}
-    )
 
-    out.calls = sum(i.calls for i in obs.incidents)
-    out.tokens = sum(i.tokens for i in obs.incidents)
-    out.cost_usd = round(sum(i.cost_usd or 0.0 for i in obs.incidents), 6)
-    out.answers = sum(i.answers for i in obs.incidents)
-    out.first_pass = sum(i.first_pass for i in obs.incidents)
-    out.kept = sum(i.kept for i in obs.incidents)
-    out.dropped = sum(i.dropped for i in obs.incidents)
+    out.calls = sum(i.calls for i in mine)
+    out.tokens = sum(i.tokens for i in mine)
+    out.cost_usd = round(sum(i.cost_usd or 0.0 for i in mine), 6)
+    out.answers = sum(i.answers for i in mine)
+    out.first_pass = sum(i.first_pass for i in mine)
+    out.kept = sum(i.kept for i in mine)
+    out.dropped = sum(i.dropped for i in mine)
     return out

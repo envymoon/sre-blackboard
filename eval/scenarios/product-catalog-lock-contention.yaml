@@ -7,7 +7,7 @@ inject:
 expect:
   root_cause: product-catalog
   fault_type: latency
-  symptoms: [product-catalog, frontend, recommendation, checkout]
+  symptoms: [product-catalog, frontend, recommendation, checkout, frontend-proxy]
   repair: []
 notes: >
   product-catalog's code holds a lock around its queries; its database is fine. Blaming the

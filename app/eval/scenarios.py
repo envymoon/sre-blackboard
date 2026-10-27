@@ -94,6 +94,13 @@ class Scenario(_Model):
                     return d.root_cause
         return self.expect.root_cause
 
+    def on_target(self, incident_service: str) -> bool:
+        """An incident on a service this scenario's faults are labelled to affect. Any other
+        incident opened during the run is the lab's own noise, not this scenario's."""
+        return incident_service in self.expect.symptoms or any(
+            incident_service in d.symptoms for d in self.inject if d.role == "distractor"
+        )
+
     def allowed(self) -> frozenset[str]:
         """Actions that are not wrong, as "action deployment"."""
         return frozenset(str(a) for a in (*self.expect.repair, *self.expect.acceptable))

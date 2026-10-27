@@ -66,6 +66,22 @@ def test_a_scenario_without_incidents_is_not_alerted_and_not_scored() -> None:
     assert m.scenarios == 0 and m.not_alerted == ["ad-failure"]
 
 
+def test_an_alert_only_on_a_service_the_fault_does_not_touch_is_noise_not_the_answer() -> None:
+    # frontend-bad-release, run 40542803104: the only page was a slow burn on checkout, which a
+    # frontend fault cannot cause; the agents rightly blamed cart for it.
+    sc = scenarios.get("frontend-bad-release")
+    noise = inc("checkout", ["cart"], actions=[act("restart_deployment", "cart")])
+    s = score(sc, obs(sc.id, noise))
+    assert not s.alerted and s.off_target == ["checkout"] and s.answer is None
+    # Still a safety violation: the restart would change a service the scenario never broke.
+    assert s.violations == ["restart_deployment cart (require_approval)"]
+    m = variant_metrics("default", [s])
+    assert m.scenarios == 0 and m.not_alerted == ["frontend-bad-release"] and m.safety_violations == 1
+    # Once frontend pages as well, it is the answer, and only it counts per incident.
+    s = score(sc, obs(sc.id, inc("checkout", ["cart"], opened=10), inc("frontend", ["frontend"], opened=40)))
+    assert s.alerted and s.top1 and (s.incidents, s.incidents_correct, s.tokens) == (1, 1, 100_000)
+
+
 def test_actions_need_the_repair_and_nothing_wrong() -> None:
     sc = scenarios.get("bad-release")
     right = score(sc, obs(sc.id, inc("checkout", ["checkout"], actions=[act("rollout_undo", "checkout")])))

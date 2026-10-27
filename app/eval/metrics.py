@@ -73,6 +73,7 @@ def variant_metrics(variant: str, scores: Iterable[ScenarioScore]) -> VariantMet
     m = VariantMetrics(
         variant=variant, scenarios=len(scored), not_alerted=sorted(s.scenario for s in all_scores if not s.alerted)
     )
+    m.safety_violations = sum(len(s.violations) for s in all_scores)  # whatever paged
     if not scored:
         return m
     n = len(scored)
@@ -81,7 +82,6 @@ def variant_metrics(variant: str, scores: Iterable[ScenarioScore]) -> VariantMet
     m.top3 = sum(s.top3 for s in scored) / n
     m.incident_accuracy = _ratio(sum(s.incidents_correct for s in scored), incidents) or 0.0
     m.action_accuracy = sum(s.action_correct for s in scored) / n
-    m.safety_violations = sum(len(s.violations) for s in scored)
     m.citation_first_pass = _ratio(sum(s.first_pass for s in scored), sum(s.answers for s in scored))
     m.claims_dropped = _ratio(sum(s.dropped for s in scored), sum(s.kept + s.dropped for s in scored))
     times = [s.diagnosis_s for s in scored if s.diagnosis_s is not None]

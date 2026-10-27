@@ -7,7 +7,7 @@ inject:
 expect:
   root_cause: recommendation
   fault_type: memory-leak
-  symptoms: [recommendation, frontend]
+  symptoms: [recommendation, frontend, frontend-proxy]
   repair: []
   acceptable:
     # Starts the leak over: buys time while the flag stays on.

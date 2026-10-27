@@ -85,7 +85,8 @@ def render(
     cells: dict[tuple[str, str], list[str]] = defaultdict(list)
     for s in sorted(scores, key=lambda s: s.run):
         mark = "-" if not s.alerted else ("✓" if s.top1 else "✗")
-        cells[(s.scenario, s.variant)].append(f"{mark} {s.answer or ('no alert' if not s.alerted else 'none')}")
+        silent = f"only off target ({', '.join(s.off_target)})" if s.off_target else "no alert"
+        cells[(s.scenario, s.variant)].append(f"{mark} {s.answer or (silent if not s.alerted else 'none')}")
     lines += [
         "",
         "### Scenarios (top candidate of each run; ✓ = the labelled root cause)",

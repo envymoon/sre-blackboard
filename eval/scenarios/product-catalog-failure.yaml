@@ -7,7 +7,7 @@ inject:
 expect:
   root_cause: product-catalog
   fault_type: error
-  symptoms: [product-catalog, frontend, checkout, recommendation]
+  symptoms: [product-catalog, frontend, checkout, recommendation, frontend-proxy]
   repair: []
 notes: >
   Only one product id fails, so the error ratio depends on how often the load generator

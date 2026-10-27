@@ -7,6 +7,6 @@ inject:
 expect:
   root_cause: ad
   fault_type: error
-  symptoms: [ad, frontend]
+  symptoms: [ad, frontend, frontend-proxy]
   repair: []
 notes: ad is a leaf service; frontend shows ads but handles their failure.

@@ -7,7 +7,7 @@ inject:
 expect:
   root_cause: cart
   fault_type: unavailable
-  symptoms: [frontend, checkout]
+  symptoms: [frontend, checkout, frontend-proxy]
   repair: []
 notes: >
   cart stops receiving traffic, so its own metrics go quiet rather than red; the errors are

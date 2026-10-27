@@ -10,7 +10,7 @@ inject:
 expect:
   root_cause: product-catalog
   fault_type: error
-  symptoms: [product-catalog, frontend, checkout, recommendation]
+  symptoms: [product-catalog, frontend, checkout, recommendation, frontend-proxy]
   repair: []
 notes: >
   frontend is where the errors show and it was just released. product-catalog's own

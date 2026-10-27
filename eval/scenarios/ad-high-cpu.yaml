@@ -7,7 +7,7 @@ inject:
 expect:
   root_cause: ad
   fault_type: saturation
-  symptoms: [ad, frontend]
+  symptoms: [ad, frontend, frontend-proxy]
   repair: []
   acceptable:
     # More replicas spread the CPU load: a mitigation, not a fix.

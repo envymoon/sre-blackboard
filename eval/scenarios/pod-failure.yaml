@@ -7,7 +7,7 @@ inject:
 expect:
   root_cause: cart
   fault_type: unavailable
-  symptoms: [frontend, checkout]
+  symptoms: [frontend, checkout, frontend-proxy]
   repair: []
 notes: >
   Chaos Mesh replaces cart's container with a pause image: the pod is Running, but nothing

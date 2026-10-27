@@ -7,7 +7,7 @@ inject:
 expect:
   root_cause: shipping
   fault_type: latency
-  symptoms: [shipping, checkout, frontend]
+  symptoms: [shipping, checkout, frontend, frontend-proxy]
   repair: []
 notes: >
   Only some orders are slow (non-US addresses), so p95 moves more than the mean. checkout

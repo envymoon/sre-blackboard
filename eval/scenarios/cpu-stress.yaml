@@ -7,7 +7,7 @@ inject:
 expect:
   root_cause: recommendation
   fault_type: saturation
-  symptoms: [recommendation, frontend]
+  symptoms: [recommendation, frontend, frontend-proxy]
   repair: []
   acceptable:
     - {action: scale_deployment, deployment: recommendation}
