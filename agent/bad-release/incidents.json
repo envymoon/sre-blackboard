@@ -1,0 +1,212 @@
+{
+ "annotations": {
+  "00cc0b66-6c41-46c1-8ed5-e6a819a4156f": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 40.01% of requests"
+  }
+ },
+ "expected": {
+  "00cc0b66-6c41-46c1-8ed5-e6a819a4156f": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_a85a8ea3c1ce11d0",
+       "ev_7c5ffc040333bae6",
+       "ev_983a9e39d68dd6bb"
+      ],
+      "statement": "Checkout's 5m error ratio rose from 0.34 at 19:26:42 to 0.53 at 19:27:42 and reached 0.66 at 19:28. No other service is high: frontend about 0.027, flagd about 0."
+     },
+     {
+      "evidence_ids": [
+       "ev_b007e742b00b8b73",
+       "ev_f91c8cb0a5154a9e"
+      ],
+      "statement": "Checkout's errors are PaymentService/Charge dial timeouts to 10.96.155.32:9999 (20 error traces in 30m). They propagate to PlaceOrder 'failed to charge card ... Unavailable' and to frontend POST /api/checkout HTTP 500s."
+     },
+     {
+      "evidence_ids": [
+       "ev_6b0b8f6953d03575",
+       "ev_fc667c672790d79f"
+      ],
+      "statement": "Checkout revision 2 (created 19:25:01Z, cause 'payment client moved to port 9999') is the only diff, setting PAYMENT_ADDR from payment:8080 to payment:9999."
+     },
+     {
+      "evidence_ids": [
+       "ev_60722353b7d30477",
+       "ev_7ddfa9223567aa57"
+      ],
+      "statement": "Payment's only Deployment revision dates from 19:12:13Z, and its single pod is ready with no warning events in the window."
+     },
+     {
+      "evidence_ids": [
+       "ev_df0db4e9564e8ef1",
+       "ev_bc31297804f7ded5",
+       "ev_e20388ba5b050e0a",
+       "ev_4a774ede979e4d02"
+      ],
+      "statement": "Payment has no error logs or error spans. Its last info log is at 19:24:57 and it has no spans in the 60m window, while checkout's Charge spans keep failing."
+     },
+     {
+      "evidence_ids": [
+       "ev_b41c8bef7b968e02",
+       "ev_49b0050045280962",
+       "ev_0995e4188d882e0e"
+      ],
+      "statement": "Checkout's Charge client errors are the only dependency errors. CurrencyService, ProductCatalog and CartService show no error series, and no error spans from cart, currency, shipping, product-catalog or quote appear."
+     },
+     {
+      "evidence_ids": [
+       "ev_76bdd3a254544a6e",
+       "ev_0ac330c1e8f7ce4a"
+      ],
+      "statement": "All 18 feature flags are off, and the only warning events are readiness probe failures on otel-collector-agent, alertmanager and loki, none involving checkout or payment."
+     },
+     {
+      "evidence_ids": [
+       "ev_281237875de41467",
+       "ev_2e73f8b948b2fa65",
+       "ev_e42cb2abe43e18fb",
+       "ev_1fad18fe9f6fe3ae"
+      ],
+      "statement": "Payment's raw server p95 was about 2s for most of the hour, spiked to 8.4s at 19:25 and 8.3s at 19:28, and the payment SLI latency rule stays flat near 2.0."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check payment's Service and container ports, and whether it accepts connections on 8080 and 9999 from inside the cluster.",
+      "statement": "Payment does not listen on port 9999 (it previously served on 8080), so the 9999 target matches no server."
+     },
+     {
+      "how_to_verify": "Check the Service endpoints for payment, the NetworkPolicies in otel-demo, and whether checkout's Charge errors carry connection-refused messages in other spans.",
+      "statement": "The 'i/o timeout' rather than 'connection refused' suggests packets are being dropped, so a NetworkPolicy or a Service with no ready endpoints may be involved instead of a simple wrong port."
+     },
+     {
+      "how_to_verify": "Compare the raw payment duration buckets with service:sli_latency_p95_ms:rate5m, and check payment's logs for errors around 19:25.",
+      "statement": "Payment's 19:25 p95 spike and the flat SLI latency rule may reflect a separate fault or a recording rule problem."
+     },
+     {
+      "how_to_verify": "Roll back checkout to revision 1, then confirm Charge errors stop and the checkout error ratio falls.",
+      "statement": "Reverting PAYMENT_ADDR to payment:8080 should restore checkout's error ratio to baseline within a few minutes."
+     },
+     {
+      "how_to_verify": "Query kafka client spans from checkout and kafka's own error metrics.",
+      "statement": "Kafka was not checked directly and is unlikely to be involved, since checkout's publish step shows no error spans."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_fc667c672790d79f",
+       "ev_36bdcdecfb596d09",
+       "ev_6b0b8f6953d03575"
+      ],
+      "statement": "Checkout's PAYMENT_ADDR change at 19:25:01Z is the trigger. Its timing matches the start of the error rise (about 19:25-19:26) and the alert at 19:27:18."
+     },
+     {
+      "evidence_ids": [
+       "ev_a9019b2ea05c6d71",
+       "ev_856cc45002936566",
+       "ev_e20388ba5b050e0a"
+      ],
+      "statement": "Payment's silence after 19:25 is most likely a consequence of checkout no longer reaching it, not the cause. Payment shows no failing requests of its own, and having no spans means it is getting no traffic."
+     },
+     {
+      "evidence_ids": [
+       "ev_0995e4188d882e0e",
+       "ev_d75f4e47812b9c9f"
+      ],
+      "statement": "Checkout's own logs record none of the payment failures, so the failure detail exists only in spans. Checkout's own code is not the fault, and the problem is its configured payment address."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Revision 2 config release changed PAYMENT_ADDR from payment:8080 to payment:9999. Checkout's Charge calls dial a port that is not serving, so every payment charge times out and PlaceOrder fails.",
+      "confidence": 0.75,
+      "evidence_ids": [
+       "ev_6b0b8f6953d03575",
+       "ev_fc667c672790d79f",
+       "ev_b007e742b00b8b73",
+       "ev_f91c8cb0a5154a9e"
+      ],
+      "service": "checkout"
+     },
+     {
+      "cause": "Payment is not reachable on 9999 (service port or selector mismatch, no ready endpoints, or a network policy). Its stop in traffic at about 19:25 is consistent with this. The unexplained raw p95 spike to 8.4s at 19:25 is not yet accounted for.",
+      "confidence": 0.2,
+      "evidence_ids": [
+       "ev_df0db4e9564e8ef1",
+       "ev_4a774ede979e4d02",
+       "ev_281237875de41467",
+       "ev_60722353b7d30477"
+      ],
+      "service": "payment"
+     }
+    ],
+    "summary": "Checkout's ~40% error ratio comes from its PaymentService/Charge calls, which fail with 'dial tcp 10.96.155.32:9999: i/o timeout'. Checkout revision 2 (19:25:01Z) changed PAYMENT_ADDR from payment:8080 to payment:9999, about 2 minutes before the alert, and no other checkout dependency errors. Payment has not changed since 19:12 and its logs and spans stop at about 19:25, which fits payment receiving no traffic after the change. The most likely fix is reverting PAYMENT_ADDR to 8080 or confirming the port payment actually serves on."
+   },
+   "findings": 20,
+   "plan": {
+    "actions": [
+     {
+      "action": "rollout_undo",
+      "deployment": "checkout",
+      "evidence_ids": [
+       "ev_6b0b8f6953d03575",
+       "ev_fc667c672790d79f",
+       "ev_b007e742b00b8b73"
+      ],
+      "reason": "Checkout revision 2 (19:25:01Z, 'payment client moved to port 9999') is the only change and sets PAYMENT_ADDR to payment:9999. Checkout's PaymentService/Charge calls time out dialing 10.96.155.32:9999, causing about 40% of checkout requests to fail. Reverting to revision 1 restores payment:8080.",
+      "to_revision": 1
+     }
+    ],
+    "alternatives": [
+     {
+      "action": "restart_deployment",
+      "why_not": "A restart re-reads the same PAYMENT_ADDR=9999 config, so the checkout pods would keep failing the same way."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "Checkout is not short of capacity. Its failures are dial timeouts to a wrong address, so more replicas would not help."
+     },
+     {
+      "action": "none",
+      "why_not": "Payment's 19:25 p95 spike is unexplained, but payment shows no errors of its own and its silence fits checkout no longer reaching it. Waiting would leave the 40% error ratio in place, so the checkout rollback should proceed and a human should follow up on payment's latency separately."
+     }
+    ],
+    "no_action_reason": null,
+    "summary": "Roll checkout back to revision 1, which restores PAYMENT_ADDR=payment:8080 and undoes the 19:25Z port change that sends Charge calls to a port payment does not serve. Expected result: checkout's 5m error ratio falls back toward baseline within a few minutes and payment traffic resumes."
+   },
+   "state": "AWAITING_APPROVAL"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": null,
+   "created_at": "2026-10-27 19:27:18.051173+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "00cc0b66-6c41-46c1-8ed5-e6a819a4156f",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "AWAITING_APPROVAL",
+   "tenant_id": "lab",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}

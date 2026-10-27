@@ -1,0 +1,74 @@
+{
+ "annotations": {
+  "27b96d00-02f2-4ca9-ba6b-0ce702ccba05": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 39.07% of requests"
+  },
+  "6bfa8580-8c17-4b19-9cd9-c0dcc67273e3": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "payment is failing 39.07% of requests"
+  }
+ },
+ "expected": {
+  "27b96d00-02f2-4ca9-ba6b-0ce702ccba05": {
+   "agents": {
+    "coordinator": "failed"
+   },
+   "diagnosis": null,
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  },
+  "6bfa8580-8c17-4b19-9cd9-c0dcc67273e3": {
+   "agents": {
+    "coordinator": "failed"
+   },
+   "diagnosis": null,
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": "2026-10-27 19:42:33.006634+00:00",
+   "created_at": "2026-10-27 19:40:18.018244+00:00",
+   "environment": "lab",
+   "fingerprint": "39ef2128c2727979c8123e1c6df98a52",
+   "id": "6bfa8580-8c17-4b19-9cd9-c0dcc67273e3",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "payment",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "payment",
+   "state": "ESCALATED",
+   "tenant_id": "lab-strong-plan",
+   "title": "ErrorBudgetBurn"
+  },
+  {
+   "closed_at": "2026-10-27 19:42:42.259166+00:00",
+   "created_at": "2026-10-27 19:40:18.018714+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "27b96d00-02f2-4ca9-ba6b-0ce702ccba05",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "ESCALATED",
+   "tenant_id": "lab-strong-plan",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}

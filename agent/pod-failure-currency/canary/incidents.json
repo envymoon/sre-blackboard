@@ -1,0 +1,41 @@
+{
+ "annotations": {
+  "6bb84c47-6637-41d0-9be1-7980e5914d66": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 35.48% of requests"
+  }
+ },
+ "expected": {
+  "6bb84c47-6637-41d0-9be1-7980e5914d66": {
+   "agents": {
+    "coordinator": "failed"
+   },
+   "diagnosis": null,
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": "2026-10-27 19:54:30.866757+00:00",
+   "created_at": "2026-10-27 19:52:18.016809+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "6bb84c47-6637-41d0-9be1-7980e5914d66",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "ESCALATED",
+   "tenant_id": "lab-canary",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}

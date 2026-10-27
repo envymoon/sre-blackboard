@@ -1,0 +1,209 @@
+{
+ "annotations": {
+  "9db587ec-f68e-46f4-b219-9678c61524cf": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 35.84% of requests"
+  }
+ },
+ "expected": {
+  "9db587ec-f68e-46f4-b219-9678c61524cf": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_9160396fd5143283"
+      ],
+      "statement": "Checkout revision 2 was rolled out at 19:23:33Z with change-cause 'cart client moved to port 9999'. It is the only revision change before the alert at 19:26:03Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_1fa7ff615ff270ba"
+      ],
+      "statement": "The deploy diff between checkout revisions 1 and 2 has exactly one change: CART_ADDR goes from cart:8080 to cart:9999."
+     },
+     {
+      "evidence_ids": [
+       "ev_ca3fefb3716edacf",
+       "ev_2d9c3265cd82f158",
+       "ev_a624e4bb57530abe"
+      ],
+      "statement": "Checkout's failing GetCart client spans report 'dial tcp 10.96.20.113:9999: i/o timeout'. There are 20 such spans in 30 minutes, and each feeds a PlaceOrder failure with Unavailable."
+     },
+     {
+      "evidence_ids": [
+       "ev_e0cb9ed84661a118",
+       "ev_34d865abe346c38e",
+       "ev_258b25086e337ae1",
+       "ev_cb22ad249f49049c"
+      ],
+      "statement": "checkout's server error ratio rose from about 0.18 at 19:24 to about 0.54 by the latest query. Its client GetCart spans carry the errors; other checkout client calls (Currency, ProductCatalog, Payment) are not in error."
+     },
+     {
+      "evidence_ids": [
+       "ev_e3d45d11e1b1dd70",
+       "ev_5a62534c3b401ed8",
+       "ev_ab9673418f828cf5",
+       "ev_4c3c11517943abad",
+       "ev_1cd1addaa37c3c65"
+      ],
+      "statement": "Cart has a single revision (created 19:11:23Z, unchanged since). Its server spans show no errors, and cart does not appear in the server error-rate list."
+     },
+     {
+      "evidence_ids": [
+       "ev_77b2b10eaa4f230b",
+       "ev_137588e534c710d0",
+       "ev_99eb2365585da504"
+      ],
+      "statement": "Cart logs contain only info lines, with no errors or warnings. Its only 'Now listening on' log is at 19:12:32Z, and it does not show the port."
+     },
+     {
+      "evidence_ids": [
+       "ev_aec57710a2de42e3",
+       "ev_44e321a6fa879bb4"
+      ],
+      "statement": "All 18 feature flags are off, and flagd's error ratio is about 0.0004."
+     },
+     {
+      "evidence_ids": [
+       "ev_756b10024bf0b8c2",
+       "ev_02e0b6fb88d71602",
+       "ev_03d2f5c298fe985e",
+       "ev_8913c676b164b877"
+      ],
+      "statement": "Checkout's own logs show no errors in the last 30 minutes. Checkout's pod events show no restarts, warnings, or OOMKills."
+     },
+     {
+      "evidence_ids": [
+       "ev_8913c676b164b877"
+      ],
+      "statement": "Namespace warnings are limited to probes and a product-catalog configmap timeout at 19:11:25Z. None involve checkout, cart, or kafka."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Run 'kubectl -n otel-demo get svc cart -o yaml' and 'kubectl get endpoints cart'. Check the cart container's listen port in the pod spec or logs. Test from a checkout pod with a TCP connect to cart:8080 and cart:9999.",
+      "statement": "Cart listens on 8080 only and its Kubernetes Service does not expose 9999. Connections to 10.96.20.113:9999 then go nowhere and time out, which matches the i/o timeouts."
+     },
+     {
+      "how_to_verify": "Apply the rollback, then watch service:sli_error_ratio:rate5m for checkout and traces_span_metrics_calls_total for CartService/GetCart STATUS_CODE_ERROR fall to zero.",
+      "statement": "Reverting CART_ADDR to cart:8080 (or rolling checkout back to revision 1) restores GetCart success and drops the checkout error ratio toward baseline."
+     },
+     {
+      "how_to_verify": "Query traces_span_metrics_calls_total{service_name='cart', span_kind='SPAN_KIND_SERVER'} over the last 60 minutes and compare with the Jaeger search for cart GetCart spans.",
+      "statement": "Metric and trace data disagree on whether cart is serving GetCart at all: the metrics report steady cart GetCart p95 near 1.9 ms, while traces show zero cart GetCart server spans in 60 minutes. This may be a stale series or a span-name mismatch."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_1fa7ff615ff270ba",
+       "ev_ca3fefb3716edacf",
+       "ev_9160396fd5143283",
+       "ev_5f0868964deb72f7"
+      ],
+      "statement": "The checkout config change to cart:9999 is the origin of the incident. Checkout is failing only on the cart path, and cart is healthy on its own side with no GetCart traffic arriving from checkout."
+     },
+     {
+      "evidence_ids": [
+       "ev_1cd1addaa37c3c65",
+       "ev_34d865abe346c38e"
+      ],
+      "statement": "Checkout is a propagating symptom of the cart call failure, not an independent fault. Frontend and frontend-proxy errors (about 0.03) are downstream of checkout."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Revision 2 misconfigured CART_ADDR to cart:9999 (was cart:8080). Checkout's GetCart dials to port 9999 time out, so every PlaceOrder that needs the cart fails with Unavailable. The fix is to revert CART_ADDR to cart:8080 or roll back to revision 1.",
+      "confidence": 0.85,
+      "evidence_ids": [
+       "ev_9160396fd5143283",
+       "ev_1fa7ff615ff270ba",
+       "ev_ca3fefb3716edacf",
+       "ev_2d9c3265cd82f158",
+       "ev_a624e4bb57530abe",
+       "ev_45c6362645350d58",
+       "ev_e0cb9ed84661a118",
+       "ev_258b25086e337ae1"
+      ],
+      "service": "checkout"
+     },
+     {
+      "cause": "Cart's Service or pod may not expose or listen on port 9999 (its only listen log is at 19:12:32Z, port unverified). This would produce the same symptom from the other side, but cart itself is unchanged, so it is a lower-ranked candidate.",
+      "confidence": 0.1,
+      "evidence_ids": [
+       "ev_e3d45d11e1b1dd70",
+       "ev_77b2b10eaa4f230b",
+       "ev_5f0868964deb72f7",
+       "ev_5a62534c3b401ed8"
+      ],
+      "service": "cart"
+     }
+    ],
+    "summary": "Checkout's error burn began about 2.5 minutes after checkout revision 2 (change-cause 'cart client moved to port 9999') was rolled out. That revision's only diff sets CART_ADDR from cart:8080 to cart:9999. Checkout's GetCart calls to 10.96.20.113:9999 time out on dial, and each one fails PlaceOrder. Cart is unchanged, has no server-side errors, and has no GetCart server spans in the last hour, so it is not receiving these calls. Most likely fix: point CART_ADDR back to cart:8080 (roll back checkout to revision 1), after confirming cart's listen port. Cart's listen port is not yet verified, and the metrics and log findings conflict on whether cart is serving any GetCart traffic."
+   },
+   "findings": 20,
+   "plan": {
+    "actions": [
+     {
+      "action": "rollout_undo",
+      "deployment": "checkout",
+      "evidence_ids": [
+       "ev_9160396fd5143283",
+       "ev_1fa7ff615ff270ba",
+       "ev_ca3fefb3716edacf",
+       "ev_a624e4bb57530abe"
+      ],
+      "reason": "Checkout revision 2 (19:23:33Z, 'cart client moved to port 9999') changed CART_ADDR from cart:8080 to cart:9999. GetCart dials to 10.96.20.113:9999 time out, failing PlaceOrder. Reverting to revision 1 restores cart:8080.",
+      "to_revision": 1
+     }
+    ],
+    "alternatives": [
+     {
+      "action": "restart_deployment",
+      "why_not": "Checkout's pods are healthy with no restarts or errors. The fault is in the config, so a restart would re-read the same bad CART_ADDR."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "Checkout is not short of capacity. Its failures come from timeouts on one dependency port, and more replicas would only fail the same way."
+     },
+     {
+      "action": "rollout_undo",
+      "why_not": "Rolling back cart is not warranted. Cart is unchanged since 19:11:23Z, has no server errors, and receives no GetCart traffic, so it is not the cause."
+     }
+    ],
+    "no_action_reason": null,
+    "summary": "Roll checkout back from revision 2 to revision 1 to restore CART_ADDR=cart:8080, the port the cart call used before the bad release. After the rollback, checkout's GetCart spans should succeed and the checkout error ratio should fall back toward baseline (about 0.18 or less)."
+   },
+   "state": "AWAITING_APPROVAL"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": null,
+   "created_at": "2026-10-27 19:26:03.034724+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "9db587ec-f68e-46f4-b219-9678c61524cf",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "AWAITING_APPROVAL",
+   "tenant_id": "lab",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}

@@ -1,0 +1,74 @@
+{
+ "annotations": {
+  "13be5f54-e9bd-4e27-9093-619b8cd7b6fa": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "payment is failing 24.74% of requests"
+  },
+  "ba1ea77e-f98f-49ca-abb5-c4333f8c6844": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 24.5% of requests"
+  }
+ },
+ "expected": {
+  "13be5f54-e9bd-4e27-9093-619b8cd7b6fa": {
+   "agents": {
+    "solo": "failed"
+   },
+   "diagnosis": null,
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  },
+  "ba1ea77e-f98f-49ca-abb5-c4333f8c6844": {
+   "agents": {
+    "solo": "failed"
+   },
+   "diagnosis": null,
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": "2026-10-27 19:57:52.587390+00:00",
+   "created_at": "2026-10-27 19:55:33.022475+00:00",
+   "environment": "lab",
+   "fingerprint": "39ef2128c2727979c8123e1c6df98a52",
+   "id": "13be5f54-e9bd-4e27-9093-619b8cd7b6fa",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "payment",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "payment",
+   "state": "ESCALATED",
+   "tenant_id": "lab-single",
+   "title": "ErrorBudgetBurn"
+  },
+  {
+   "closed_at": "2026-10-27 19:58:02.960924+00:00",
+   "created_at": "2026-10-27 19:55:33.022998+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "ba1ea77e-f98f-49ca-abb5-c4333f8c6844",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "ESCALATED",
+   "tenant_id": "lab-single",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}

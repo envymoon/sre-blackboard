@@ -1,0 +1,40 @@
+{
+ "annotations": {
+  "884c100d-5c50-4f93-9713-16061f2e2399": {
+   "description": "95th percentile of server span duration over 5m is above 1000ms.",
+   "summary": "checkout p95 latency is 4.602kms"
+  }
+ },
+ "expected": {
+  "884c100d-5c50-4f93-9713-16061f2e2399": {
+   "agents": {
+    "coordinator": "failed"
+   },
+   "diagnosis": null,
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": "2026-10-27 19:44:07.080615+00:00",
+   "created_at": "2026-10-27 19:41:48.019742+00:00",
+   "environment": "lab",
+   "fingerprint": "7d3c22bfff3583271006e8d4df5f3976",
+   "id": "884c100d-5c50-4f93-9713-16061f2e2399",
+   "labels": {
+    "alertname": "LatencyP95High",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "warning",
+    "slo": "latency"
+   },
+   "priority": 2,
+   "service": "checkout",
+   "state": "ESCALATED",
+   "tenant_id": "lab-strong-plan",
+   "title": "LatencyP95High"
+  }
+ ]
+}

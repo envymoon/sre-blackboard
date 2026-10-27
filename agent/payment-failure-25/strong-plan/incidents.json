@@ -1,0 +1,173 @@
+{
+ "annotations": {
+  "43c4e80c-2d64-4ed2-9167-f04e046bce21": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 29.82% of requests"
+  },
+  "62762cf5-b0c5-4e64-b0fd-c60a30ee87e2": {
+   "description": "Error ratio over 30m is above 6x the 1% error budget (slow burn).",
+   "summary": "checkout is failing 18.57% of requests (30m)"
+  },
+  "85f73abb-7caa-4f18-b460-a5ebfb7b1681": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "payment is failing 20.09% of requests"
+  },
+  "93647e53-e5d1-4b0b-a1ea-1f99ae0648c9": {
+   "description": "Error ratio over 30m is above 6x the 1% error budget (slow burn).",
+   "summary": "payment is failing 7.488% of requests (30m)"
+  },
+  "afc5bbce-5b98-4600-ad19-c0ae71c23146": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 21.54% of requests"
+  }
+ },
+ "expected": {
+  "43c4e80c-2d64-4ed2-9167-f04e046bce21": {
+   "agents": {
+    "coordinator": "failed"
+   },
+   "diagnosis": null,
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  },
+  "62762cf5-b0c5-4e64-b0fd-c60a30ee87e2": {
+   "agents": {
+    "coordinator": "failed"
+   },
+   "diagnosis": null,
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  },
+  "85f73abb-7caa-4f18-b460-a5ebfb7b1681": {
+   "agents": {
+    "coordinator": "failed"
+   },
+   "diagnosis": null,
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  },
+  "93647e53-e5d1-4b0b-a1ea-1f99ae0648c9": {
+   "agents": {
+    "coordinator": "failed"
+   },
+   "diagnosis": null,
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  },
+  "afc5bbce-5b98-4600-ad19-c0ae71c23146": {
+   "agents": {
+    "coordinator": "failed"
+   },
+   "diagnosis": null,
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": "2026-10-27 19:59:31.435365+00:00",
+   "created_at": "2026-10-27 19:57:18.019253+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "62762cf5-b0c5-4e64-b0fd-c60a30ee87e2",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "slow",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "warning",
+    "slo": "availability"
+   },
+   "priority": 2,
+   "service": "checkout",
+   "state": "ESCALATED",
+   "tenant_id": "lab-strong-plan",
+   "title": "ErrorBudgetBurn"
+  },
+  {
+   "closed_at": "2026-10-27 20:00:44.855204+00:00",
+   "created_at": "2026-10-27 19:58:33.017496+00:00",
+   "environment": "lab",
+   "fingerprint": "39ef2128c2727979c8123e1c6df98a52",
+   "id": "85f73abb-7caa-4f18-b460-a5ebfb7b1681",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "payment",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "payment",
+   "state": "ESCALATED",
+   "tenant_id": "lab-strong-plan",
+   "title": "ErrorBudgetBurn"
+  },
+  {
+   "closed_at": "2026-10-27 20:02:41.766789+00:00",
+   "created_at": "2026-10-27 20:00:18.023570+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "afc5bbce-5b98-4600-ad19-c0ae71c23146",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "ESCALATED",
+   "tenant_id": "lab-strong-plan",
+   "title": "ErrorBudgetBurn"
+  },
+  {
+   "closed_at": "2026-10-27 20:04:35.133282+00:00",
+   "created_at": "2026-10-27 20:02:18.019745+00:00",
+   "environment": "lab",
+   "fingerprint": "39ef2128c2727979c8123e1c6df98a52",
+   "id": "93647e53-e5d1-4b0b-a1ea-1f99ae0648c9",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "slow",
+    "environment": "lab",
+    "service_name": "payment",
+    "severity": "warning",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "payment",
+   "state": "ESCALATED",
+   "tenant_id": "lab-strong-plan",
+   "title": "ErrorBudgetBurn"
+  },
+  {
+   "closed_at": "2026-10-27 20:05:30.334090+00:00",
+   "created_at": "2026-10-27 20:03:18.028805+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "43c4e80c-2d64-4ed2-9167-f04e046bce21",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "ESCALATED",
+   "tenant_id": "lab-strong-plan",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}

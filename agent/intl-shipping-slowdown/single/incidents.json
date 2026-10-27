@@ -1,0 +1,72 @@
+{
+ "annotations": {
+  "6e48d812-840e-4f4e-8172-515b98e19869": {
+   "description": "95th percentile of server span duration over 5m is above 1000ms.",
+   "summary": "shipping p95 latency is 5.929kms"
+  },
+  "73686173-2575-45d8-a87b-9c0e03f62153": {
+   "description": "95th percentile of server span duration over 5m is above 1000ms.",
+   "summary": "checkout p95 latency is 7.625kms"
+  }
+ },
+ "expected": {
+  "6e48d812-840e-4f4e-8172-515b98e19869": {
+   "agents": {
+    "solo": "failed"
+   },
+   "diagnosis": null,
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  },
+  "73686173-2575-45d8-a87b-9c0e03f62153": {
+   "agents": {
+    "solo": "failed"
+   },
+   "diagnosis": null,
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": "2026-10-27 19:32:21.931239+00:00",
+   "created_at": "2026-10-27 19:28:18.050792+00:00",
+   "environment": "lab",
+   "fingerprint": "7d3c22bfff3583271006e8d4df5f3976",
+   "id": "73686173-2575-45d8-a87b-9c0e03f62153",
+   "labels": {
+    "alertname": "LatencyP95High",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "warning",
+    "slo": "latency"
+   },
+   "priority": 2,
+   "service": "checkout",
+   "state": "ESCALATED",
+   "tenant_id": "lab-single",
+   "title": "LatencyP95High"
+  },
+  {
+   "closed_at": "2026-10-27 19:32:34.237468+00:00",
+   "created_at": "2026-10-27 19:30:18.022545+00:00",
+   "environment": "lab",
+   "fingerprint": "55924ed51ad3079ba37e1035a11939f2",
+   "id": "6e48d812-840e-4f4e-8172-515b98e19869",
+   "labels": {
+    "alertname": "LatencyP95High",
+    "environment": "lab",
+    "service_name": "shipping",
+    "severity": "warning",
+    "slo": "latency"
+   },
+   "priority": 2,
+   "service": "shipping",
+   "state": "ESCALATED",
+   "tenant_id": "lab-single",
+   "title": "LatencyP95High"
+  }
+ ]
+}

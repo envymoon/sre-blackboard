@@ -1,0 +1,114 @@
+[eval] 4 scenario(s): cart-failure, network-delay-shipping, payment-failure-after-currency-release, shipping-bad-release-after-checkout-release
+[eval] variants: default (lab), single (lab-single), strong-plan (lab-strong-plan), canary (lab-canary)
+[baseline] watching for 300s with no fault injected
+=== scenario 1/4: cart-failure (medium): Cart fails half of its EmptyCart calls
+[cart-failure] inject: cart fails half of EmptyCart calls (bad store)
+[cart-failure] alert LatencyP95High on checkout after 374.1s
+[cart-failure] escalated LatencyP95High/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[cart-failure] [canary] escalated LatencyP95High/checkout: root causes none; 11 model calls, 32,743 tokens, $0.004 (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[cart-failure] [strong-plan] escalated LatencyP95High/checkout: root causes none; 6 model calls, 3,275 tokens, $0.010 (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[cart-failure] [single] escalated LatencyP95High/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[cart-failure] recorded 0 model steps, 0 tool answers
+[cart-failure] recorded 0 model steps, 0 tool answers (single)
+[cart-failure] recorded 1 model steps, 0 tool answers (strong-plan)
+[cart-failure] recorded 6 model steps, 15 tool answers (canary)
+[cart-failure] answer: no root cause - wrong (expected cart)
+[cart-failure] plan for LatencyP95High/checkout: no action -> none
+[cart-failure] recover
+[cart-failure] all alerts resolved 90.1s after recovery
+[cart-failure] closed 0 incident(s)
+=== cart-failure: lab check FAILED; 4 incident(s)
+=== scenario 2/4: network-delay-shipping (hard): One second of network delay on shipping
+[network-delay-shipping] inject: 1s of added network latency on shipping
+[network-delay-shipping] alert LatencyP95High on checkout after 193.5s
+[network-delay-shipping] alert LatencyP95High on shipping after 208.5s
+[network-delay-shipping] [single] escalated LatencyP95High/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[network-delay-shipping] escalated LatencyP95High/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[network-delay-shipping] [strong-plan] escalated LatencyP95High/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[network-delay-shipping] [canary] escalated LatencyP95High/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[network-delay-shipping] [single] escalated LatencyP95High/shipping: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[network-delay-shipping] [canary] escalated LatencyP95High/shipping: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[network-delay-shipping] [strong-plan] escalated LatencyP95High/shipping: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[network-delay-shipping] escalated LatencyP95High/shipping: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[network-delay-shipping] recorded 0 model steps, 0 tool answers
+[network-delay-shipping] recorded 0 model steps, 0 tool answers (single)
+[network-delay-shipping] recorded 0 model steps, 0 tool answers (strong-plan)
+[network-delay-shipping] recorded 0 model steps, 0 tool answers (canary)
+[network-delay-shipping] answer: no root cause - wrong (expected shipping)
+[network-delay-shipping] plan for LatencyP95High/checkout: no action -> none
+[network-delay-shipping] plan for LatencyP95High/shipping: no action -> none
+[network-delay-shipping] recover
+[network-delay-shipping] all alerts resolved 320.5s after recovery
+[network-delay-shipping] closed 0 incident(s)
+=== network-delay-shipping: lab check FAILED; 8 incident(s)
+=== scenario 3/4: payment-failure-after-currency-release (hard): Payment fails right after an unrelated currency release
+[payment-failure-after-currency-release] distractor: a currency rollout that changes nothing requests depend on
+[payment-failure-after-currency-release] inject: payment rejects half of all charges
+[payment-failure-after-currency-release] alert ErrorBudgetBurn[fast] on checkout after 191.6s
+[payment-failure-after-currency-release] alert ErrorBudgetBurn[fast] on payment after 236.6s
+[payment-failure-after-currency-release] [canary] escalated ErrorBudgetBurn/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-after-currency-release] [strong-plan] escalated ErrorBudgetBurn/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-after-currency-release] escalated ErrorBudgetBurn/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-after-currency-release] [single] escalated ErrorBudgetBurn/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-after-currency-release] [canary] escalated ErrorBudgetBurn/payment: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-after-currency-release] [single] escalated ErrorBudgetBurn/payment: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-after-currency-release] [strong-plan] escalated ErrorBudgetBurn/payment: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-after-currency-release] escalated ErrorBudgetBurn/payment: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-after-currency-release] recorded 0 model steps, 0 tool answers
+[payment-failure-after-currency-release] recorded 0 model steps, 0 tool answers (single)
+[payment-failure-after-currency-release] recorded 0 model steps, 0 tool answers (strong-plan)
+[payment-failure-after-currency-release] recorded 0 model steps, 0 tool answers (canary)
+[payment-failure-after-currency-release] answer: no root cause - wrong (expected payment)
+[payment-failure-after-currency-release] plan for ErrorBudgetBurn/checkout: no action -> none
+[payment-failure-after-currency-release] plan for ErrorBudgetBurn/payment: no action -> none
+[payment-failure-after-currency-release] recover
+[payment-failure-after-currency-release] all alerts resolved 461.3s after recovery
+[payment-failure-after-currency-release] closed 0 incident(s)
+=== payment-failure-after-currency-release: lab check FAILED; 8 incident(s)
+=== scenario 4/4: shipping-bad-release-after-checkout-release (hard): A bad shipping release right after a harmless checkout release
+[shipping-bad-release-after-checkout-release] distractor: a checkout rollout that changes nothing requests depend on
+[shipping-bad-release-after-checkout-release] inject: a shipping rollout points its quote client at a dead port
+[shipping-bad-release-after-checkout-release] alert ErrorBudgetBurn[fast] on checkout after 157.6s
+[shipping-bad-release-after-checkout-release] alert LatencyP95High on checkout after 172.6s
+[shipping-bad-release-after-checkout-release] alert ErrorBudgetBurn[fast] on shipping after 187.6s
+[shipping-bad-release-after-checkout-release] alert LatencyP95High on shipping after 202.6s
+[shipping-bad-release-after-checkout-release] escalated ErrorBudgetBurn/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[shipping-bad-release-after-checkout-release] [single] escalated ErrorBudgetBurn/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[shipping-bad-release-after-checkout-release] [strong-plan] escalated ErrorBudgetBurn/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[shipping-bad-release-after-checkout-release] [canary] escalated ErrorBudgetBurn/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[shipping-bad-release-after-checkout-release] [strong-plan] escalated LatencyP95High/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[shipping-bad-release-after-checkout-release] [canary] escalated LatencyP95High/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[shipping-bad-release-after-checkout-release] [single] escalated LatencyP95High/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[shipping-bad-release-after-checkout-release] escalated LatencyP95High/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[shipping-bad-release-after-checkout-release] [strong-plan] escalated ErrorBudgetBurn/shipping: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[shipping-bad-release-after-checkout-release] escalated ErrorBudgetBurn/shipping: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[shipping-bad-release-after-checkout-release] [single] escalated ErrorBudgetBurn/shipping: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[shipping-bad-release-after-checkout-release] [canary] escalated ErrorBudgetBurn/shipping: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[shipping-bad-release-after-checkout-release] [strong-plan] escalated LatencyP95High/shipping: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[shipping-bad-release-after-checkout-release] escalated LatencyP95High/shipping: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[shipping-bad-release-after-checkout-release] [single] escalated LatencyP95High/shipping: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[shipping-bad-release-after-checkout-release] [canary] escalated LatencyP95High/shipping: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[shipping-bad-release-after-checkout-release] [strong-plan] escalated LatencyP95High/frontend: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[shipping-bad-release-after-checkout-release] [single] escalated LatencyP95High/frontend: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[shipping-bad-release-after-checkout-release] [canary] escalated LatencyP95High/frontend: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[shipping-bad-release-after-checkout-release] escalated LatencyP95High/frontend: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[shipping-bad-release-after-checkout-release] [canary] escalated LatencyP95High/frontend-proxy: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[shipping-bad-release-after-checkout-release] [strong-plan] escalated LatencyP95High/frontend-proxy: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[shipping-bad-release-after-checkout-release] escalated LatencyP95High/frontend-proxy: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[shipping-bad-release-after-checkout-release] [single] escalated LatencyP95High/frontend-proxy: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[shipping-bad-release-after-checkout-release] recorded 0 model steps, 0 tool answers
+[shipping-bad-release-after-checkout-release] recorded 0 model steps, 0 tool answers (single)
+[shipping-bad-release-after-checkout-release] recorded 0 model steps, 0 tool answers (strong-plan)
+[shipping-bad-release-after-checkout-release] recorded 0 model steps, 0 tool answers (canary)
+[shipping-bad-release-after-checkout-release] answer: no root cause - wrong (expected shipping)
+[shipping-bad-release-after-checkout-release] plan for ErrorBudgetBurn/checkout: no action -> none
+[shipping-bad-release-after-checkout-release] plan for LatencyP95High/checkout: no action -> none
+[shipping-bad-release-after-checkout-release] plan for ErrorBudgetBurn/shipping: no action -> none
+[shipping-bad-release-after-checkout-release] plan for LatencyP95High/shipping: no action -> none
+[shipping-bad-release-after-checkout-release] plan for LatencyP95High/frontend: no action -> none
+[shipping-bad-release-after-checkout-release] plan for LatencyP95High/frontend-proxy: no action -> none
+[shipping-bad-release-after-checkout-release] recover
+[shipping-bad-release-after-checkout-release] all alerts resolved 274.8s after recovery
+[shipping-bad-release-after-checkout-release] closed 0 incident(s)
+=== shipping-bad-release-after-checkout-release: lab check FAILED; 24 incident(s)
+[eval] 16 observation(s) in lab-out/eval/results.json

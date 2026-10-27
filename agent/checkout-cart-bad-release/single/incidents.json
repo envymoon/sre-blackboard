@@ -1,0 +1,175 @@
+{
+ "annotations": {
+  "0501c8a0-d697-4385-827f-fea812c5dbf7": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 35.84% of requests"
+  }
+ },
+ "expected": {
+  "0501c8a0-d697-4385-827f-fea812c5dbf7": {
+   "agents": {
+    "solo": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_1f8e61ade9e72ae4",
+       "ev_f06045508c5f5b87"
+      ],
+      "statement": "checkout error SLI rose from about 0.14 at 19:24:30 to 0.42 by 19:26, and it is the only service with a large error ratio. frontend-proxy and frontend are at about 0.024."
+     },
+     {
+      "evidence_ids": [
+       "ev_f4d846cf2e24714c"
+      ],
+      "statement": "checkout revision 2 was created at 19:23:33Z with change cause 'checkout config release: cart client moved to port 9999'. Revision 1 was created at 19:11:23Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_decd38600f2e339e"
+      ],
+      "statement": "The diff between revisions 1 and 2 is exactly one change: containers.checkout.env.CART_ADDR goes from cart:8080 to cart:9999."
+     },
+     {
+      "evidence_ids": [
+       "ev_d53c3a50a031c90f",
+       "ev_c00fdea822d4ffa6"
+      ],
+      "statement": "Checkout's error spans are 'connection error: transport: Error while dialing: dial tcp 10.96.20.113:9999: i/o timeout' on CartService/GetCart, and 'cart failure ... code = Unavailable' on CheckoutService/PlaceOrder. Frontend reports these as HTTP 500."
+     },
+     {
+      "evidence_ids": [
+       "ev_2824ae04151c0b68"
+      ],
+      "statement": "Checkout's client-side GetCart spans switch to STATUS_CODE_ERROR from about 19:24:30, and the other checkout client calls (currency, product-catalog, payment, email) drop to zero by about 19:27."
+     },
+     {
+      "evidence_ids": [
+       "ev_952e55f74c4aa364",
+       "ev_41e562931da165fc",
+       "ev_1ea80df0116b91ce"
+      ],
+      "statement": "Cart's server-side latency p95 is about 2 ms after a brief spike at 19:13. Cart's server span rate stays at about 0.7 to 1.0 per second through the incident, and frontend's client calls to cart keep succeeding (GetCart about 0.8 to 1.0 per second, status unset)."
+     },
+     {
+      "evidence_ids": [
+       "ev_a62dd5752d6b6598",
+       "ev_5ca908a0e683f42e",
+       "ev_3ac772f6164825c5"
+      ],
+      "statement": "Cart has no error logs in the last 30 minutes and no Kubernetes warning events. Its only error spans are flagd connection-refused errors, which are not related to the checkout failures."
+     },
+     {
+      "evidence_ids": [
+       "ev_15637b03c8db7132",
+       "ev_8c88589f12761eb6",
+       "ev_fd4eca8d9ed35a4c"
+      ],
+      "statement": "Checkout logs no error or warn lines in the window, so the failures are visible only in traces and metrics. All feature flags are off."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check the cart Service ports and the cart container's listening port. Confirm that checkout's effective CART_ADDR is cart:9999 in the running pod, and that a connection to cart:9999 from inside the cluster fails.",
+      "statement": "Cart's service or container does not listen on port 9999 (it listens on 8080), so checkout's dial to 9999 times out."
+     },
+     {
+      "how_to_verify": "Run kubectl rollout undo for checkout, or set CART_ADDR back to cart:8080, then watch service:sli_error_ratio:rate5m for checkout drop toward 0 within a few minutes.",
+      "statement": "Rolling checkout back to revision 1 (CART_ADDR=cart:8080) should bring the checkout error ratio back to about 0."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_f4d846cf2e24714c",
+       "ev_decd38600f2e339e",
+       "ev_1f8e61ade9e72ae4",
+       "ev_d53c3a50a031c90f"
+      ],
+      "statement": "The checkout config change is the cause. The timing matches: the revision was created at 19:23:33, and the error ratio began rising at about 19:24. The content matches: the port change explains dial timeouts on cart, while cart's own side is healthy."
+     },
+     {
+      "evidence_ids": [
+       "ev_952e55f74c4aa364",
+       "ev_1ea80df0116b91ce",
+       "ev_3ac772f6164825c5"
+      ],
+      "statement": "Cart is not at fault. It serves its normal traffic on its usual port with normal latency, and its only errors are unrelated flagd connection failures."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Config release revision 2 (19:23:33Z) set CART_ADDR to cart:9999 instead of cart:8080. Checkout's gRPC dials to cart time out, so GetCart and PlaceOrder fail for every order. Roll back checkout to revision 1 or correct CART_ADDR.",
+      "confidence": 0.9,
+      "evidence_ids": [
+       "ev_f4d846cf2e24714c",
+       "ev_decd38600f2e339e",
+       "ev_d53c3a50a031c90f",
+       "ev_2824ae04151c0b68",
+       "ev_c00fdea822d4ffa6"
+      ],
+      "service": "checkout"
+     }
+    ],
+    "summary": "checkout is failing about 35-42% of requests since about 19:24Z. Its revision 2, rolled out at 19:23:33Z with the change cause 'cart client moved to port 9999', changed CART_ADDR from cart:8080 to cart:9999. Checkout's GetCart and PlaceOrder calls to cart now fail with gRPC Unavailable ('dial tcp 10.96.20.113:9999: i/o timeout'), and frontend and frontend-proxy surface this as HTTP 500. Cart is healthy on its own side: its server-side traffic from frontend continues, its p95 latency is about 2 ms, and it logs no errors. The fault is the checkout configuration pointing at a port cart does not serve."
+   },
+   "findings": 0,
+   "plan": {
+    "actions": [
+     {
+      "action": "rollout_undo",
+      "deployment": "checkout",
+      "evidence_ids": [
+       "ev_f4d846cf2e24714c",
+       "ev_decd38600f2e339e",
+       "ev_d53c3a50a031c90f",
+       "ev_2824ae04151c0b68"
+      ],
+      "reason": "Revision 2 (19:23:33Z, 'cart client moved to port 9999') is the only change and sets CART_ADDR to cart:9999. Checkout's GetCart dials time out and PlaceOrder fails with Unavailable from 19:24:30. Cart is healthy on 8080. Reverting to revision 1 restores CART_ADDR=cart:8080.",
+      "to_revision": 1
+     }
+    ],
+    "alternatives": [
+     {
+      "action": "restart_deployment",
+      "why_not": "A restart would reload the same bad CART_ADDR=cart:9999 config, so checkout would keep failing."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "Checkout is not short of capacity; its failures are dial timeouts to a wrong port, not overload."
+     },
+     {
+      "action": "none",
+      "why_not": "Failing 35-42% of checkout requests is user-facing P1 impact; the rollback is a documented, reversible undo of a single config change, so waiting is not justified."
+     }
+    ],
+    "no_action_reason": null,
+    "summary": "Roll back checkout from revision 2 (CART_ADDR=cart:9999, a bad config release at 19:23:33Z) to revision 1 (CART_ADDR=cart:8080). Expected result: checkout's GetCart and PlaceOrder dials to cart succeed again and the checkout error ratio falls back toward 0 within a few minutes."
+   },
+   "state": "AWAITING_APPROVAL"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": null,
+   "created_at": "2026-10-27 19:26:03.042244+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "0501c8a0-d697-4385-827f-fea812c5dbf7",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "AWAITING_APPROVAL",
+   "tenant_id": "lab-single",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}

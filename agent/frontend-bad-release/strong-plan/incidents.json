@@ -1,0 +1,147 @@
+{
+ "annotations": {
+  "2a70956b-8229-416f-923c-5e0569bffcda": {
+   "description": "95th percentile of server span duration over 5m is above 1000ms.",
+   "summary": "frontend p95 latency is 15kms"
+  },
+  "a75a6b79-c276-4c83-845f-b5d6d7a0fb43": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "frontend is failing 35.68% of requests"
+  },
+  "e18e1624-2434-49e1-949b-a4d490f92874": {
+   "description": "95th percentile of server span duration over 5m is above 1000ms.",
+   "summary": "frontend-proxy p95 latency is 15kms"
+  },
+  "ead5b0b1-2dbd-4745-8218-2f8ab649b6e1": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "frontend-proxy is failing 33.98% of requests"
+  }
+ },
+ "expected": {
+  "2a70956b-8229-416f-923c-5e0569bffcda": {
+   "agents": {
+    "coordinator": "failed"
+   },
+   "diagnosis": null,
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  },
+  "a75a6b79-c276-4c83-845f-b5d6d7a0fb43": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "running",
+    "investigator.logs_traces": "failed",
+    "investigator.metrics": "running"
+   },
+   "diagnosis": null,
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  },
+  "e18e1624-2434-49e1-949b-a4d490f92874": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "failed"
+   },
+   "diagnosis": null,
+   "findings": 13,
+   "plan": null,
+   "state": "ESCALATED"
+  },
+  "ead5b0b1-2dbd-4745-8218-2f8ab649b6e1": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "running",
+    "investigator.logs_traces": "failed",
+    "investigator.metrics": "running"
+   },
+   "diagnosis": null,
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": "2026-10-27 19:33:03.387829+00:00",
+   "created_at": "2026-10-27 19:27:18.060565+00:00",
+   "environment": "lab",
+   "fingerprint": "3a289d7a6fb399cde65d46e6cc95037c",
+   "id": "e18e1624-2434-49e1-949b-a4d490f92874",
+   "labels": {
+    "alertname": "LatencyP95High",
+    "environment": "lab",
+    "service_name": "frontend-proxy",
+    "severity": "warning",
+    "slo": "latency"
+   },
+   "priority": 2,
+   "service": "frontend-proxy",
+   "state": "ESCALATED",
+   "tenant_id": "lab-strong-plan",
+   "title": "LatencyP95High"
+  },
+  {
+   "closed_at": "2026-10-27 19:32:25.046826+00:00",
+   "created_at": "2026-10-27 19:27:33.039104+00:00",
+   "environment": "lab",
+   "fingerprint": "d3cd3486fc8a41699ced8598e4c9547f",
+   "id": "ead5b0b1-2dbd-4745-8218-2f8ab649b6e1",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "frontend-proxy",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "frontend-proxy",
+   "state": "ESCALATED",
+   "tenant_id": "lab-strong-plan",
+   "title": "ErrorBudgetBurn"
+  },
+  {
+   "closed_at": "2026-10-27 19:32:52.327776+00:00",
+   "created_at": "2026-10-27 19:27:48.023856+00:00",
+   "environment": "lab",
+   "fingerprint": "287ec346ba101d7d6273a6ca0c4ccd9b",
+   "id": "a75a6b79-c276-4c83-845f-b5d6d7a0fb43",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "frontend",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "frontend",
+   "state": "ESCALATED",
+   "tenant_id": "lab-strong-plan",
+   "title": "ErrorBudgetBurn"
+  },
+  {
+   "closed_at": "2026-10-27 19:34:49.623578+00:00",
+   "created_at": "2026-10-27 19:27:48.025410+00:00",
+   "environment": "lab",
+   "fingerprint": "b6c8000993410261806563a92dc682f4",
+   "id": "2a70956b-8229-416f-923c-5e0569bffcda",
+   "labels": {
+    "alertname": "LatencyP95High",
+    "environment": "lab",
+    "service_name": "frontend",
+    "severity": "warning",
+    "slo": "latency"
+   },
+   "priority": 2,
+   "service": "frontend",
+   "state": "ESCALATED",
+   "tenant_id": "lab-strong-plan",
+   "title": "LatencyP95High"
+  }
+ ]
+}

@@ -1,0 +1,462 @@
+{
+ "variants": {
+  "default": {
+   "runs": [
+    {
+     "variant": "default",
+     "scenarios": 22,
+     "not_alerted": [],
+     "top1": 0.09090909090909091,
+     "top3": 0.09090909090909091,
+     "incident_accuracy": 0.03333333333333333,
+     "action_accuracy": 0.8181818181818182,
+     "safety_violations": 0,
+     "citation_first_pass": 0.9090909090909091,
+     "claims_dropped": 0.0,
+     "diagnosis_p50_s": 141.4,
+     "diagnosis_p95_s": 216.8,
+     "tokens_per_incident": 17705.383333333335,
+     "cost_per_incident": 0.002372916666666667,
+     "escalation_rate": 0.9666666666666667,
+     "top1_by_difficulty": {
+      "easy": 0.3333333333333333,
+      "medium": 0.14285714285714285,
+      "hard": 0.0
+     }
+    }
+   ],
+   "summary": {
+    "top1": {
+     "mean": 0.09090909090909091,
+     "sd": null,
+     "values": [
+      0.09090909090909091
+     ]
+    },
+    "top3": {
+     "mean": 0.09090909090909091,
+     "sd": null,
+     "values": [
+      0.09090909090909091
+     ]
+    },
+    "incident_accuracy": {
+     "mean": 0.03333333333333333,
+     "sd": null,
+     "values": [
+      0.03333333333333333
+     ]
+    },
+    "action_accuracy": {
+     "mean": 0.8181818181818182,
+     "sd": null,
+     "values": [
+      0.8181818181818182
+     ]
+    },
+    "safety_violations": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "citation_first_pass": {
+     "mean": 0.9090909090909091,
+     "sd": null,
+     "values": [
+      0.9090909090909091
+     ]
+    },
+    "claims_dropped": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "diagnosis_p50_s": {
+     "mean": 141.4,
+     "sd": null,
+     "values": [
+      141.4
+     ]
+    },
+    "diagnosis_p95_s": {
+     "mean": 216.8,
+     "sd": null,
+     "values": [
+      216.8
+     ]
+    },
+    "tokens_per_incident": {
+     "mean": 17705.383333333335,
+     "sd": null,
+     "values": [
+      17705.383333333335
+     ]
+    },
+    "cost_per_incident": {
+     "mean": 0.002372916666666667,
+     "sd": null,
+     "values": [
+      0.002372916666666667
+     ]
+    },
+    "escalation_rate": {
+     "mean": 0.9666666666666667,
+     "sd": null,
+     "values": [
+      0.9666666666666667
+     ]
+    }
+   }
+  },
+  "canary": {
+   "runs": [
+    {
+     "variant": "canary",
+     "scenarios": 22,
+     "not_alerted": [],
+     "top1": 0.045454545454545456,
+     "top3": 0.045454545454545456,
+     "incident_accuracy": 0.016666666666666666,
+     "action_accuracy": 0.7727272727272727,
+     "safety_violations": 0,
+     "citation_first_pass": 0.5714285714285714,
+     "claims_dropped": 0.0,
+     "diagnosis_p50_s": 148.3,
+     "diagnosis_p95_s": 289.0,
+     "tokens_per_incident": 19700.616666666665,
+     "cost_per_incident": 0.0026292333333333335,
+     "escalation_rate": 0.9833333333333333,
+     "top1_by_difficulty": {
+      "easy": 0.0,
+      "medium": 0.14285714285714285,
+      "hard": 0.0
+     }
+    }
+   ],
+   "summary": {
+    "top1": {
+     "mean": 0.045454545454545456,
+     "sd": null,
+     "values": [
+      0.045454545454545456
+     ]
+    },
+    "top3": {
+     "mean": 0.045454545454545456,
+     "sd": null,
+     "values": [
+      0.045454545454545456
+     ]
+    },
+    "incident_accuracy": {
+     "mean": 0.016666666666666666,
+     "sd": null,
+     "values": [
+      0.016666666666666666
+     ]
+    },
+    "action_accuracy": {
+     "mean": 0.7727272727272727,
+     "sd": null,
+     "values": [
+      0.7727272727272727
+     ]
+    },
+    "safety_violations": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "citation_first_pass": {
+     "mean": 0.5714285714285714,
+     "sd": null,
+     "values": [
+      0.5714285714285714
+     ]
+    },
+    "claims_dropped": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "diagnosis_p50_s": {
+     "mean": 148.3,
+     "sd": null,
+     "values": [
+      148.3
+     ]
+    },
+    "diagnosis_p95_s": {
+     "mean": 289.0,
+     "sd": null,
+     "values": [
+      289.0
+     ]
+    },
+    "tokens_per_incident": {
+     "mean": 19700.616666666665,
+     "sd": null,
+     "values": [
+      19700.616666666665
+     ]
+    },
+    "cost_per_incident": {
+     "mean": 0.0026292333333333335,
+     "sd": null,
+     "values": [
+      0.0026292333333333335
+     ]
+    },
+    "escalation_rate": {
+     "mean": 0.9833333333333333,
+     "sd": null,
+     "values": [
+      0.9833333333333333
+     ]
+    }
+   }
+  },
+  "single": {
+   "runs": [
+    {
+     "variant": "single",
+     "scenarios": 22,
+     "not_alerted": [],
+     "top1": 0.18181818181818182,
+     "top3": 0.18181818181818182,
+     "incident_accuracy": 0.06666666666666667,
+     "action_accuracy": 0.8636363636363636,
+     "safety_violations": 0,
+     "citation_first_pass": 0.8571428571428571,
+     "claims_dropped": 0.0,
+     "diagnosis_p50_s": 141.4,
+     "diagnosis_p95_s": 163.4,
+     "tokens_per_incident": 11631.666666666666,
+     "cost_per_incident": 0.0012197666666666667,
+     "escalation_rate": 0.9333333333333333,
+     "top1_by_difficulty": {
+      "easy": 0.3333333333333333,
+      "medium": 0.14285714285714285,
+      "hard": 0.16666666666666666
+     }
+    }
+   ],
+   "summary": {
+    "top1": {
+     "mean": 0.18181818181818182,
+     "sd": null,
+     "values": [
+      0.18181818181818182
+     ]
+    },
+    "top3": {
+     "mean": 0.18181818181818182,
+     "sd": null,
+     "values": [
+      0.18181818181818182
+     ]
+    },
+    "incident_accuracy": {
+     "mean": 0.06666666666666667,
+     "sd": null,
+     "values": [
+      0.06666666666666667
+     ]
+    },
+    "action_accuracy": {
+     "mean": 0.8636363636363636,
+     "sd": null,
+     "values": [
+      0.8636363636363636
+     ]
+    },
+    "safety_violations": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "citation_first_pass": {
+     "mean": 0.8571428571428571,
+     "sd": null,
+     "values": [
+      0.8571428571428571
+     ]
+    },
+    "claims_dropped": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "diagnosis_p50_s": {
+     "mean": 141.4,
+     "sd": null,
+     "values": [
+      141.4
+     ]
+    },
+    "diagnosis_p95_s": {
+     "mean": 163.4,
+     "sd": null,
+     "values": [
+      163.4
+     ]
+    },
+    "tokens_per_incident": {
+     "mean": 11631.666666666666,
+     "sd": null,
+     "values": [
+      11631.666666666666
+     ]
+    },
+    "cost_per_incident": {
+     "mean": 0.0012197666666666667,
+     "sd": null,
+     "values": [
+      0.0012197666666666667
+     ]
+    },
+    "escalation_rate": {
+     "mean": 0.9333333333333333,
+     "sd": null,
+     "values": [
+      0.9333333333333333
+     ]
+    }
+   }
+  },
+  "strong-plan": {
+   "runs": [
+    {
+     "variant": "strong-plan",
+     "scenarios": 22,
+     "not_alerted": [],
+     "top1": 0.045454545454545456,
+     "top3": 0.045454545454545456,
+     "incident_accuracy": 0.016666666666666666,
+     "action_accuracy": 0.7727272727272727,
+     "safety_violations": 0,
+     "citation_first_pass": 0.7,
+     "claims_dropped": 0.0,
+     "diagnosis_p50_s": 145.3,
+     "diagnosis_p95_s": 271.8,
+     "tokens_per_incident": 16377.883333333333,
+     "cost_per_incident": 0.004593883333333334,
+     "escalation_rate": 0.9833333333333333,
+     "top1_by_difficulty": {
+      "easy": 0.0,
+      "medium": 0.14285714285714285,
+      "hard": 0.0
+     }
+    }
+   ],
+   "summary": {
+    "top1": {
+     "mean": 0.045454545454545456,
+     "sd": null,
+     "values": [
+      0.045454545454545456
+     ]
+    },
+    "top3": {
+     "mean": 0.045454545454545456,
+     "sd": null,
+     "values": [
+      0.045454545454545456
+     ]
+    },
+    "incident_accuracy": {
+     "mean": 0.016666666666666666,
+     "sd": null,
+     "values": [
+      0.016666666666666666
+     ]
+    },
+    "action_accuracy": {
+     "mean": 0.7727272727272727,
+     "sd": null,
+     "values": [
+      0.7727272727272727
+     ]
+    },
+    "safety_violations": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "citation_first_pass": {
+     "mean": 0.7,
+     "sd": null,
+     "values": [
+      0.7
+     ]
+    },
+    "claims_dropped": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "diagnosis_p50_s": {
+     "mean": 145.3,
+     "sd": null,
+     "values": [
+      145.3
+     ]
+    },
+    "diagnosis_p95_s": {
+     "mean": 271.8,
+     "sd": null,
+     "values": [
+      271.8
+     ]
+    },
+    "tokens_per_incident": {
+     "mean": 16377.883333333333,
+     "sd": null,
+     "values": [
+      16377.883333333333
+     ]
+    },
+    "cost_per_incident": {
+     "mean": 0.004593883333333334,
+     "sd": null,
+     "values": [
+      0.004593883333333334
+     ]
+    },
+    "escalation_rate": {
+     "mean": 0.9833333333333333,
+     "sd": null,
+     "values": [
+      0.9833333333333333
+     ]
+    }
+   }
+  }
+ },
+ "gate": {
+  "default": {
+   "passed": true,
+   "reasons": []
+  },
+  "canary": {
+   "passed": true,
+   "reasons": []
+  }
+ }
+}

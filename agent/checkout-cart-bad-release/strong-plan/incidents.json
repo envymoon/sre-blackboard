@@ -1,0 +1,152 @@
+{
+ "annotations": {
+  "25855b9c-5438-4b72-9236-9b3f4e6c5e96": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 35.84% of requests"
+  }
+ },
+ "expected": {
+  "25855b9c-5438-4b72-9236-9b3f4e6c5e96": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_5a2c1d6845119044",
+       "ev_fb44abdb9f3ba9c3"
+      ],
+      "statement": "Checkout revision 2 (change cause 'checkout config release: cart client moved to port 9999') was created at 19:23:33Z. The only diff from revision 1 is CART_ADDR, changed from cart:8080 to cart:9999."
+     },
+     {
+      "evidence_ids": [
+       "ev_364b92b04d699530",
+       "ev_b2c7f59c773fe8c1",
+       "ev_f44a206ce6559eb7",
+       "ev_9ac9cff793ded4c0"
+      ],
+      "statement": "Failing checkout traces all show the GetCart dial to 10.96.20.113:9999 getting 'i/o timeout'. PlaceOrder turns this into 'cart failure ... code = Unavailable', and frontend returns HTTP 500."
+     },
+     {
+      "evidence_ids": [
+       "ev_5f3da84ca18f6df7",
+       "ev_690821824f5bd5a9",
+       "ev_d28c64b26426a8cc"
+      ],
+      "statement": "Checkout's only client-span errors are CartService/GetCart, and PlaceOrder server errors track the same series. The checkout error ratio rose from 0.26 to 0.48."
+     },
+     {
+      "evidence_ids": [
+       "ev_be4e9d985650a278",
+       "ev_a1f49a04d628e6a1",
+       "ev_a6eb4e313f15936a",
+       "ev_e134b9895f15bc65"
+      ],
+      "statement": "Cart shows no server error spans and no error logs, and it keeps serving traffic. Cart's only revision is unchanged, with no warning events."
+     },
+     {
+      "evidence_ids": [
+       "ev_59c2be2660abe7dc",
+       "ev_c26a4a2ca695ee33"
+      ],
+      "statement": "All feature flags are off, and no other dependency has a nonzero error ratio."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Compare the per-method error rates on checkout. Then roll back and watch the error ratio return to baseline.",
+      "statement": "The partial error ratio (35 to 65%) means only requests that call GetCart through PlaceOrder fail, not all checkout traffic."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_fb44abdb9f3ba9c3",
+       "ev_f74e28c9d080b035",
+       "ev_5a2c1d6845119044"
+      ],
+      "statement": "Cart listens on 8080, not 9999, so the port change in checkout's config causes the timeouts. The checkout restart seen at 19:23:35 matches the rollout of revision 2."
+     },
+     {
+      "evidence_ids": [
+       "ev_c26a4a2ca695ee33"
+      ],
+      "statement": "The frontend and frontend-proxy errors (about 2.8%) are downstream effects of the checkout failures."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Config release 'cart client moved to port 9999' (revision 2) set CART_ADDR=cart:9999. Cart does not listen on that port, so every GetCart call from checkout times out on dial and PlaceOrder fails.",
+      "confidence": 0.93,
+      "evidence_ids": [
+       "ev_5a2c1d6845119044",
+       "ev_fb44abdb9f3ba9c3",
+       "ev_364b92b04d699530",
+       "ev_f44a206ce6559eb7",
+       "ev_5f3da84ca18f6df7"
+      ],
+      "service": "checkout"
+     }
+    ],
+    "summary": "Checkout's error budget is burning because checkout revision 2 (created 19:23:33Z, about 2.5 minutes before the alert) changed CART_ADDR from cart:8080 to cart:9999. Checkout's GetCart dial to 10.96.20.113:9999 now times out ('i/o timeout'). PlaceOrder returns Unavailable and frontend returns HTTP 500 on /api/checkout. Cart is unchanged, healthy and serving normally on its own side. No feature flags are on. Rolling checkout back to revision 1, or restoring CART_ADDR=cart:8080, should fix it."
+   },
+   "findings": 18,
+   "plan": {
+    "actions": [
+     {
+      "action": "rollout_undo",
+      "deployment": "checkout",
+      "evidence_ids": [
+       "ev_5a2c1d6845119044",
+       "ev_fb44abdb9f3ba9c3",
+       "ev_364b92b04d699530",
+       "ev_f44a206ce6559eb7"
+      ],
+      "reason": "Checkout revision 2 (19:23:33Z) changed CART_ADDR from cart:8080 to cart:9999 and cart does not listen on 9999. GetCart dials time out, so PlaceOrder returns Unavailable. Reverting to revision 1 restores cart:8080.",
+      "to_revision": 1
+     }
+    ],
+    "alternatives": [
+     {
+      "action": "restart_deployment",
+      "why_not": "A restart would reload the same CART_ADDR=cart:9999 config, so the timeouts would continue."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "Checkout is failing on a wrong dial target, not on capacity. More replicas would fail the same way."
+     }
+    ],
+    "no_action_reason": null,
+    "summary": "Roll checkout back from revision 2 to revision 1, which restores CART_ADDR=cart:8080 and undoes the port 9999 change that is causing GetCart dial timeouts and PlaceOrder Unavailable errors. After the rollback, checkout's error ratio should drop back toward its pre-release level of about 0.26 or lower, and the fast-burn ErrorBudgetBurn alert should clear."
+   },
+   "state": "AWAITING_APPROVAL"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": null,
+   "created_at": "2026-10-27 19:26:03.035186+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "25855b9c-5438-4b72-9236-9b3f4e6c5e96",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "AWAITING_APPROVAL",
+   "tenant_id": "lab-strong-plan",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}

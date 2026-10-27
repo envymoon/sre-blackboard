@@ -1,0 +1,123 @@
+[eval] 4 scenario(s): bad-release-after-currency-release, network-delay-cart, payment-failure-25, pod-failure-product-catalog
+[eval] variants: default (lab), single (lab-single), strong-plan (lab-strong-plan), canary (lab-canary)
+[baseline] watching for 300s with no fault injected
+=== scenario 1/4: bad-release-after-currency-release (hard): Two releases in two minutes, one of them bad
+[bad-release-after-currency-release] distractor: a currency rollout that changes nothing requests depend on
+[bad-release-after-currency-release] inject: a checkout rollout points its payment client at a port nobody listens on
+[bad-release-after-currency-release] alert ErrorBudgetBurn[fast] on checkout after 138.7s
+[bad-release-after-currency-release] [single] awaiting_approval ErrorBudgetBurn/checkout: root causes checkout 90%; 7 model calls, 117,987 tokens, $0.012
+[bad-release-after-currency-release] [strong-plan] escalated ErrorBudgetBurn/checkout: root causes none; 19 model calls, 90,339 tokens, $0.021 (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[bad-release-after-currency-release] escalated ErrorBudgetBurn/checkout: root causes none; 14 model calls, 53,159 tokens, $0.005 (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[bad-release-after-currency-release] [canary] escalated ErrorBudgetBurn/checkout: root causes none; 21 model calls, 119,803 tokens, $0.012 (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[bad-release-after-currency-release] recorded 9 model steps, 21 tool answers
+[bad-release-after-currency-release] recorded 7 model steps, 15 tool answers (single)
+[bad-release-after-currency-release] recorded 14 model steps, 36 tool answers (strong-plan)
+[bad-release-after-currency-release] recorded 16 model steps, 41 tool answers (canary)
+[bad-release-after-currency-release] answer: no root cause - wrong (expected checkout)
+[bad-release-after-currency-release] plan for ErrorBudgetBurn/checkout: no action -> none
+[bad-release-after-currency-release] recover
+[bad-release-after-currency-release] all alerts resolved 277.6s after recovery
+[bad-release-after-currency-release] closed 1 incident(s)
+=== bad-release-after-currency-release: lab check FAILED; 4 incident(s)
+=== scenario 2/4: network-delay-cart (hard): One second of network delay on cart
+[network-delay-cart] inject: 1s of added network latency on cart
+[network-delay-cart] alert LatencyP95High on checkout after 188.3s
+[network-delay-cart] alert LatencyP95High on cart after 188.3s
+[network-delay-cart] alert LatencyP95High on frontend after 218.3s
+[network-delay-cart] alert LatencyP95High on frontend-proxy after 218.3s
+[network-delay-cart] [canary] escalated LatencyP95High/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[network-delay-cart] [canary] escalated LatencyP95High/cart: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[network-delay-cart] [strong-plan] escalated LatencyP95High/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[network-delay-cart] [single] escalated LatencyP95High/cart: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[network-delay-cart] escalated LatencyP95High/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[network-delay-cart] [strong-plan] escalated LatencyP95High/cart: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[network-delay-cart] [single] escalated LatencyP95High/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[network-delay-cart] escalated LatencyP95High/cart: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[network-delay-cart] [strong-plan] escalated LatencyP95High/frontend-proxy: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[network-delay-cart] escalated LatencyP95High/frontend: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[network-delay-cart] [single] escalated LatencyP95High/frontend: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[network-delay-cart] [canary] escalated LatencyP95High/frontend: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[network-delay-cart] [canary] escalated LatencyP95High/frontend-proxy: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[network-delay-cart] [single] escalated LatencyP95High/frontend-proxy: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[network-delay-cart] [strong-plan] escalated LatencyP95High/frontend: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[network-delay-cart] escalated LatencyP95High/frontend-proxy: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[network-delay-cart] recorded 0 model steps, 0 tool answers
+[network-delay-cart] recorded 0 model steps, 0 tool answers (single)
+[network-delay-cart] recorded 0 model steps, 0 tool answers (strong-plan)
+[network-delay-cart] recorded 0 model steps, 0 tool answers (canary)
+[network-delay-cart] answer: no root cause - wrong (expected cart)
+[network-delay-cart] plan for LatencyP95High/checkout: no action -> none
+[network-delay-cart] plan for LatencyP95High/cart: no action -> none
+[network-delay-cart] plan for LatencyP95High/frontend: no action -> none
+[network-delay-cart] plan for LatencyP95High/frontend-proxy: no action -> none
+[network-delay-cart] recover
+[network-delay-cart] all alerts resolved 290.5s after recovery
+[network-delay-cart] closed 0 incident(s)
+=== network-delay-cart: lab check FAILED; 16 incident(s)
+=== scenario 3/4: payment-failure-25 (medium): Payment rejects one in four charges
+[payment-failure-25] inject: payment rejects one in four charges
+[payment-failure-25] alert ErrorBudgetBurn[slow] on checkout after 251.9s
+[payment-failure-25] escalated ErrorBudgetBurn/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-25] [single] escalated ErrorBudgetBurn/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-25] [strong-plan] escalated ErrorBudgetBurn/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-25] [canary] escalated ErrorBudgetBurn/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-25] [single] escalated ErrorBudgetBurn/payment: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-25] [canary] escalated ErrorBudgetBurn/payment: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-25] [strong-plan] escalated ErrorBudgetBurn/payment: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-25] escalated ErrorBudgetBurn/payment: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-25] escalated ErrorBudgetBurn/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-25] [strong-plan] escalated ErrorBudgetBurn/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-25] [canary] escalated ErrorBudgetBurn/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-25] [single] escalated ErrorBudgetBurn/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-25] escalated ErrorBudgetBurn/payment: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-25] [single] escalated ErrorBudgetBurn/payment: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-25] [strong-plan] escalated ErrorBudgetBurn/payment: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-25] [canary] escalated ErrorBudgetBurn/payment: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-25] [strong-plan] escalated ErrorBudgetBurn/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-25] [single] escalated ErrorBudgetBurn/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-25] escalated ErrorBudgetBurn/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-25] [canary] escalated ErrorBudgetBurn/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[payment-failure-25] recorded 0 model steps, 0 tool answers
+[payment-failure-25] recorded 0 model steps, 0 tool answers (single)
+[payment-failure-25] recorded 0 model steps, 0 tool answers (strong-plan)
+[payment-failure-25] recorded 0 model steps, 0 tool answers (canary)
+[payment-failure-25] answer: no root cause - wrong (expected payment)
+[payment-failure-25] plan for ErrorBudgetBurn/checkout: no action -> none
+[payment-failure-25] plan for ErrorBudgetBurn/payment: no action -> none
+[payment-failure-25] plan for ErrorBudgetBurn/checkout: no action -> none
+[payment-failure-25] plan for ErrorBudgetBurn/payment: no action -> none
+[payment-failure-25] plan for ErrorBudgetBurn/checkout: no action -> none
+[payment-failure-25] recover
+[payment-failure-25] all alerts resolved 310.3s after recovery
+[payment-failure-25] closed 0 incident(s)
+=== payment-failure-25: lab check FAILED; 20 incident(s)
+=== scenario 4/4: pod-failure-product-catalog (medium): Every product-catalog pod stops serving
+[pod-failure-product-catalog] inject: every product-catalog pod stops serving (container replaced by a pause image)
+[pod-failure-product-catalog] alert ErrorBudgetBurn[fast] on checkout after 130.9s
+[pod-failure-product-catalog] alert ErrorBudgetBurn[fast] on frontend-proxy after 160.9s
+[pod-failure-product-catalog] alert ErrorBudgetBurn[fast] on frontend after 160.9s
+[pod-failure-product-catalog] escalated ErrorBudgetBurn/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[pod-failure-product-catalog] [canary] escalated ErrorBudgetBurn/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[pod-failure-product-catalog] [single] escalated ErrorBudgetBurn/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[pod-failure-product-catalog] [strong-plan] escalated ErrorBudgetBurn/checkout: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[pod-failure-product-catalog] escalated ErrorBudgetBurn/frontend-proxy: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[pod-failure-product-catalog] [canary] escalated ErrorBudgetBurn/frontend: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[pod-failure-product-catalog] [canary] escalated ErrorBudgetBurn/frontend-proxy: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[pod-failure-product-catalog] [strong-plan] escalated ErrorBudgetBurn/frontend-proxy: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[pod-failure-product-catalog] escalated ErrorBudgetBurn/frontend: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[pod-failure-product-catalog] [strong-plan] escalated ErrorBudgetBurn/frontend: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[pod-failure-product-catalog] [single] escalated ErrorBudgetBurn/frontend-proxy: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[pod-failure-product-catalog] [single] escalated ErrorBudgetBurn/frontend: root causes none; 5 model calls, 0 tokens (the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC))
+[pod-failure-product-catalog] recorded 0 model steps, 0 tool answers
+[pod-failure-product-catalog] recorded 0 model steps, 0 tool answers (single)
+[pod-failure-product-catalog] recorded 0 model steps, 0 tool answers (strong-plan)
+[pod-failure-product-catalog] recorded 0 model steps, 0 tool answers (canary)
+[pod-failure-product-catalog] answer: no root cause - wrong (expected product-catalog)
+[pod-failure-product-catalog] plan for ErrorBudgetBurn/checkout: no action -> none
+[pod-failure-product-catalog] plan for ErrorBudgetBurn/frontend-proxy: no action -> none
+[pod-failure-product-catalog] plan for ErrorBudgetBurn/frontend: no action -> none
+[pod-failure-product-catalog] recover
+[pod-failure-product-catalog] all alerts resolved 355.7s after recovery
+[pod-failure-product-catalog] closed 0 incident(s)
+=== pod-failure-product-catalog: lab check FAILED; 12 incident(s)
+[eval] 16 observation(s) in lab-out/eval/results.json

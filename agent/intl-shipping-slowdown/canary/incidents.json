@@ -1,0 +1,78 @@
+{
+ "annotations": {
+  "5818e135-7fad-4805-a521-3ce208cb4a8b": {
+   "description": "95th percentile of server span duration over 5m is above 1000ms.",
+   "summary": "shipping p95 latency is 5.929kms"
+  },
+  "b80df6ba-2c3f-4e40-9f9b-8fa0be93f9a7": {
+   "description": "95th percentile of server span duration over 5m is above 1000ms.",
+   "summary": "checkout p95 latency is 7.625kms"
+  }
+ },
+ "expected": {
+  "5818e135-7fad-4805-a521-3ce208cb4a8b": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "failed",
+    "investigator.logs_traces": "running",
+    "investigator.metrics": "running"
+   },
+   "diagnosis": null,
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  },
+  "b80df6ba-2c3f-4e40-9f9b-8fa0be93f9a7": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "failed",
+    "investigator.logs_traces": "running",
+    "investigator.metrics": "running"
+   },
+   "diagnosis": null,
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": "2026-10-27 19:31:41.683955+00:00",
+   "created_at": "2026-10-27 19:28:18.060797+00:00",
+   "environment": "lab",
+   "fingerprint": "7d3c22bfff3583271006e8d4df5f3976",
+   "id": "b80df6ba-2c3f-4e40-9f9b-8fa0be93f9a7",
+   "labels": {
+    "alertname": "LatencyP95High",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "warning",
+    "slo": "latency"
+   },
+   "priority": 2,
+   "service": "checkout",
+   "state": "ESCALATED",
+   "tenant_id": "lab-canary",
+   "title": "LatencyP95High"
+  },
+  {
+   "closed_at": "2026-10-27 19:33:12.939676+00:00",
+   "created_at": "2026-10-27 19:30:18.023420+00:00",
+   "environment": "lab",
+   "fingerprint": "55924ed51ad3079ba37e1035a11939f2",
+   "id": "5818e135-7fad-4805-a521-3ce208cb4a8b",
+   "labels": {
+    "alertname": "LatencyP95High",
+    "environment": "lab",
+    "service_name": "shipping",
+    "severity": "warning",
+    "slo": "latency"
+   },
+   "priority": 2,
+   "service": "shipping",
+   "state": "ESCALATED",
+   "tenant_id": "lab-canary",
+   "title": "LatencyP95High"
+  }
+ ]
+}

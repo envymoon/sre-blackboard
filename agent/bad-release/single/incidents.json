@@ -1,0 +1,168 @@
+{
+ "annotations": {
+  "1c11e74b-d59a-4ac4-a848-46969bc88966": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 40.01% of requests"
+  }
+ },
+ "expected": {
+  "1c11e74b-d59a-4ac4-a848-46969bc88966": {
+   "agents": {
+    "solo": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_41f71ee98598bfe2"
+      ],
+      "statement": "Checkout is the only service with a high error ratio (0.45). Frontend is at 0.024 and frontend-proxy at 0.023."
+     },
+     {
+      "evidence_ids": [
+       "ev_1ba3157dcd017706"
+      ],
+      "statement": "Checkout revision 2 was created at 19:25:01Z with the change cause 'payment client moved to port 9999'. Revision 1 was created at 19:12:15Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_8a1738f244630b82"
+      ],
+      "statement": "The diff between revisions 1 and 2 changes containers.checkout.env.PAYMENT_ADDR from payment:8080 to payment:9999."
+     },
+     {
+      "evidence_ids": [
+       "ev_dc49cb96b8812399"
+      ],
+      "statement": "Checkout's error spans are PaymentService/Charge and PlaceOrder failing with 'connection error ... dial tcp 10.96.155.32:9999: i/o timeout'. Frontend's POST /api/checkout returns 500 as a result."
+     },
+     {
+      "evidence_ids": [
+       "ev_4f673c1a2eeece98"
+      ],
+      "statement": "Payment's logs contain only info lines (Charge request received, Transaction complete). They stop at 19:24:57Z, with no error lines."
+     },
+     {
+      "evidence_ids": [
+       "ev_a7b8f8c1a72c880e"
+      ],
+      "statement": "Payment's Charge server-span rate falls from about 0.2 per second to 0 between 19:20Z and 19:28Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_8cb4d961560889f6",
+       "ev_c3754586da6b0eb4"
+      ],
+      "statement": "Checkout's client Charge call rate is 0.217 per second over 5m. Checkout's own error logs are empty."
+     },
+     {
+      "evidence_ids": [
+       "ev_df104d1d9646feb2"
+      ],
+      "statement": "Checkout's error ratio climbs from 0.275 at 19:26 to 0.590 at 19:27:54Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_866c008257702083",
+       "ev_25e9b6375d922b9c"
+      ],
+      "statement": "All 18 flags are off. Warning events show only probe failures on otel-collector, alertmanager and loki, not on checkout or payment."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check the payment Service ports and the payment container's listening port. Then confirm a connect to payment:9999 is refused or times out.",
+      "statement": "Payment's Kubernetes Service and container listen on 8080 only, so nothing listens on 9999."
+     },
+     {
+      "how_to_verify": "Run kubectl rollout undo for checkout, then watch service:sli_error_ratio:rate5m for checkout drop toward zero.",
+      "statement": "Rolling checkout back to revision 1 (PAYMENT_ADDR=payment:8080) should restore the error ratio to baseline."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_1ba3157dcd017706",
+       "ev_8a1738f244630b82",
+       "ev_a7b8f8c1a72c880e",
+       "ev_dc49cb96b8812399"
+      ],
+      "statement": "The port change at 19:25Z is the trigger. Payment is healthy on its own side and is not receiving checkout's charge calls, so the fault is in checkout's configuration."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Config release at 19:25Z set PAYMENT_ADDR to payment:9999, but payment serves on 8080. Every charge call from checkout times out, so PlaceOrder fails with Unavailable and about 45% of checkout requests return errors.",
+      "confidence": 0.9,
+      "evidence_ids": [
+       "ev_1ba3157dcd017706",
+       "ev_8a1738f244630b82",
+       "ev_dc49cb96b8812399",
+       "ev_a7b8f8c1a72c880e",
+       "ev_8cb4d961560889f6",
+       "ev_df104d1d9646feb2"
+      ],
+      "service": "checkout"
+     }
+    ],
+    "summary": "Checkout's error ratio rose from about 0.28 to 0.59 over the last hour, peaking at 19:27Z. The checkout Deployment's revision 2 was rolled out at 19:25:01Z with the change cause 'payment client moved to port 9999'. The diff shows PAYMENT_ADDR changed from payment:8080 to payment:9999. Checkout's PaymentService/Charge calls fail with 'i/o timeout' dialing 10.96.155.32:9999, and payment's Charge server spans fall to zero after the rollout. Payment itself shows no errors, and no flags or warning events explain the change. Frontend and frontend-proxy errors are downstream of checkout."
+   },
+   "findings": 0,
+   "plan": {
+    "actions": [
+     {
+      "action": "rollout_undo",
+      "deployment": "checkout",
+      "evidence_ids": [
+       "ev_1ba3157dcd017706",
+       "ev_8a1738f244630b82",
+       "ev_dc49cb96b8812399",
+       "ev_a7b8f8c1a72c880e"
+      ],
+      "reason": "Checkout revision 2 (19:25:01Z, 'payment client moved to port 9999') changed PAYMENT_ADDR from payment:8080 to payment:9999. Checkout's Charge calls fail with i/o timeout dialing port 9999, and payment's Charge spans fall to zero, so rolling back to revision 1 restores the working address.",
+      "to_revision": 1
+     }
+    ],
+    "alternatives": [
+     {
+      "action": "restart_deployment",
+      "why_not": "The fault is in the pod's environment configuration, not a stuck or leaking process. A restart would bring back the same PAYMENT_ADDR=payment:9999."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "Checkout is not short of capacity. Its requests fail on a bad dial target, so more replicas would fail the same way."
+     },
+     {
+      "action": "none",
+      "why_not": "Doing nothing leaves about 45% of checkout requests failing and the fast error budget burn running."
+     }
+    ],
+    "no_action_reason": null,
+    "summary": "Roll checkout back to revision 1, which restores PAYMENT_ADDR=payment:8080 and undoes the 19:25Z release that pointed checkout at a port payment does not serve. Expect checkout's error ratio to fall from about 0.59 back to baseline (about 0.01) within a few minutes as charge calls succeed again."
+   },
+   "state": "AWAITING_APPROVAL"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": null,
+   "created_at": "2026-10-27 19:27:18.038213+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "1c11e74b-d59a-4ac4-a848-46969bc88966",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "AWAITING_APPROVAL",
+   "tenant_id": "lab-single",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}

@@ -1,0 +1,192 @@
+{
+ "annotations": {
+  "779a55aa-4205-4e6e-8c7d-10656465e441": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 35.84% of requests"
+  }
+ },
+ "expected": {
+  "779a55aa-4205-4e6e-8c7d-10656465e441": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_a6a14bfcba915b9b",
+       "ev_2b17c8a7d88e1917"
+      ],
+      "statement": "checkout revision 2 (created 19:23:33Z, change-cause 'checkout config release: cart client moved to port 9999') is the only pod-template change, and its single env diff is CART_ADDR from cart:8080 to cart:9999."
+     },
+     {
+      "evidence_ids": [
+       "ev_37caf391be45da2e",
+       "ev_b2c5b56cbf206794",
+       "ev_c9dd7da7710f591b",
+       "ev_7ac2f811867efbac"
+      ],
+      "statement": "Every failing checkout trace fails first at checkout's CartService/GetCart span with a dial i/o timeout to 10.96.20.113:9999, which propagates to PlaceOrder and to frontend's 500 on POST /api/checkout."
+     },
+     {
+      "evidence_ids": [
+       "ev_28e76dca673fa272",
+       "ev_e15cc3be04e1f7d8",
+       "ev_2ea475085391e287"
+      ],
+      "statement": "Checkout's SLI error ratio rose from 0.26 at 19:25:20Z to 0.48 at 19:26:20Z. Checkout is the only service with a major elevated error ratio; frontend and frontend-proxy are near 0.028 and flagd is at baseline."
+     },
+     {
+      "evidence_ids": [
+       "ev_0ad958859f7c7007",
+       "ev_b84265d68c252665",
+       "ev_89d1fea3ab479ed9",
+       "ev_08ec9c3ae5fe9700"
+      ],
+      "statement": "Checkout's GetCart client spans show a high STATUS_CODE_ERROR fraction (about 0.54 to 0.72 depending on window). CurrencyService, ProductCatalog and PaymentService client spans show no errors."
+     },
+     {
+      "evidence_ids": [
+       "ev_b8791c614b76ec05",
+       "ev_778df67619810fa9",
+       "ev_fbd19cffcc0926d0",
+       "ev_f2775c950c832cd6"
+      ],
+      "statement": "Cart's own server spans (GetCart, AddItem, EmptyCart) show no errors, and its GetCart p95 is flat at about 2 ms. Cart has one revision (19:11:23Z) and no warning events."
+     },
+     {
+      "evidence_ids": [
+       "ev_02a823b4c3463913",
+       "ev_3450af8ca690577b",
+       "ev_c7c44f8e421cd9b3"
+      ],
+      "statement": "All 18 flagd flags are at their default (off). Payment has one revision (19:11:23Z) and shows no error logs."
+     },
+     {
+      "evidence_ids": [
+       "ev_ec1ed74075250d76",
+       "ev_f6fa3bc300705cce",
+       "ev_822b937b58a91cd0"
+      ],
+      "statement": "Checkout emits no error-level logs or 'timeout' lines in the failure window, so the failure is visible only in traces."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check the cart Service ports and endpoints, and confirm cart listens only on 8080. Check for a NetworkPolicy blocking 9999. Confirm that checkout client spans show net.peer.port 9999.",
+      "statement": "Cart does not listen on port 9999, so the checkout dial fails."
+     },
+     {
+      "how_to_verify": "Break down checkout's error ratio by span_name and by route. Check whether non-cart paths show errors in traces.",
+      "statement": "Checkout's errors are not fully explained by the GetCart path alone. The 35.84% overall ratio is higher than the share of requests that call GetCart, so other paths may also be affected."
+     },
+     {
+      "how_to_verify": "Query Jaeger for cart spans with operation GetCart over the last hour. Compare with cart's GetCartAsync log timestamps.",
+      "statement": "Cart's GetCart server spans are missing even though cart logs show GetCartAsync calls. This may be a trace export or sampling gap rather than a real fault."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_c1fbc3a011e37c57",
+       "ev_28e76dca673fa272"
+      ],
+      "statement": "The checkout revision 2 rollout completed around 19:23:35Z, before the alert at 19:26:03Z and the error rise from 19:25Z. The timing matches the change."
+     },
+     {
+      "evidence_ids": [
+       "ev_b8791c614b76ec05",
+       "ev_d79f49d14484ec22",
+       "ev_ea59f2fa55304f36"
+      ],
+      "statement": "Cart is not the origin. Its server metrics, logs and events are clean, and the failing calls appear to never reach it, which fits a wrong port on the checkout side."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Revision 2 (change-cause 'cart client moved to port 9999') set CART_ADDR to cart:9999, but cart serves on 8080. Checkout's GetCart dial fails, failing PlaceOrder and the checkout API. Rolling back to revision 1 or setting CART_ADDR back to cart:8080 should fix it.",
+      "confidence": 0.85,
+      "evidence_ids": [
+       "ev_a6a14bfcba915b9b",
+       "ev_2b17c8a7d88e1917",
+       "ev_c1fbc3a011e37c57",
+       "ev_37caf391be45da2e",
+       "ev_7ac2f811867efbac",
+       "ev_28e76dca673fa272",
+       "ev_0ad958859f7c7007",
+       "ev_b8791c614b76ec05"
+      ],
+      "service": "checkout"
+     },
+     {
+      "cause": "Less likely: cart does not expose or listen on 9999 (for example, the cart Service has no 9999 port, or a NetworkPolicy blocks it). This would be an alternative explanation for the timeouts, but it does not explain why the errors started exactly at the checkout rollout.",
+      "confidence": 0.1,
+      "evidence_ids": [
+       "ev_fbd19cffcc0926d0",
+       "ev_f2775c950c832cd6",
+       "ev_c6ac2ca90f3b2a02"
+      ],
+      "service": "cart"
+     }
+    ],
+    "summary": "checkout's fast ErrorBudgetBurn (about 36% over 5m) is caused by its own revision 2 rollout at 19:23:33Z, which changed CART_ADDR from cart:8080 to cart:9999. Checkout's GetCart calls to cart fail with dial i/o timeouts, so PlaceOrder fails and frontend returns 500 on POST /api/checkout. Cart's own server metrics, logs and rollout history are clean, consistent with requests never reaching cart. Other services are at baseline, no flags are on, and payment is unchanged. Fix: roll checkout back to revision 1 (or correct CART_ADDR to cart:8080) and confirm the error ratio falls."
+   },
+   "findings": 18,
+   "plan": {
+    "actions": [
+     {
+      "action": "rollout_undo",
+      "deployment": "checkout",
+      "evidence_ids": [
+       "ev_a6a14bfcba915b9b",
+       "ev_2b17c8a7d88e1917",
+       "ev_37caf391be45da2e",
+       "ev_28e76dca673fa272"
+      ],
+      "reason": "Checkout revision 2 (19:23:33Z, 'cart client moved to port 9999') changed CART_ADDR from cart:8080 to cart:9999, and cart serves on 8080. GetCart dial timeouts fail PlaceOrder and frontend returns 500. Reverting to revision 1 restores the working address.",
+      "to_revision": 1
+     }
+    ],
+    "alternatives": [
+     {
+      "action": "restart_deployment",
+      "why_not": "The env var is part of the pod template, so a restart would bring back the same CART_ADDR=cart:9999 and the errors would continue."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "The failure is a wrong dial address, not a capacity shortfall. More replicas would fail in the same way."
+     }
+    ],
+    "no_action_reason": null,
+    "summary": "Roll checkout back to revision 1, which restores CART_ADDR to cart:8080 and undoes the bad port change from revision 2. Expect checkout's SLI error ratio to fall toward baseline (about 0.03) within a few minutes as GetCart dials succeed again."
+   },
+   "state": "AWAITING_APPROVAL"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": null,
+   "created_at": "2026-10-27 19:26:03.042936+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "779a55aa-4205-4e6e-8c7d-10656465e441",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "AWAITING_APPROVAL",
+   "tenant_id": "lab-canary",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}

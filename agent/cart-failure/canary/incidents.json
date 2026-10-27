@@ -1,0 +1,43 @@
+{
+ "annotations": {
+  "6299852a-ce37-4635-af90-bf44476e50f0": {
+   "description": "95th percentile of server span duration over 5m is above 1000ms.",
+   "summary": "checkout p95 latency is 15kms"
+  }
+ },
+ "expected": {
+  "6299852a-ce37-4635-af90-bf44476e50f0": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "running",
+    "investigator.logs_traces": "running",
+    "investigator.metrics": "failed"
+   },
+   "diagnosis": null,
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": "2026-10-27 19:33:25.238696+00:00",
+   "created_at": "2026-10-27 19:30:33.034319+00:00",
+   "environment": "lab",
+   "fingerprint": "7d3c22bfff3583271006e8d4df5f3976",
+   "id": "6299852a-ce37-4635-af90-bf44476e50f0",
+   "labels": {
+    "alertname": "LatencyP95High",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "warning",
+    "slo": "latency"
+   },
+   "priority": 2,
+   "service": "checkout",
+   "state": "ESCALATED",
+   "tenant_id": "lab-canary",
+   "title": "LatencyP95High"
+  }
+ ]
+}

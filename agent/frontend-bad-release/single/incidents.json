@@ -1,0 +1,245 @@
+{
+ "annotations": {
+  "05acede7-4c82-4c52-b871-763d8a8d89a7": {
+   "description": "95th percentile of server span duration over 5m is above 1000ms.",
+   "summary": "frontend p95 latency is 15kms"
+  },
+  "0afa2124-e3d4-40e7-8e43-00d1924f4fbb": {
+   "description": "95th percentile of server span duration over 5m is above 1000ms.",
+   "summary": "frontend-proxy p95 latency is 15kms"
+  },
+  "783d4949-7a3c-4e58-9912-9c63d1841c87": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "frontend is failing 35.68% of requests"
+  },
+  "d6a32cfd-d4db-49af-930e-6c59c045f4a6": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "frontend-proxy is failing 33.98% of requests"
+  }
+ },
+ "expected": {
+  "05acede7-4c82-4c52-b871-763d8a8d89a7": {
+   "agents": {
+    "solo": "failed"
+   },
+   "diagnosis": null,
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  },
+  "0afa2124-e3d4-40e7-8e43-00d1924f4fbb": {
+   "agents": {
+    "solo": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_7cec976a7eeb299d",
+       "ev_83231225deeb65be"
+      ],
+      "statement": "frontend-proxy p95 latency is 15000 ms and its error ratio is 0.34; frontend is at 15000 ms p95 with an error ratio of 0.30. Both are the only services in the alarm range; checkout, product-catalog and the others are normal."
+     },
+     {
+      "evidence_ids": [
+       "ev_514a3b334627f6c9"
+      ],
+      "statement": "frontend's latency and error ratio rose first, at about 19:25; frontend-proxy followed within a minute."
+     },
+     {
+      "evidence_ids": [
+       "ev_6324c2fd5f83ba18"
+      ],
+      "statement": "frontend's error logs are 200 lines of one message: 'API request failed', 14 UNAVAILABLE, connect ETIMEDOUT 10.96.2.177:9999, HTTP 500, first seen 19:26:11."
+     },
+     {
+      "evidence_ids": [
+       "ev_4a4083097df8ffb3"
+      ],
+      "statement": "Error spans in frontend are on oteldemo.ProductCatalogService/GetProduct with the same ETIMEDOUT message to 10.96.2.177:9999, plus HTTP 500s on /api/products and /api/recommendations."
+     },
+     {
+      "evidence_ids": [
+       "ev_7c202015be1cccfb"
+      ],
+      "statement": "frontend rollout revision 2 was created at 19:23:30 with change-cause 'frontend config release: catalog client moved to port 9999'. Revision 1 was created at 19:10:45."
+     },
+     {
+      "evidence_ids": [
+       "ev_21dcc336135ee680"
+      ],
+      "statement": "The diff from revision 1 to 2 is exactly one change: PRODUCT_CATALOG_ADDR from product-catalog:8080 to product-catalog:9999."
+     },
+     {
+      "evidence_ids": [
+       "ev_2b25e58bd0ad5189"
+      ],
+      "statement": "frontend's client spans show GetProduct STATUS_CODE_ERROR at about 4-7 per second from 19:26:54 onward, while GetProduct UNSET (success) drops to 0 by about 19:22-19:27."
+     },
+     {
+      "evidence_ids": [
+       "ev_a268bda32f46033b",
+       "ev_7cec976a7eeb299d"
+      ],
+      "statement": "product-catalog logs are info-only ('Product Found', 'Found 10 products from database') with no errors in the last 30 minutes, and its p95 is 8.55 ms."
+     },
+     {
+      "evidence_ids": [
+       "ev_244afff1ee8db9ee"
+      ],
+      "statement": "All feature flags are off, so no flag change explains the incident."
+     },
+     {
+      "evidence_ids": [
+       "ev_686b603097fd0fd5"
+      ],
+      "statement": "Kubernetes events show a normal frontend pod replacement at 19:23:30-19:23:31 and no crash or OOM events for product-catalog. Unrelated probe warnings are on the collector, alertmanager and loki."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check the product-catalog Service's ports and endpoints in otel-demo; confirm the container listens on 8080 and not 9999.",
+      "statement": "Nothing listens on port 9999 in the product-catalog Service or pod, so the port in the frontend config is simply wrong (should be 8080)."
+     },
+     {
+      "how_to_verify": "After rollback, confirm service:sli_error_ratio:rate5m for frontend and frontend-proxy falls toward zero.",
+      "statement": "The rollback to revision 1 restores the error rate and latency within a few minutes."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_21dcc336135ee680",
+       "ev_6324c2fd5f83ba18",
+       "ev_a268bda32f46033b"
+      ],
+      "statement": "The frontend revision 2 port change to 9999 is the trigger: the timeouts go to 9999, which product-catalog does not serve on its own side (its logs and metrics show normal serving on the old path). The alert's 15 s latency is the caller's timeout behavior."
+     },
+     {
+      "evidence_ids": [
+       "ev_7c202015be1cccfb",
+       "ev_514a3b334627f6c9"
+      ],
+      "statement": "The error onset at about 19:26 lags the 19:23:30 rollout by about 3 minutes; this could be low traffic on the new pod or retry timing, and it does not change the attribution."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Config release at 19:23:30 (revision 2) pointed PRODUCT_CATALOG_ADDR at product-catalog:9999 instead of product-catalog:8080. Connections to the catalog on 9999 time out, so GetProduct and recommendation lookups fail with gRPC UNAVAILABLE and HTTP 500. Roll back frontend to revision 1 or correct the port.",
+      "confidence": 0.9,
+      "evidence_ids": [
+       "ev_21dcc336135ee680",
+       "ev_7c202015be1cccfb",
+       "ev_6324c2fd5f83ba18",
+       "ev_4a4083097df8ffb3",
+       "ev_2b25e58bd0ad5189"
+      ],
+      "service": "frontend"
+     }
+    ],
+    "summary": "frontend-proxy p95 is at the 15s cap with a 34% error ratio because frontend fails its ProductCatalogService calls. At 19:23:30 frontend was redeployed (revision 2, 'catalog client moved to port 9999'), which changed PRODUCT_CATALOG_ADDR from product-catalog:8080 to product-catalog:9999. Frontend's calls to 10.96.2.177:9999 now time out (connect ETIMEDOUT), returning HTTP 500 and dragging frontend-proxy down with it. product-catalog itself shows normal latency and info-only logs, so the fault is the frontend configuration change, not the catalog service."
+   },
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  },
+  "783d4949-7a3c-4e58-9912-9c63d1841c87": {
+   "agents": {
+    "solo": "failed"
+   },
+   "diagnosis": null,
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  },
+  "d6a32cfd-d4db-49af-930e-6c59c045f4a6": {
+   "agents": {
+    "solo": "failed"
+   },
+   "diagnosis": null,
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": "2026-10-27 19:34:36.130156+00:00",
+   "created_at": "2026-10-27 19:27:18.039015+00:00",
+   "environment": "lab",
+   "fingerprint": "3a289d7a6fb399cde65d46e6cc95037c",
+   "id": "0afa2124-e3d4-40e7-8e43-00d1924f4fbb",
+   "labels": {
+    "alertname": "LatencyP95High",
+    "environment": "lab",
+    "service_name": "frontend-proxy",
+    "severity": "warning",
+    "slo": "latency"
+   },
+   "priority": 2,
+   "service": "frontend-proxy",
+   "state": "ESCALATED",
+   "tenant_id": "lab-single",
+   "title": "LatencyP95High"
+  },
+  {
+   "closed_at": "2026-10-27 19:33:08.088520+00:00",
+   "created_at": "2026-10-27 19:27:33.025669+00:00",
+   "environment": "lab",
+   "fingerprint": "d3cd3486fc8a41699ced8598e4c9547f",
+   "id": "d6a32cfd-d4db-49af-930e-6c59c045f4a6",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "frontend-proxy",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "frontend-proxy",
+   "state": "ESCALATED",
+   "tenant_id": "lab-single",
+   "title": "ErrorBudgetBurn"
+  },
+  {
+   "closed_at": "2026-10-27 19:33:51.473370+00:00",
+   "created_at": "2026-10-27 19:27:48.038032+00:00",
+   "environment": "lab",
+   "fingerprint": "287ec346ba101d7d6273a6ca0c4ccd9b",
+   "id": "783d4949-7a3c-4e58-9912-9c63d1841c87",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "frontend",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "frontend",
+   "state": "ESCALATED",
+   "tenant_id": "lab-single",
+   "title": "ErrorBudgetBurn"
+  },
+  {
+   "closed_at": "2026-10-27 19:35:21.020763+00:00",
+   "created_at": "2026-10-27 19:27:48.041735+00:00",
+   "environment": "lab",
+   "fingerprint": "b6c8000993410261806563a92dc682f4",
+   "id": "05acede7-4c82-4c52-b871-763d8a8d89a7",
+   "labels": {
+    "alertname": "LatencyP95High",
+    "environment": "lab",
+    "service_name": "frontend",
+    "severity": "warning",
+    "slo": "latency"
+   },
+   "priority": 2,
+   "service": "frontend",
+   "state": "ESCALATED",
+   "tenant_id": "lab-single",
+   "title": "LatencyP95High"
+  }
+ ]
+}

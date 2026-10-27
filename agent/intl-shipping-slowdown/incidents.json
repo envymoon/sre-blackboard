@@ -1,0 +1,78 @@
+{
+ "annotations": {
+  "30edc6cf-fae3-499e-aa9d-19093e08350b": {
+   "description": "95th percentile of server span duration over 5m is above 1000ms.",
+   "summary": "shipping p95 latency is 5.929kms"
+  },
+  "38f88bb0-f285-4a11-bd7b-1bcb92c0b15c": {
+   "description": "95th percentile of server span duration over 5m is above 1000ms.",
+   "summary": "checkout p95 latency is 7.625kms"
+  }
+ },
+ "expected": {
+  "30edc6cf-fae3-499e-aa9d-19093e08350b": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "running",
+    "investigator.logs_traces": "running",
+    "investigator.metrics": "failed"
+   },
+   "diagnosis": null,
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  },
+  "38f88bb0-f285-4a11-bd7b-1bcb92c0b15c": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "running",
+    "investigator.metrics": "failed"
+   },
+   "diagnosis": null,
+   "findings": 5,
+   "plan": null,
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": "2026-10-27 19:31:54.901415+00:00",
+   "created_at": "2026-10-27 19:28:18.061497+00:00",
+   "environment": "lab",
+   "fingerprint": "7d3c22bfff3583271006e8d4df5f3976",
+   "id": "38f88bb0-f285-4a11-bd7b-1bcb92c0b15c",
+   "labels": {
+    "alertname": "LatencyP95High",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "warning",
+    "slo": "latency"
+   },
+   "priority": 2,
+   "service": "checkout",
+   "state": "ESCALATED",
+   "tenant_id": "lab",
+   "title": "LatencyP95High"
+  },
+  {
+   "closed_at": "2026-10-27 19:32:58.235646+00:00",
+   "created_at": "2026-10-27 19:30:18.023463+00:00",
+   "environment": "lab",
+   "fingerprint": "55924ed51ad3079ba37e1035a11939f2",
+   "id": "30edc6cf-fae3-499e-aa9d-19093e08350b",
+   "labels": {
+    "alertname": "LatencyP95High",
+    "environment": "lab",
+    "service_name": "shipping",
+    "severity": "warning",
+    "slo": "latency"
+   },
+   "priority": 2,
+   "service": "shipping",
+   "state": "ESCALATED",
+   "tenant_id": "lab",
+   "title": "LatencyP95High"
+  }
+ ]
+}

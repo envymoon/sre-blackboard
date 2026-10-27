@@ -1,0 +1,41 @@
+{
+ "annotations": {
+  "397d0c46-d9c4-41e8-b9e7-ef214c2a6daf": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 35.48% of requests"
+  }
+ },
+ "expected": {
+  "397d0c46-d9c4-41e8-b9e7-ef214c2a6daf": {
+   "agents": {
+    "coordinator": "failed"
+   },
+   "diagnosis": null,
+   "findings": 0,
+   "plan": null,
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": "2026-10-27 19:54:32.557848+00:00",
+   "created_at": "2026-10-27 19:52:18.016210+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "397d0c46-d9c4-41e8-b9e7-ef214c2a6daf",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "ESCALATED",
+   "tenant_id": "lab",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}
