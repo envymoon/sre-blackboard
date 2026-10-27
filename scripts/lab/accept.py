@@ -24,6 +24,11 @@ With a probe (M3, scripts/lab/probes.py), step 3 also calls the read-only tools 
 fault is active; every tool check must pass.
 
 Timestamps come from the database clock, so host and container clocks need not agree.
+
+For the evaluation (M7) a fault can come with distractors: other faults injected first, each
+followed by a wait (a harmless rollout shortly before, an unrelated fault alongside). Alerts
+and incidents count from the first injection; times are still measured from the fault's own.
+They are recovered after it.
 """
 
 from __future__ import annotations
@@ -72,6 +77,10 @@ class ScenarioResult:
     # M4: the agents' diagnoses of the incidents this fault opened (when the run asks for them).
     diagnosed: bool = False
     diagnoses: list[DiagnosisSeen] = field(default_factory=list)
+    # M7: the same incidents in the other variants' tenants.
+    variant_diagnoses: list[DiagnosisSeen] = field(default_factory=list)
+    distractors: list[str] = field(default_factory=list)
+    cause_at: datetime | None = None  # database time the fault itself was injected
     # M5: the plans for those incidents, what the acceptance run decided, and how it ended.
     repair: str | None = None  # the fault's known repair, "rollout_undo checkout"
     remediated: bool = False
@@ -217,8 +226,14 @@ def run_scenario(
     probe: Probe | None = None,
     diagnoser: Diagnoser | None = None,
     remediator: Remediator | None = None,
+    distractors: Sequence[tuple[Fault, float]] = (),
+    label: str | None = None,
 ) -> ScenarioResult:
+    """``distractors``: (fault, seconds to wait after injecting it), injected before ``fault``.
+    ``label``: what the log lines and recordings are called (default: the fault's name)."""
+    name = label or fault.name
     result = ScenarioResult(fault.name, fault.root_cause, list(fault.symptoms))
+    result.distractors = [d.name for d, _ in distractors]
     result.repair = " ".join(fault.repair) if fault.repair else None
     repaired_at: datetime | None = None  # database time of the approval
     result.quiet_before = wait_quiet(lab, quiet_timeout, log, hold_s=hold_s, poll_s=poll_s)
@@ -226,15 +241,23 @@ def run_scenario(
         result.error = "lab was not quiet before injection"
         return result
 
-    t0 = _db_now(engine)
-    log(f"[{fault.name}] inject: {fault.description}")
+    first = t0 = _db_now(engine)  # alerts and incidents count from the first injection
+    injected: list[Fault] = []
     seen: dict[str, AlertSeen] = {}
     try:
+        for distractor, wait_s in distractors:
+            log(f"[{name}] distractor: {distractor.description}")
+            lab.inject(distractor)
+            injected.append(distractor)
+            time.sleep(wait_s)
+        t0 = result.cause_at = _db_now(engine)
+        log(f"[{name}] inject: {fault.description}")
+        injected.append(fault)
         lab.inject(fault)
         deadline = time.monotonic() + alert_timeout
         settle_until: float | None = None
         while True:
-            for row in _alert_rows(engine, tenant, t0):
+            for row in _alert_rows(engine, tenant, first):
                 key = _key(row)
                 if row.status == "firing" and key not in seen:
                     labels = dict(row.labels)
@@ -246,7 +269,7 @@ def run_scenario(
                     )
                     result.incident_created = result.incident_created or row.incident_id is not None
                     log(
-                        f"[{fault.name}] alert {seen[key].alertname} on {seen[key].service} "
+                        f"[{name}] alert {seen[key].alertname} on {seen[key].service} "
                         f"after {seen[key].seconds_after_injection}s"
                     )
             if seen and settle_until is None:
@@ -256,19 +279,22 @@ def run_scenario(
             if settle_until is not None and now > settle_until:
                 break
             if settle_until is None and now > deadline:
-                log(f"[{fault.name}] no alert within {alert_timeout:.0f}s")
+                log(f"[{name}] no alert within {alert_timeout:.0f}s")
                 break
             time.sleep(poll_s)
         if probe is not None and seen:
             result.probes = probe(fault)
             for p in result.probes:
-                log(f"[{fault.name}] tool {p.tool} ({p.name}): {'ok' if p.ok else 'FAIL'} - {p.detail}")
+                log(f"[{name}] tool {p.tool} ({p.name}): {'ok' if p.ok else 'FAIL'} - {p.detail}")
         if diagnoser is not None and seen:
             result.diagnosed = True
-            result.diagnoses = diagnoser.wait(fault, t0, log)
+            meta = {"scenario": name, "cause_at": t0.isoformat()}
+            everything = diagnoser.wait(fault, first, log, label=name, meta=meta)
+            result.diagnoses = [d for d in everything if d.tenant == tenant]
+            result.variant_diagnoses = [d for d in everything if d.tenant != tenant]
             if result.answer is not None:
                 verdict = "correct" if result.diagnosis_correct else f"wrong (expected {fault.root_cause})"
-                log(f"[{fault.name}] answer: {result.answer.top or 'no root cause'} - {verdict}")
+                log(f"[{name}] answer: {result.answer.top or 'no root cause'} - {verdict}")
         if remediator is not None and result.diagnoses:
             result.remediated = True
             decided_at = _db_now(engine)
@@ -277,20 +303,21 @@ def run_scenario(
                 repaired_at = decided_at
     except Exception as exc:  # report and still try to recover; one broken fault should not stop the run
         result.error = f"{type(exc).__name__}: {exc}"
-        log(f"[{fault.name}] error: {result.error}")
+        log(f"[{name}] error: {result.error}")
     finally:
         result.alerts = sorted(seen.values(), key=lambda a: a.seconds_after_injection)
         # A fault sre-blackboard repaired counts from the approval: its alerts may have resolved
         # before the lab's own recovery step, which then finds nothing to undo.
         t1 = repaired_at or _db_now(engine)
-        log(f"[{fault.name}] recover")
-        if not lab.recover(fault) and repaired_at is not None:
-            log(f"[{fault.name}] nothing to recover: sre-blackboard already repaired it")
+        log(f"[{name}] recover")
+        for f in reversed(injected):
+            if not lab.recover(f) and f is fault and repaired_at is not None:
+                log(f"[{name}] nothing to recover: sre-blackboard already repaired it")
 
     deadline_r = time.monotonic() + resolve_timeout
     quiet_since: datetime | None = None  # database time; resolution counts from here
     while True:
-        rows = _alert_rows(engine, tenant, t0)
+        rows = _alert_rows(engine, tenant, first)
         latest = {_key(r): r.status for r in rows}
         open_keys = {k for k in seen if latest.get(k) != "resolved"}
         active = _lab_alerts(lab)
@@ -301,20 +328,20 @@ def run_scenario(
             quiet_since = db_now
         if quiet_since is not None and (db_now - quiet_since).total_seconds() >= hold_s:
             result.resolved_s = round((quiet_since - t1).total_seconds(), 1)
-            log(f"[{fault.name}] all alerts resolved {result.resolved_s}s after recovery")
+            log(f"[{name}] all alerts resolved {result.resolved_s}s after recovery")
             break
         if time.monotonic() > deadline_r:
             result.unresolved = sorted(f"{seen[k].alertname}/{seen[k].service}" for k in open_keys)
-            log(f"[{fault.name}] not resolved after {resolve_timeout:.0f}s: {result.unresolved or _names(active)}")
+            log(f"[{name}] not resolved after {resolve_timeout:.0f}s: {result.unresolved or _names(active)}")
             break
         time.sleep(poll_s)
     if diagnoser is not None:
-        log(f"[{fault.name}] closed {diagnoser.close(t0)} incident(s)")
-    result.flapping = _flapping(_alert_rows(engine, tenant, t0), seen, t1)
+        log(f"[{name}] closed {diagnoser.close(first)} incident(s)")
+    result.flapping = _flapping(_alert_rows(engine, tenant, first), seen, t1)
     if result.flapping:
-        log(f"[{fault.name}] flapping: {', '.join(result.flapping)}")
+        log(f"[{name}] flapping: {', '.join(result.flapping)}")
     if not result.symptom_matched and seen:
-        log(f"[{fault.name}] no alert on an expected service ({', '.join(fault.symptoms)})")
+        log(f"[{name}] no alert on an expected service ({', '.join(fault.symptoms)})")
     return result
 
 

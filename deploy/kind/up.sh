@@ -38,10 +38,37 @@ log "SLO rules -> ConfigMap sre-slo-rules"
 # Prometheus has no config reloader here; a changed hash rolls the pod so new rules load.
 rules_hash="$(cat "$here"/rules/*.yml | sha256sum | cut -c1-16)"
 
+mint() {
+  (cd "$repo" && uv run --quiet python -m app.core.security mint \
+    --sub alertmanager --tenant "$1" --roles ingest --ttl $((90 * 24 * 3600)))
+}
 log "ingest token for Alertmanager (tenant $LAB_TENANT)"
-token="$(cd "$repo" && uv run --quiet python -m app.core.security mint \
-  --sub alertmanager --tenant "$LAB_TENANT" --roles ingest --ttl $((90 * 24 * 3600)))"
-"${kctl[@]}" -n "$NS" create secret generic sre-blackboard-token --from-literal=token="$token" \
+secret=(--from-literal=token="$(mint "$LAB_TENANT")")
+# The evaluation (M7): every alert also goes to one tenant per agent variant, e.g.
+# SRE_LAB_VARIANTS="single canary" adds tenants lab-single and lab-canary. The workers map
+# them to their variants with SRE_EVAL_TENANT_VARIANTS.
+values_extra=()
+if [ -n "${SRE_LAB_VARIANTS:-}" ]; then
+  overlay="$(mktemp)"
+  trap 'rm -f "$overlay"' EXIT
+  webhook() {
+    printf '            - url: http://sre-blackboard:8000/api/v1/alerts\n'
+    printf '              send_resolved: true\n              max_alerts: 0\n'
+    printf '              http_config: {authorization: {type: Bearer, credentials_file: /etc/sre-blackboard/%s}}\n' "$1"
+  }
+  {
+    printf 'prometheus:\n  alertmanager:\n    config:\n      receivers:\n'
+    printf '        - name: sre-blackboard\n          webhook_configs:\n'
+    webhook token
+    for v in $SRE_LAB_VARIANTS; do webhook "token-$v"; done
+  } > "$overlay"
+  for v in $SRE_LAB_VARIANTS; do
+    log "ingest token for tenant $LAB_TENANT-$v (agent variant $v)"
+    secret+=(--from-literal="token-$v=$(mint "$LAB_TENANT-$v")")
+  done
+  values_extra=(-f "$overlay")
+fi
+"${kctl[@]}" -n "$NS" create secret generic sre-blackboard-token "${secret[@]}" \
   --dry-run=client -o yaml | "${kctl[@]}" apply -f -
 
 log "Service sre-blackboard -> API on the host"
@@ -93,7 +120,7 @@ helm upgrade --install chaos-mesh chaos-mesh/chaos-mesh --kube-context "kind-$CL
 
 log "OpenTelemetry Demo chart $OTEL_DEMO_CHART_VERSION (first install pulls about 3 GB of images)"
 helm upgrade --install otel-demo open-telemetry/opentelemetry-demo --kube-context "kind-$CLUSTER" -n "$NS" \
-  --version "$OTEL_DEMO_CHART_VERSION" -f "$here/values/otel-demo.yaml" \
+  --version "$OTEL_DEMO_CHART_VERSION" -f "$here/values/otel-demo.yaml" "${values_extra[@]}" \
   --set-string "prometheus.server.podAnnotations.sre-blackboard/rules-hash=$rules_hash" \
   --wait --timeout 20m
 "${kctl[@]}" -n "$NS" rollout status deployment/loki --timeout 5m
@@ -107,6 +134,6 @@ Lab is up.
   Prometheus       http://localhost:19090
   Alertmanager     http://localhost:19093
   Loki             http://localhost:13100
-Alerts are posted to the API at $host_ip:$API_PORT (tenant "$LAB_TENANT").
+Alerts are posted to the API at $host_ip:$API_PORT (tenant "$LAB_TENANT"${SRE_LAB_VARIANTS:+, and one tenant per variant: $SRE_LAB_VARIANTS}).
 Inject a fault:    make fault SCENARIO=payment-failure   (list: make faults)
 EOF

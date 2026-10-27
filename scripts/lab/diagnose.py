@@ -15,6 +15,9 @@ For each fault:
 
 Acceptance (plan, M4): every fault gets a root cause candidate, and the top candidate is
 right for at least 2 of the 3.
+
+For the evaluation (M7) the same alerts reach one tenant per agent variant; the diagnoser
+waits for all of them, and the answer is still the first tenant's (the default variant).
 """
 
 from __future__ import annotations
@@ -43,6 +46,7 @@ PLANNING = ("DIAGNOSED", "PLANNED", "SAFETY_REVIEWED")
 @dataclass
 class DiagnosisSeen:
     incident_id: str
+    tenant: str
     title: str
     service: str
     priority: int
@@ -75,10 +79,14 @@ class Diagnoser:
         out: Path | None,
         timeout_s: float = 900,
         planning: bool = True,
+        variants: dict[str, str] | None = None,
     ):
         self.engine = engine
         self.database_url = database_url
         self.tenant = tenant
+        # Tenant -> agent variant, the default tenant first (M7). Each tenant's recordings
+        # go to their own directory.
+        self.variants = {tenant: "default", **(variants or {})}
         self.out = out
         self.timeout_s = timeout_s
         # Wait for the plan and its review too (M5), not only the diagnosis.
@@ -89,14 +97,19 @@ class Diagnoser:
             return list(
                 conn.execute(
                     text(
-                        "SELECT id, title, service, priority, state, created_at FROM incidents "
-                        "WHERE tenant_id = :t AND created_at >= :since ORDER BY created_at, priority, service"
+                        "SELECT id, tenant_id, title, service, priority, state, created_at FROM incidents "
+                        "WHERE tenant_id = ANY(:t) AND created_at >= :since ORDER BY created_at, priority, service"
                     ),
-                    {"t": self.tenant, "since": since},
+                    {"t": list(self.variants), "since": since},
                 )
             )
 
-    def wait(self, fault: Fault, t0: datetime, log: Any) -> list[DiagnosisSeen]:
+    def wait(
+        self, fault: Fault, t0: datetime, log: Any, label: str | None = None, meta: dict[str, Any] | None = None
+    ) -> list[DiagnosisSeen]:
+        """``label``: the directory the recordings go to (default: the fault's name). ``meta``:
+        more to keep with the recordings (the evaluation's scenario and injection time)."""
+        label = label or fault.name
         deadline = time.monotonic() + self.timeout_s
         while True:
             rows = self._incidents(t0)
@@ -113,23 +126,29 @@ class Diagnoser:
         seen = [self._read(r, t0) for r in rows]
         for d in seen:
             causes = ", ".join(f"{c['service']} {c['confidence']:.0%}" for c in d.root_causes) or "none"
+            where = "" if d.tenant == self.tenant else f" [{self.variants[d.tenant]}]"
             log(
-                f"[{fault.name}] {d.state.lower()} {d.title}/{d.service}: root causes {causes}; "
+                f"[{label}]{where} {d.state.lower()} {d.title}/{d.service}: root causes {causes}; "
                 f"{d.calls} model calls, {d.tokens:,} tokens"
                 + (f", ${d.cost_usd:.3f}" if d.cost_usd is not None else "")
                 + (f" ({d.reason})" if d.state == "ESCALATED" else "")
             )
-        if self.out is not None and rows:
+        for tenant, variant in self.variants.items():
+            mine = [r.id for r in rows if r.tenant_id == tenant]
+            if self.out is None or not mine:
+                continue
+            # The default tenant's recordings where they always were; the others' beside them.
+            out = self.out / label if tenant == self.tenant else self.out / label / variant
             try:
-                rec = asyncio.run(
-                    self._export([r.id for r in rows], {"fault": fault.name, "root_cause": fault.root_cause})
-                )
-                rec.dump(self.out / fault.name)
+                about = {"fault": fault.name, "root_cause": fault.root_cause, "variant": variant, **(meta or {})}
+                rec = asyncio.run(self._export(mine, about))
+                rec.dump(out)
                 log(
-                    f"[{fault.name}] recorded {len(rec.llm.entries)} model steps, {len(rec.tools.entries)} tool answers"
+                    f"[{label}] recorded {len(rec.llm.entries)} model steps, {len(rec.tools.entries)} tool answers"
+                    + ("" if tenant == self.tenant else f" ({variant})")
                 )
             except Exception as exc:  # a recording problem must not fail the acceptance itself
-                log(f"[{fault.name}] recording failed: {type(exc).__name__}: {exc}")
+                log(f"[{label}] recording failed: {type(exc).__name__}: {exc}")
         return seen
 
     def _read(self, row: Any, t0: datetime) -> DiagnosisSeen:
@@ -167,6 +186,7 @@ class Diagnoser:
         ]
         return DiagnosisSeen(
             incident_id=str(row.id),
+            tenant=row.tenant_id,
             title=row.title,
             service=row.service,
             priority=row.priority,
@@ -198,10 +218,10 @@ class Diagnoser:
             async with engine.begin() as conn:
                 rows = await conn.execute(
                     text(
-                        "SELECT id, state, version FROM incidents WHERE tenant_id = :t AND created_at >= :since "
+                        "SELECT id, state, version FROM incidents WHERE tenant_id = ANY(:t) AND created_at >= :since "
                         "AND closed_at IS NULL"
                     ),
-                    {"t": self.tenant, "since": t0},
+                    {"t": list(self.variants), "since": t0},
                 )
                 for r in rows.all():
                     await incidents.transition(

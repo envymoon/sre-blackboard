@@ -3,9 +3,13 @@
     report RESULTS...   score result files (eval/results/*.json), print the Markdown report
       --baseline FILE   the runs to compare with (default eval/baseline.json; "" for none)
       --gate V          variants that must pass the gate (default: default)
-      --canary V        variants that must FAIL it (default: canary, when present): an
-                        evaluation that passes a deliberately broken prompt measures nothing
+      --canary V        variants that must FAIL it (default: canary, when present), compared
+                        with the same run's default variant: an evaluation that passes a
+                        deliberately broken prompt measures nothing
       --json FILE       also write the metrics as JSON
+
+    merge OUT FILES...  one result file from several (the shards of one run)
+      --run ID, --commit SHA
 
 Exit status 1 when a gated variant fails or a canary passes.
 """
@@ -40,8 +44,9 @@ def cmd_report(args: argparse.Namespace) -> int:
     baseline = [s for s in results.load_scores(baseline_paths) if s.variant == "default"]
     per_run = per_run_metrics(scores)
     canaries = args.canary if args.canary is not None else [v for v in ("canary",) if v in per_run]
-    checked = [v for v in [*args.gate, *canaries] if v in per_run]
-    gates = [gate.check(v, scores, baseline) for v in checked]
+    same_run = [s for s in scores if s.variant == "default"]
+    gates = [gate.check(v, scores, baseline) for v in args.gate if v in per_run]
+    gates += [gate.check(v, scores, same_run) for v in canaries if v in per_run]
     print(render(scores, per_run, gates), end="")
 
     status = 0
@@ -70,6 +75,18 @@ def cmd_report(args: argparse.Namespace) -> int:
     return status
 
 
+def cmd_merge(args: argparse.Namespace) -> int:
+    merged = results.ResultFile(run=args.run, kind="live", commit=args.commit)
+    for path in args.files:
+        part = results.ResultFile.load(Path(path))
+        merged.kind = part.kind
+        merged.observations += [o if o.run else o.model_copy(update={"run": args.run}) for o in part.observations]
+    merged.observations.sort(key=lambda o: (o.scenario, o.variant))
+    merged.dump(Path(args.out))
+    print(f"{len(merged.observations)} observation(s) from {len(args.files)} file(s) -> {args.out}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.eval", description=__doc__.split("\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -80,6 +97,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--canary", nargs="*", default=None)
     p.add_argument("--json")
     p.set_defaults(func=cmd_report)
+    p = sub.add_parser("merge")
+    p.add_argument("out")
+    p.add_argument("files", nargs="+")
+    p.add_argument("--run", required=True)
+    p.add_argument("--commit", default="")
+    p.set_defaults(func=cmd_merge)
     args = parser.parse_args(argv)
     code: int = args.func(args)
     return code
