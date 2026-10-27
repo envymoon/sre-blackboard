@@ -1,0 +1,23 @@
+[eval] 2 scenario(s): intl-shipping-slowdown, recommendation-cache-failure
+[eval] variants: default (lab), 
+[baseline] watching for 300s with no fault injected
+=== scenario 1/2: intl-shipping-slowdown (medium): Shipping sleeps five seconds on every order outside the US
+[intl-shipping-slowdown] inject: shipping sleeps 5s on every order outside the US
+[intl-shipping-slowdown] alert LatencyP95High on checkout after 285.9s
+[intl-shipping-slowdown] escalated LatencyP95High/checkout: root causes shipping 80%; 21 model calls, 266,546 tokens, $0.039 (root cause candidate: shipping (80%): The intlShippingSlowdown feature flag is enabled (5-second variant), so shipping's /ship-order path adds about 5s to international shipments. This propagates to checkout's PlaceOrder p95 (about 7.9s). Its timing lines up with the onset at about 18:29Z.)
+[intl-shipping-slowdown] recorded 21 model steps, 42 tool answers
+[intl-shipping-slowdown] answer: shipping - correct
+[intl-shipping-slowdown] plan for LatencyP95High/checkout: no action -> deny; failed checks: actions: the plan has no actions
+[intl-shipping-slowdown] recover
+[intl-shipping-slowdown] all alerts resolved 280.3s after recovery
+[intl-shipping-slowdown] closed 0 incident(s)
+=== intl-shipping-slowdown: ok; 1 incident(s)
+=== scenario 2/2: recommendation-cache-failure (medium): Recommendation's cache leaks memory and slows down
+[recommendation-cache-failure] inject: recommendation's cache leaks memory and slows down
+[recommendation-cache-failure] no alert within 900s
+[recommendation-cache-failure] peak SLIs: recommendation: errors 0.0%, p95 285ms, 0.44 req/s; frontend: errors 3.2%, p95 42ms, 8.89 req/s (pages at errors 14.4% fast, 6% slow, p95 1000ms)
+[recommendation-cache-failure] recover
+[recommendation-cache-failure] all alerts resolved 0.0s after recovery
+[recommendation-cache-failure] closed 0 incident(s)
+=== recommendation-cache-failure: lab check FAILED; 0 incident(s)
+[eval] 2 observation(s) in lab-out/eval/results.json

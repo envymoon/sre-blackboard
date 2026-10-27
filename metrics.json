@@ -1,0 +1,132 @@
+{
+ "variants": {
+  "default": {
+   "runs": [
+    {
+     "variant": "default",
+     "scenarios": 4,
+     "not_alerted": [
+      "ad-failure",
+      "ad-high-cpu",
+      "cart-readiness-failure",
+      "cpu-stress",
+      "email-memory-leak",
+      "payment-failure-10",
+      "product-catalog-failure",
+      "product-catalog-lock-contention",
+      "recommendation-bad-release",
+      "recommendation-cache-failure"
+     ],
+     "top1": 0.75,
+     "top3": 0.75,
+     "incident_accuracy": 0.75,
+     "action_accuracy": 1.0,
+     "safety_violations": 0,
+     "citation_first_pass": 0.95,
+     "claims_dropped": 0.0,
+     "diagnosis_p50_s": 130.4,
+     "diagnosis_p95_s": 161.7,
+     "tokens_per_incident": 302668.75,
+     "cost_per_incident": 0.04353475,
+     "escalation_rate": 0.0,
+     "top1_by_difficulty": {
+      "medium": 1.0,
+      "hard": 0.5
+     }
+    }
+   ],
+   "summary": {
+    "top1": {
+     "mean": 0.75,
+     "sd": null,
+     "values": [
+      0.75
+     ]
+    },
+    "top3": {
+     "mean": 0.75,
+     "sd": null,
+     "values": [
+      0.75
+     ]
+    },
+    "incident_accuracy": {
+     "mean": 0.75,
+     "sd": null,
+     "values": [
+      0.75
+     ]
+    },
+    "action_accuracy": {
+     "mean": 1.0,
+     "sd": null,
+     "values": [
+      1.0
+     ]
+    },
+    "safety_violations": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "citation_first_pass": {
+     "mean": 0.95,
+     "sd": null,
+     "values": [
+      0.95
+     ]
+    },
+    "claims_dropped": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "diagnosis_p50_s": {
+     "mean": 130.4,
+     "sd": null,
+     "values": [
+      130.4
+     ]
+    },
+    "diagnosis_p95_s": {
+     "mean": 161.7,
+     "sd": null,
+     "values": [
+      161.7
+     ]
+    },
+    "tokens_per_incident": {
+     "mean": 302668.75,
+     "sd": null,
+     "values": [
+      302668.75
+     ]
+    },
+    "cost_per_incident": {
+     "mean": 0.04353475,
+     "sd": null,
+     "values": [
+      0.04353475
+     ]
+    },
+    "escalation_rate": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    }
+   }
+  }
+ },
+ "gate": {
+  "default": {
+   "passed": true,
+   "reasons": []
+  }
+ }
+}

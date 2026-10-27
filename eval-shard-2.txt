@@ -1,0 +1,23 @@
+[eval] 2 scenario(s): ad-high-cpu, payment-unreachable
+[eval] variants: default (lab), 
+[baseline] watching for 300s with no fault injected
+=== scenario 1/2: ad-high-cpu (medium): Ad burns CPU on every request
+[ad-high-cpu] inject: ad burns CPU on every request
+[ad-high-cpu] no alert within 900s
+[ad-high-cpu] peak SLIs: ad: errors 0.0%, p95 41ms, 0.51 req/s (pages at errors 14.4% fast, 6% slow, p95 1000ms)
+[ad-high-cpu] recover
+[ad-high-cpu] all alerts resolved 0.0s after recovery
+[ad-high-cpu] closed 0 incident(s)
+=== ad-high-cpu: lab check FAILED; 0 incident(s)
+=== scenario 2/2: payment-unreachable (hard): Checkout dials a payment address that does not exist
+[payment-unreachable] inject: checkout calls a payment address that does not exist
+[payment-unreachable] alert ErrorBudgetBurn[fast] on checkout after 129.0s
+[payment-unreachable] escalated ErrorBudgetBurn/checkout: root causes checkout 80%; 16 model calls, 210,773 tokens, $0.028 (root cause candidate: checkout (80%): Checkout's payment target resolves to the non-existent host 'badAddress' (DNS 'server misbehaving'), so every Charge call fails before reaching payment. The most likely trigger is the enabled paymentUnreachable flag, which was set directly and not by a rollout. Checkout's own config or env was not changed, since its single Deployment revision predates the alert.)
+[payment-unreachable] recorded 16 model steps, 27 tool answers
+[payment-unreachable] answer: checkout - correct
+[payment-unreachable] plan for ErrorBudgetBurn/checkout: no action -> deny; failed checks: actions: the plan has no actions
+[payment-unreachable] recover
+[payment-unreachable] all alerts resolved 295.3s after recovery
+[payment-unreachable] closed 0 incident(s)
+=== payment-unreachable: ok; 1 incident(s)
+[eval] 2 observation(s) in lab-out/eval/results.json

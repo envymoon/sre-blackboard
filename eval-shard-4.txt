@@ -1,0 +1,20 @@
+[eval] 2 scenario(s): cart-readiness-failure, product-catalog-failure
+[eval] variants: default (lab), 
+[baseline] watching for 300s with no fault injected
+=== scenario 1/2: cart-readiness-failure (hard): Cart fails its readiness probe and drops out of its Service
+[cart-readiness-failure] inject: cart's readiness probe fails, so it is removed from its Service
+[cart-readiness-failure] no alert within 900s
+[cart-readiness-failure] peak SLIs: cart: errors 0.0%, p95 2ms, 2.53 req/s; frontend: errors 0.0%, p95 38ms, 8.88 req/s; checkout: errors 0.0%, p95 49ms, 0.26 req/s (pages at errors 14.4% fast, 6% slow, p95 1000ms)
+[cart-readiness-failure] recover
+[cart-readiness-failure] all alerts resolved 0.0s after recovery
+[cart-readiness-failure] closed 0 incident(s)
+=== cart-readiness-failure: lab check FAILED; 0 incident(s)
+=== scenario 2/2: product-catalog-failure (easy): Product catalog fails GetProduct for one product
+[product-catalog-failure] inject: product-catalog fails GetProduct for one product
+[product-catalog-failure] no alert within 900s
+[product-catalog-failure] peak SLIs: product-catalog: errors 0.0%, p95 19ms, 4.90 req/s; frontend: errors 0.0%, p95 37ms, 8.48 req/s (pages at errors 14.4% fast, 6% slow, p95 1000ms)
+[product-catalog-failure] recover
+[product-catalog-failure] all alerts resolved 0.0s after recovery
+[product-catalog-failure] closed 0 incident(s)
+=== product-catalog-failure: lab check FAILED; 0 incident(s)
+[eval] 2 observation(s) in lab-out/eval/results.json

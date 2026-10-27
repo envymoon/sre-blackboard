@@ -1,0 +1,259 @@
+{
+ "commit": "4dd2f072e2d7b7b27a4eb5fec8d18868f64b3dfd",
+ "kind": "live",
+ "observations": [
+  {
+   "alerts": [],
+   "error": null,
+   "first_alert_s": null,
+   "incidents": [],
+   "lab_ok": false,
+   "run": "40557832275",
+   "scenario": "ad-failure",
+   "variant": "default"
+  },
+  {
+   "alerts": [],
+   "error": null,
+   "first_alert_s": null,
+   "incidents": [],
+   "lab_ok": false,
+   "run": "40557832275",
+   "scenario": "ad-high-cpu",
+   "variant": "default"
+  },
+  {
+   "alerts": [
+    "LatencyP95High/checkout"
+   ],
+   "error": null,
+   "first_alert_s": 393.9,
+   "incidents": [
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 21,
+     "confidences": [
+      0.7,
+      0.4,
+      0.25
+     ],
+     "cost_usd": 0.052287,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 5,
+     "incident_id": "d3d2dac0-8ff0-409f-b62b-5871fa2a9d39",
+     "investigation_s": 147.4,
+     "kept": 38,
+     "opened_s": 393.9,
+     "outcome": "diagnosed",
+     "priority": 2,
+     "reason": "root cause candidate: cart (70%): Cart's EmptyCart handler is slow for every caller (p95 at 15s) and intermittently errors from about 18:31Z. The time is spent inside cart's own handler, not in a child call. The likely trigger is its Redis (Valkey) connection path or its flag evaluation, not checkout.",
+     "root_causes": [
+      "cart",
+      "cart",
+      "cart"
+     ],
+     "service": "checkout",
+     "tokens": 375262
+    }
+   ],
+   "lab_ok": true,
+   "run": "40557832275",
+   "scenario": "cart-failure",
+   "variant": "default"
+  },
+  {
+   "alerts": [],
+   "error": null,
+   "first_alert_s": null,
+   "incidents": [],
+   "lab_ok": false,
+   "run": "40557832275",
+   "scenario": "cart-readiness-failure",
+   "variant": "default"
+  },
+  {
+   "alerts": [],
+   "error": null,
+   "first_alert_s": null,
+   "incidents": [],
+   "lab_ok": false,
+   "run": "40557832275",
+   "scenario": "cpu-stress",
+   "variant": "default"
+  },
+  {
+   "alerts": [],
+   "error": null,
+   "first_alert_s": null,
+   "incidents": [],
+   "lab_ok": false,
+   "run": "40557832275",
+   "scenario": "email-memory-leak",
+   "variant": "default"
+  },
+  {
+   "alerts": [
+    "LatencyP95High/checkout"
+   ],
+   "error": null,
+   "first_alert_s": 285.9,
+   "incidents": [
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 21,
+     "confidences": [
+      0.8
+     ],
+     "cost_usd": 0.039409,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 4,
+     "incident_id": "271bf11a-6b3e-4d63-8642-e1b463fcd90f",
+     "investigation_s": 130.4,
+     "kept": 31,
+     "opened_s": 285.9,
+     "outcome": "diagnosed",
+     "priority": 2,
+     "reason": "root cause candidate: shipping (80%): The intlShippingSlowdown feature flag is enabled (5-second variant), so shipping's /ship-order path adds about 5s to international shipments. This propagates to checkout's PlaceOrder p95 (about 7.9s). Its timing lines up with the onset at about 18:29Z.",
+     "root_causes": [
+      "shipping"
+     ],
+     "service": "checkout",
+     "tokens": 266546
+    }
+   ],
+   "lab_ok": true,
+   "run": "40557832275",
+   "scenario": "intl-shipping-slowdown",
+   "variant": "default"
+  },
+  {
+   "alerts": [],
+   "error": null,
+   "first_alert_s": null,
+   "incidents": [],
+   "lab_ok": false,
+   "run": "40557832275",
+   "scenario": "payment-failure-10",
+   "variant": "default"
+  },
+  {
+   "alerts": [
+    "ErrorBudgetBurn[fast]/checkout"
+   ],
+   "error": null,
+   "first_alert_s": 129.0,
+   "incidents": [
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 16,
+     "confidences": [
+      0.8
+     ],
+     "cost_usd": 0.028357,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 5,
+     "incident_id": "fd0d12e9-a1c7-49f8-a487-ecfd356f89d5",
+     "investigation_s": 116.0,
+     "kept": 31,
+     "opened_s": 129.0,
+     "outcome": "diagnosed",
+     "priority": 1,
+     "reason": "root cause candidate: checkout (80%): Checkout's payment target resolves to the non-existent host 'badAddress' (DNS 'server misbehaving'), so every Charge call fails before reaching payment. The most likely trigger is the enabled paymentUnreachable flag, which was set directly and not by a rollout. Checkout's own config or env was not changed, since its single Deployment revision predates the alert.",
+     "root_causes": [
+      "checkout"
+     ],
+     "service": "checkout",
+     "tokens": 210773
+    }
+   ],
+   "lab_ok": true,
+   "run": "40557832275",
+   "scenario": "payment-unreachable",
+   "variant": "default"
+  },
+  {
+   "alerts": [],
+   "error": null,
+   "first_alert_s": null,
+   "incidents": [],
+   "lab_ok": false,
+   "run": "40557832275",
+   "scenario": "product-catalog-failure",
+   "variant": "default"
+  },
+  {
+   "alerts": [
+    "ErrorBudgetBurn[slow]/checkout"
+   ],
+   "error": null,
+   "first_alert_s": 82.1,
+   "incidents": [
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 22,
+     "confidences": [
+      0.7
+     ],
+     "cost_usd": 0.054086,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 5,
+     "incident_id": "8937a826-c856-416a-96e7-c9f5fed61b50",
+     "investigation_s": 161.7,
+     "kept": 27,
+     "opened_s": 82.1,
+     "outcome": "diagnosed",
+     "priority": 2,
+     "reason": "root cause candidate: cart (70%): EmptyCart's Redis/Valkey connection path fails and blocks for minutes before erroring. Checkout's PlaceOrder waits on it and then fails. Trigger unknown.",
+     "root_causes": [
+      "cart"
+     ],
+     "service": "checkout",
+     "tokens": 358094
+    }
+   ],
+   "lab_ok": false,
+   "run": "40557832275",
+   "scenario": "product-catalog-failure-after-frontend-release",
+   "variant": "default"
+  },
+  {
+   "alerts": [],
+   "error": null,
+   "first_alert_s": null,
+   "incidents": [],
+   "lab_ok": false,
+   "run": "40557832275",
+   "scenario": "product-catalog-lock-contention",
+   "variant": "default"
+  },
+  {
+   "alerts": [],
+   "error": null,
+   "first_alert_s": null,
+   "incidents": [],
+   "lab_ok": false,
+   "run": "40557832275",
+   "scenario": "recommendation-bad-release",
+   "variant": "default"
+  },
+  {
+   "alerts": [],
+   "error": null,
+   "first_alert_s": null,
+   "incidents": [],
+   "lab_ok": false,
+   "run": "40557832275",
+   "scenario": "recommendation-cache-failure",
+   "variant": "default"
+  }
+ ],
+ "run": "40557832275"
+}

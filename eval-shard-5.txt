@@ -1,0 +1,20 @@
+[eval] 2 scenario(s): cpu-stress, product-catalog-lock-contention
+[eval] variants: default (lab), 
+[baseline] watching for 300s with no fault injected
+=== scenario 1/2: cpu-stress (medium): CPU stress inside the recommendation pod
+[cpu-stress] inject: CPU stress inside the recommendation pod
+[cpu-stress] no alert within 900s
+[cpu-stress] peak SLIs: recommendation: errors 0.0%, p95 10ms, 0.38 req/s; frontend: errors 0.0%, p95 40ms, 8.43 req/s (pages at errors 14.4% fast, 6% slow, p95 1000ms)
+[cpu-stress] recover
+[cpu-stress] all alerts resolved 0.5s after recovery
+[cpu-stress] closed 0 incident(s)
+=== cpu-stress: lab check FAILED; 0 incident(s)
+=== scenario 2/2: product-catalog-lock-contention (medium): Product catalog queries wait on a database lock
+[product-catalog-lock-contention] inject: product-catalog queries wait on a database lock
+[product-catalog-lock-contention] no alert within 900s
+[product-catalog-lock-contention] peak SLIs: product-catalog: errors 0.0%, p95 21ms, 4.80 req/s; frontend: errors 0.0%, p95 39ms, 8.69 req/s (pages at errors 14.4% fast, 6% slow, p95 1000ms)
+[product-catalog-lock-contention] recover
+[product-catalog-lock-contention] all alerts resolved 0.0s after recovery
+[product-catalog-lock-contention] closed 0 incident(s)
+=== product-catalog-lock-contention: lab check FAILED; 0 incident(s)
+[eval] 2 observation(s) in lab-out/eval/results.json

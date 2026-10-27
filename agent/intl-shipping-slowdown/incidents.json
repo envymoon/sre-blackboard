@@ -1,0 +1,185 @@
+{
+ "annotations": {
+  "271bf11a-6b3e-4d63-8642-e1b463fcd90f": {
+   "description": "95th percentile of server span duration over 5m is above 1000ms.",
+   "summary": "checkout p95 latency is 7.857kms"
+  }
+ },
+ "expected": {
+  "271bf11a-6b3e-4d63-8642-e1b463fcd90f": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_1dae6d431bbdf7ff",
+       "ev_42b76c14ecbe907b"
+      ],
+      "statement": "The feature flag intlShippingSlowdown is ENABLED with the 5sec variant. It is the only one of 18 flags that is on."
+     },
+     {
+      "evidence_ids": [
+       "ev_47ee7ab9fe6afbc5",
+       "ev_6af78d496578254c",
+       "ev_4714a16951470fd8",
+       "ev_6aa325a09788124c"
+      ],
+      "statement": "Checkout, shipping, payment and product-catalog each have a single revision, created at 18:16:40Z (product-catalog 18:16:41Z). No rollout happened in the hour before the alert."
+     },
+     {
+      "evidence_ids": [
+       "ev_e10acc0315cf5e40",
+       "ev_1f9525b87a9402d9",
+       "ev_88149680a44cf300"
+      ],
+      "statement": "Checkout and shipping show no restarts, OOMKills or scheduling problems. The namespace warnings are readiness-probe failures on alertmanager, otel-collector-agent and loki, none on the checkout path."
+     },
+     {
+      "evidence_ids": [
+       "ev_1b465bf95936225a",
+       "ev_6cc2a52865d0023f"
+      ],
+      "statement": "In slow checkout traces a9f20a09 (5066ms) and ce45009f (5094ms), shipping's POST /ship-order span has about 5002ms of self time. The other spans each take about 11ms or less. Checkout's PaymentService/Charge takes about 7ms."
+     },
+     {
+      "evidence_ids": [
+       "ev_99755f90a41c3c45",
+       "ev_cf0952ea09eeb116"
+      ],
+      "statement": "Shipping logs contain 'Delaying international shipment due to intlShippingSlowdown feature flag' 7 times in the 30m window (first 18:29:23Z, last 18:34:17Z)."
+     },
+     {
+      "evidence_ids": [
+       "ev_da2fb31193e96328",
+       "ev_071f86b0f04e0eb5",
+       "ev_62da9dbef6616ed3",
+       "ev_3a31b1c5c30d4352"
+      ],
+      "statement": "Checkout's PlaceOrder server p95 went from about 48ms to about 7.35s by 18:34Z. The checkout SLI p95 reached 7,857ms at 18:34:08Z. Call rate held at about 0.19/s and no error series appeared."
+     },
+     {
+      "evidence_ids": [
+       "ev_5ca89c8b59cce25d",
+       "ev_0946dd13c5df5d68",
+       "ev_a283e18aa631a984",
+       "ev_283ddf0283a89c92"
+      ],
+      "statement": "Shipping's POST /ship-order server p95 went from about 1.9ms to 6.85s at 18:33 and 7.75s at 18:35. Its call rate stayed at about 0.19/s. Shipping's /get-quote p95 stayed flat around 3.8-4.0s and quote's own p95 stayed about 1.9ms."
+     },
+     {
+      "evidence_ids": [
+       "ev_98351452043bdefe",
+       "ev_6d562d36f237e0af",
+       "ev_b4c2620045f5f6d7",
+       "ev_4ae2eb3452be92da",
+       "ev_2d8053fcd1e90f6c"
+      ],
+      "statement": "Product-catalog (astronomy-db about 2.5ms), quote, payment, cart, currency and email show no warn/error logs or step change at 18:29-18:35Z. Product-catalog's p95 has been about 8.6-9.1s since 18:19, before the onset."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check flagd change history or audit logs for intlShippingSlowdown and look for an enable event around 18:28-18:29Z.",
+      "statement": "The intlShippingSlowdown flag was switched on shortly before 18:29Z. The flag_state data has no change timestamp, so this is unconfirmed."
+     },
+     {
+      "how_to_verify": "Pull full shipping traces with the orphan spans resolved, and compare shipping's ship-order server p95 with the flag-driven delay.",
+      "statement": "Shipping's server p95 (about 7.75s) is higher than the roughly 5s of self time in sampled traces. This may mean orphan spans (5 in trace a9f20a09) hide an extra uncaptured wait, or a second slow factor such as retries."
+     },
+     {
+      "how_to_verify": "Query kube_pod_container_status_restarts_total and container_cpu_cfs_throttled_periods_total for shipping pods in otel-demo, then check the 18:29-18:35Z window.",
+      "statement": "Shipping resource saturation (CPU throttling or restarts) could add to the delay. Prometheus returned no data for restarts or throttling, so this is neither confirmed nor ruled out."
+     },
+     {
+      "how_to_verify": "Query traces_span_metrics_duration_milliseconds_bucket with span_kind=SPAN_KIND_CLIENT and service_name=checkout for the shipping peer, or search Jaeger for checkout client spans to shipping.",
+      "statement": "Checkout's client-span p95 to shipping was not isolated. The metrics investigator saw no 'ship' client spans, so the checkout-to-shipping hop is inferred from traces only."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_9eb813e9bc2348b4",
+       "ev_0f81f39a79532962",
+       "ev_2625baea964f3665"
+      ],
+      "statement": "Checkout is a symptom, not the cause. Its own logs at warn and above are empty, its traces show no error spans, and its own spans total only a few ms apart from the shipping wait."
+     },
+     {
+      "evidence_ids": [
+       "ev_99755f90a41c3c45",
+       "ev_1dae6d431bbdf7ff",
+       "ev_5ca89c8b59cce25d"
+      ],
+      "statement": "The slowdown is a deliberate latency injection through the flag, not a code regression or resource fault. Its timing matches the 18:29Z onset and it leaves error rates unchanged."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "The intlShippingSlowdown feature flag is enabled (5-second variant), so shipping's /ship-order path adds about 5s to international shipments. This propagates to checkout's PlaceOrder p95 (about 7.9s). Its timing lines up with the onset at about 18:29Z.",
+      "confidence": 0.8,
+      "evidence_ids": [
+       "ev_1dae6d431bbdf7ff",
+       "ev_42b76c14ecbe907b",
+       "ev_99755f90a41c3c45",
+       "ev_cf0952ea09eeb116",
+       "ev_1b465bf95936225a",
+       "ev_6cc2a52865d0023f",
+       "ev_5ca89c8b59cce25d",
+       "ev_a283e18aa631a984"
+      ],
+      "service": "shipping"
+     }
+    ],
+    "summary": "Checkout's server-span p95 jumped from about 48ms to about 7.9s around 18:29-18:35Z. The added time sits in shipping's POST /ship-order (about 5s of self time in sampled slow traces). Shipping logs say it is deliberately delaying international shipments because the intlShippingSlowdown flag is on, and that flag is the only one of 18 enabled, at the 5-second variant. No deployment, restart, or error spike explains it. Checkout, product-catalog, payment and quote are not the source. The most likely fix is to disable intlShippingSlowdown in flagd, then confirm checkout p95 recovers. The flag's enablement time is not yet confirmed."
+   },
+   "findings": 20,
+   "plan": {
+    "actions": [],
+    "alternatives": [
+     {
+      "action": "rollout_undo",
+      "why_not": "No shipping, checkout or other service revision was created in the hour before the alert (single revisions at 18:16Z). There is no bad release to roll back to, and the delay comes from a flag, not from the image."
+     },
+     {
+      "action": "restart_deployment",
+      "why_not": "The delay is a deliberate sleep driven by flag state read from flagd. Restarting shipping would leave the flag on and the delay would return immediately. Shipping shows no restarts or OOMKills."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "The latency is a fixed injected wait, not queueing or saturation. Call rate stayed at about 0.19/s and the other services are not short of capacity, so more replicas would not reduce it."
+     }
+    ],
+    "no_action_reason": null,
+    "summary": "No automated action. The checkout p95 rise is caused by the intlShippingSlowdown feature flag (5sec variant) in flagd, which adds about 5s to shipping's /ship-order. A human should turn that flag off in flagd (or confirm it is an intended lab fault injection) and then check that checkout p95 drops back below 1s."
+   },
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": "2026-10-27 18:36:05.747753+00:00",
+   "created_at": "2026-10-27 18:33:48.037062+00:00",
+   "environment": "lab",
+   "fingerprint": "7d3c22bfff3583271006e8d4df5f3976",
+   "id": "271bf11a-6b3e-4d63-8642-e1b463fcd90f",
+   "labels": {
+    "alertname": "LatencyP95High",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "warning",
+    "slo": "latency"
+   },
+   "priority": 2,
+   "service": "checkout",
+   "state": "ESCALATED",
+   "tenant_id": "lab",
+   "title": "LatencyP95High"
+  }
+ ]
+}

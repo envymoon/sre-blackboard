@@ -1,0 +1,29 @@
+[eval] 2 scenario(s): cart-failure, product-catalog-failure-after-frontend-release
+[eval] variants: default (lab), 
+[baseline] watching for 300s with no fault injected
+=== scenario 1/2: cart-failure (medium): Cart fails half of its EmptyCart calls
+[cart-failure] inject: cart fails half of EmptyCart calls (bad store)
+[cart-failure] alert LatencyP95High on checkout after 393.9s
+[cart-failure] escalated LatencyP95High/checkout: root causes cart 70%, cart 40%, cart 25%; 21 model calls, 375,262 tokens, $0.052 (root cause candidate: cart (70%): Cart's EmptyCart handler is slow for every caller (p95 at 15s) and intermittently errors from about 18:31Z. The time is spent inside cart's own handler, not in a child call. The likely trigger is its Redis (Valkey) connection path or its flag evaluation, not checkout.)
+[cart-failure] recorded 21 model steps, 42 tool answers
+[cart-failure] answer: cart - correct
+[cart-failure] plan for LatencyP95High/checkout: no action -> deny; failed checks: actions: the plan has no actions
+[cart-failure] recover
+[cart-failure] all alerts resolved 185.2s after recovery
+[cart-failure] closed 0 incident(s)
+=== cart-failure: ok; 1 incident(s)
+=== scenario 2/2: product-catalog-failure-after-frontend-release (hard): Product catalog fails right after a harmless frontend release
+[product-catalog-failure-after-frontend-release] distractor: a frontend rollout that changes nothing requests depend on
+[product-catalog-failure-after-frontend-release] inject: product-catalog fails GetProduct for one product
+[product-catalog-failure-after-frontend-release] alert ErrorBudgetBurn[slow] on checkout after 82.1s
+[product-catalog-failure-after-frontend-release] escalated ErrorBudgetBurn/checkout: root causes cart 70%; 22 model calls, 358,094 tokens, $0.054 (root cause candidate: cart (70%): EmptyCart's Redis/Valkey connection path fails and blocks for minutes before erroring. Checkout's PlaceOrder waits on it and then fails. Trigger unknown.)
+[product-catalog-failure-after-frontend-release] recorded 22 model steps, 45 tool answers
+[product-catalog-failure-after-frontend-release] answer: cart - wrong (expected product-catalog)
+[product-catalog-failure-after-frontend-release] plan for ErrorBudgetBurn/checkout: no action -> deny; failed checks: actions: the plan has no actions
+[product-catalog-failure-after-frontend-release] recover
+[product-catalog-failure-after-frontend-release] all alerts resolved 1.1s after recovery
+[product-catalog-failure-after-frontend-release] closed 0 incident(s)
+[product-catalog-failure-after-frontend-release] flapping: ErrorBudgetBurn[slow]/checkout
+[product-catalog-failure-after-frontend-release] no alert on an expected service (product-catalog, frontend)
+=== product-catalog-failure-after-frontend-release: lab check FAILED; 1 incident(s)
+[eval] 2 observation(s) in lab-out/eval/results.json

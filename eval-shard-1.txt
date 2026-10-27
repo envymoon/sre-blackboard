@@ -1,0 +1,20 @@
+[eval] 2 scenario(s): ad-failure, payment-failure-10
+[eval] variants: default (lab), 
+[baseline] watching for 300s with no fault injected
+=== scenario 1/2: ad-failure (easy): Ad fails one in ten GetAds calls
+[ad-failure] inject: ad fails one in ten GetAds calls
+[ad-failure] no alert within 900s
+[ad-failure] peak SLIs: ad: errors 28.6%, p95 4ms, 0.50 req/s (pages at errors 14.4% fast, 6% slow, p95 1000ms)
+[ad-failure] recover
+[ad-failure] all alerts resolved 0.0s after recovery
+[ad-failure] closed 0 incident(s)
+=== ad-failure: lab check FAILED; 0 incident(s)
+=== scenario 2/2: payment-failure-10 (medium): Payment rejects one in ten charges
+[payment-failure-10] inject: payment rejects one in ten charges
+[payment-failure-10] no alert within 900s
+[payment-failure-10] peak SLIs: payment: errors 27.3%, p95 2ms, 0.27 req/s; checkout: errors 27.3%, p95 48ms, 0.27 req/s (pages at errors 14.4% fast, 6% slow, p95 1000ms)
+[payment-failure-10] recover
+[payment-failure-10] all alerts resolved 0.0s after recovery
+[payment-failure-10] closed 0 incident(s)
+=== payment-failure-10: lab check FAILED; 0 incident(s)
+[eval] 2 observation(s) in lab-out/eval/results.json

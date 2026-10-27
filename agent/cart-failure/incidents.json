@@ -1,0 +1,214 @@
+{
+ "annotations": {
+  "d3d2dac0-8ff0-409f-b62b-5871fa2a9d39": {
+   "description": "95th percentile of server span duration over 5m is above 1000ms.",
+   "summary": "checkout p95 latency is 15kms"
+  }
+ },
+ "expected": {
+  "d3d2dac0-8ff0-409f-b62b-5871fa2a9d39": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_bebf75218ce9f119"
+      ],
+      "statement": "Checkout's server-span p95 stepped from about 48ms to 15000ms (histogram ceiling) between about 18:34 and 18:36Z, which is the alert."
+     },
+     {
+      "evidence_ids": [
+       "ev_d200157f85605a06",
+       "ev_40e08e62e4f8e46d"
+      ],
+      "statement": "Of checkout's client spans, only CartService/EmptyCart is slow (p95 15000ms). PaymentService/Charge is 5.3ms, ProductCatalogService/GetProduct 3.8ms, CartService/GetCart 2.0ms, CurrencyService/Convert 1.9ms."
+     },
+     {
+      "evidence_ids": [
+       "ev_92112f7a2de3a6bf"
+      ],
+      "statement": "Cart's server-side EmptyCart p95 rose to 15000ms at about 18:35Z, while cart's GetCart and AddItem server p95 stay at about 1.9-2.0ms."
+     },
+     {
+      "evidence_ids": [
+       "ev_c76b706126a79e10",
+       "ev_8bbcc9990fae6731"
+      ],
+      "statement": "In the slowest checkout trace (284.4s), the cart EmptyCart span accounts for 284,347 ms with self time 284,346 ms and an error. The second slow trace (181.6s) shows the same pattern. Product-catalog and astronomy-db spans are 2-11ms."
+     },
+     {
+      "evidence_ids": [
+       "ev_bfe9b92e6a42614c",
+       "ev_6cbab65e5d032eb7"
+      ],
+      "statement": "Cart logged 'Wasn't able to connect to redis' errors between 18:31:07Z and 18:37:00Z. Cart's last successful Redis connection was at 18:18:14Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_8ed0ca9066f1ce2f",
+       "ev_c469db52c2423990"
+      ],
+      "statement": "Cart's valkey-cart client-span p95 stays at 1.9ms throughout, and cart's CPU is low (about 0.016-0.06 cores)."
+     },
+     {
+      "evidence_ids": [
+       "ev_249d8bfb1dfadb62",
+       "ev_5900c9571d27641e",
+       "ev_9960a6562ab844d2",
+       "ev_b2d2f9b0f5ec2933",
+       "ev_da2824d5d078c194"
+      ],
+      "statement": "Checkout logs no warn or error lines in the last 30-60 minutes, its CPU is about 0.003-0.004 cores, its memory is steady near 30MB, and its PlaceOrder spans show no errors."
+     },
+     {
+      "evidence_ids": [
+       "ev_7821da93345e16da",
+       "ev_49c03d55dfe31bee"
+      ],
+      "statement": "Cart's EmptyCart server spans returned errors at about 0.003-0.010 calls/s from 18:31Z, against about 0.1-0.2 EmptyCart calls/s total."
+     },
+     {
+      "evidence_ids": [
+       "ev_6bedcab385750ad9",
+       "ev_af077eafafbdc851",
+       "ev_a68239f2ef99865f",
+       "ev_b7cb3b0a3d8a6aaa",
+       "ev_dd22ccd2afb085e3",
+       "ev_26ae57ac2d0decb2"
+      ],
+      "statement": "The only enabled flag is cartFailure at 50%. Checkout, cart and payment each have a single revision created at about 18:16Z, with no change-cause and no warning events on the checkout path."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Read cart's Redis connection config and logs with timeouts. Check valkey-cart pod health, endpoints, and server-side logs or metrics, which are currently unobserved.",
+      "statement": "Cart's Redis connection config (timeouts, pool, or DNS for valkey-cart) is wrong, so connections hang and retry intermittently. The Redis failures are not visible in the valkey-cart client span."
+     },
+     {
+      "how_to_verify": "Check cart's restart count (returned no data), GC metrics, and thread or connection pool saturation. Compare EmptyCart latency against the memory curve.",
+      "statement": "Cart's memory ramp (about 23MB to 120MB over 60 minutes) reflects a leak or GC pressure that stalls EmptyCart."
+     },
+     {
+      "how_to_verify": "Check the cartFailure targeting and whether cart's EmptyCart calls flagd during the request. Compare cart's ResolveBoolean spans with and without the flag, and check flagd's EventStream spans.",
+      "statement": "The cartFailure flag, or flagd's EventStream streaming behaviour, is adding latency to cart's EmptyCart path."
+     },
+     {
+      "how_to_verify": "Check cart and valkey-cart rollout history, ConfigMap or Secret changes, and Kubernetes events around 18:31Z.",
+      "statement": "A cart or valkey-cart config change at about 18:31Z broke the Redis connection. Earlier checks found no such rollout, so this is unconfirmed."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_d200157f85605a06",
+       "ev_249d8bfb1dfadb62",
+       "ev_b2d2f9b0f5ec2933"
+      ],
+      "statement": "Checkout is not the root cause. Its only slow callee is cart's EmptyCart, and its own process and spans are healthy."
+     },
+     {
+      "evidence_ids": [
+       "ev_92112f7a2de3a6bf",
+       "ev_c76b706126a79e10"
+      ],
+      "statement": "The slowdown is in cart's EmptyCart handler and affects all callers, not checkout alone. The slow time sits in the handler, not in a downstream span."
+     },
+     {
+      "evidence_ids": [
+       "ev_af077eafafbdc851",
+       "ev_a68239f2ef99865f",
+       "ev_b7cb3b0a3d8a6aaa"
+      ],
+      "statement": "The recent deploys (cart, payment, checkout at about 18:16Z) do not explain the onset at about 18:31-18:35Z. The onset is a cart-side change in behaviour, not a rollout."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Cart's EmptyCart handler is slow for every caller (p95 at 15s) and intermittently errors from about 18:31Z. The time is spent inside cart's own handler, not in a child call. The likely trigger is its Redis (Valkey) connection path or its flag evaluation, not checkout.",
+      "confidence": 0.7,
+      "evidence_ids": [
+       "ev_92112f7a2de3a6bf",
+       "ev_d200157f85605a06",
+       "ev_c76b706126a79e10",
+       "ev_8bbcc9990fae6731",
+       "ev_7821da93345e16da",
+       "ev_eaa7f27c7e38f57e"
+      ],
+      "service": "cart"
+     },
+     {
+      "cause": "Cart's connection to Redis (valkey-cart) fails or times out intermittently, starting about 18:31Z after a successful connect at 18:18Z. The valkey-cart client span looks healthy, so the failure may be below the span level, or the Valkey server side may be unobserved.",
+      "confidence": 0.4,
+      "evidence_ids": [
+       "ev_6cbab65e5d032eb7",
+       "ev_bfe9b92e6a42614c",
+       "ev_0ae1a1c35baf5769",
+       "ev_c469db52c2423990",
+       "ev_8ed0ca9066f1ce2f"
+      ],
+      "service": "cart"
+     },
+     {
+      "cause": "Cart's flag evaluation via flagd is slow (client-side ResolveBoolean p95 about 1.2s), while flagd's server-side spans are fast. The cartFailure flag at 50% is enabled, so cart's flag path could be adding latency to EmptyCart.",
+      "confidence": 0.25,
+      "evidence_ids": [
+       "ev_bd7b9ab12579593e",
+       "ev_6bedcab385750ad9",
+       "ev_8ed0ca9066f1ce2f"
+      ],
+      "service": "cart"
+     }
+    ],
+    "summary": "LatencyP95High on checkout is caused by slow CartService/EmptyCart calls. Checkout's other callees are 2-7ms. Cart's server-side EmptyCart p95 is also at the 15s ceiling, while cart's GetCart and AddItem stay near 2ms, so the slow handler is in cart and affects all callers. Slow traces spend nearly all their time inside cart's EmptyCart span with no child span, and cart logs repeated Redis connection failures from about 18:31Z. Those failures conflict with cart's healthy valkey-cart client p95, so the mechanism is not settled. Checkout is healthy and is not the root cause. No recent rollout or flag change explains the onset."
+   },
+   "findings": 23,
+   "plan": {
+    "actions": [],
+    "alternatives": [
+     {
+      "action": "restart_deployment",
+      "why_not": "Cart's memory ramp and stalled EmptyCart could fit a leaking process, but the Redis failures may be server-side and the cartFailure flag may be the cause. A restart gives at most temporary relief."
+     },
+     {
+      "action": "rollout_undo",
+      "why_not": "Cart, checkout and payment each have one revision at about 18:16Z, 15 minutes before onset, with no change-cause. No bad release is shown."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "Cart's CPU is low (about 0.016-0.06 cores) and the stall is inside one handler, not queueing under load, so more replicas would not help."
+     }
+    ],
+    "no_action_reason": "A human should check whether the cartFailure flag at 50% is intended in this lab, inspect cart-to-valkey-cart connectivity and Valkey server health, and look at cart's memory growth before choosing a restart or flag change.",
+    "summary": "Checkout's p95 alert is caused by cart's EmptyCart handler stalling for every caller, with intermittent Redis connection failures from about 18:31Z and an enabled cartFailure flag as a possible cause. No rollout explains the onset, and no listed action has evidence that it would fix the cause, so I propose no action."
+   },
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": "2026-10-27 18:39:00.609593+00:00",
+   "created_at": "2026-10-27 18:36:03.040381+00:00",
+   "environment": "lab",
+   "fingerprint": "7d3c22bfff3583271006e8d4df5f3976",
+   "id": "d3d2dac0-8ff0-409f-b62b-5871fa2a9d39",
+   "labels": {
+    "alertname": "LatencyP95High",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "warning",
+    "slo": "latency"
+   },
+   "priority": 2,
+   "service": "checkout",
+   "state": "ESCALATED",
+   "tenant_id": "lab",
+   "title": "LatencyP95High"
+  }
+ ]
+}

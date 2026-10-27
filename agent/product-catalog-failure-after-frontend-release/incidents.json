@@ -1,0 +1,151 @@
+{
+ "annotations": {
+  "8937a826-c856-416a-96e7-c9f5fed61b50": {
+   "description": "Error ratio over 30m is above 6x the 1% error budget (slow burn).",
+   "summary": "checkout is failing 14.33% of requests (30m)"
+  }
+ },
+ "expected": {
+  "8937a826-c856-416a-96e7-c9f5fed61b50": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_77fb83bf7d3d7a8c",
+       "ev_a3a95dc764f2a63e"
+      ],
+      "statement": "Checkout 30m error ratio is about 0.41-0.42 from 18:45:50Z to 18:47:50Z, not the 14.33% in the alert text."
+     },
+     {
+      "evidence_ids": [
+       "ev_1d1bf29a3a55684e"
+      ],
+      "statement": "Cart logged 9 'Wasn't able to connect to redis' errors between 18:31:07Z and 18:47:05Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_2c77d22e693edf8f"
+      ],
+      "statement": "In trace 6ab21f6454533fc0b58200bac108aeaa, checkout's CartService/EmptyCart span lasted 338.5s, all self-wait, ending in context canceled; frontend-proxy returned 504."
+     },
+     {
+      "evidence_ids": [
+       "ev_9b92f295a1505981"
+      ],
+      "statement": "Cart's EmptyCart server p95 went from about 6ms to 15000ms between 18:33 and 18:36 and stayed at 5-10s."
+     },
+     {
+      "evidence_ids": [
+       "ev_79b3577800eb404f",
+       "ev_9760cff867814caa",
+       "ev_91881961b5f859f4"
+      ],
+      "statement": "Checkout's client calls to Payment Charge, Currency Convert and product-catalog GetProduct show no ERROR series; their server p95s are low."
+     },
+     {
+      "evidence_ids": [
+       "ev_371888263c2692cd",
+       "ev_451d7e46791f464a"
+      ],
+      "statement": "No checkout or cart rollout occurred in the window; revisions date from 18:16Z; the only enabled flag is productCatalogFailure."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Query valkey-cart pod status, logs and server spans; check cart's Redis host config and connection timeouts.",
+      "statement": "valkey-cart backend is unreachable or degraded, and cart's Redis connect blocks."
+     },
+     {
+      "how_to_verify": "Diff cart's ConfigMap/env and Secrets history around 18:30Z; check valkey-cart Service endpoints.",
+      "statement": "A config change to cart's Redis endpoint or credentials triggered the failure at about 18:31Z."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_cf0b72e058936c64",
+       "ev_a888739162ade45a"
+      ],
+      "statement": "Checkout's errors are downstream of cart's EmptyCart stall; Kafka is not the origin."
+     },
+     {
+      "evidence_ids": [
+       "ev_79b3577800eb404f",
+       "ev_451d7e46791f464a"
+      ],
+      "statement": "productCatalogFailure is unlikely to be the cause because product-catalog and checkout's calls to it show no errors."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "EmptyCart's Redis/Valkey connection path fails and blocks for minutes before erroring. Checkout's PlaceOrder waits on it and then fails. Trigger unknown.",
+      "confidence": 0.7,
+      "evidence_ids": [
+       "ev_1d1bf29a3a55684e",
+       "ev_254b00ca4be81e30",
+       "ev_9b92f295a1505981",
+       "ev_2c77d22e693edf8f",
+       "ev_103f85babd08995c"
+      ],
+      "service": "cart"
+     }
+    ],
+    "summary": "Checkout's burn comes from PlaceOrder waiting on cart EmptyCart. Cart's EmptyCart p95 rose from about 6ms to 15s between 18:33 and 18:36, and cart logs Redis connection failures from 18:31. Checkout's EmptyCart errors reach about 0.19/s and PlaceOrder errors start at 18:46. Kafka, payment, currency and product-catalog look healthy. The alert's 14.33% does not match the measured 0.41 ratio. The Redis trigger is unknown."
+   },
+   "findings": 18,
+   "plan": {
+    "actions": [],
+    "alternatives": [
+     {
+      "action": "rollout_undo",
+      "why_not": "Cart and valkey-cart each have one revision, created at 18:16Z, with no change cause. No release falls before the 18:31Z failures, so there is nothing to roll back to."
+     },
+     {
+      "action": "restart_deployment",
+      "why_not": "No evidence of a stuck cart process. The failures are Redis connection errors and valkey-cart is unverified, so a restart may not clear them. The trigger is unknown."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "The problem is a blocked dependency connection, not a capacity shortfall. No saturation was found."
+     },
+     {
+      "action": "none",
+      "why_not": "Acting on checkout would only treat a symptom. Checkout's errors are downstream of cart and it has no recent release."
+     }
+    ],
+    "no_action_reason": "Cart logs Redis connection failures from 18:31Z and EmptyCart p95 rose to 15s. No catalogue action fixes a backend or config fault, and no release is involved. A human should check valkey-cart reachability from cart, cart's Redis endpoint and credentials for changes near 18:31Z, and whether the stall persists.",
+    "summary": "No automated action is supported. Cart's EmptyCart stall is tied to Redis connection failures from about 18:31Z, but neither cart nor valkey-cart has a recent rollout or warning events, and the trigger is unknown. A human should check valkey-cart health and reachability from cart, and cart's Redis endpoint and credentials."
+   },
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": "2026-10-27 18:50:40.955864+00:00",
+   "created_at": "2026-10-27 18:47:33.016355+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "8937a826-c856-416a-96e7-c9f5fed61b50",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "slow",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "warning",
+    "slo": "availability"
+   },
+   "priority": 2,
+   "service": "checkout",
+   "state": "ESCALATED",
+   "tenant_id": "lab",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}

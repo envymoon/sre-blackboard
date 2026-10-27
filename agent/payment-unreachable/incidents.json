@@ -1,0 +1,183 @@
+{
+ "annotations": {
+  "fd0d12e9-a1c7-49f8-a487-ecfd356f89d5": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 37.31% of requests"
+  }
+ },
+ "expected": {
+  "fd0d12e9-a1c7-49f8-a487-ecfd356f89d5": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_7937e941d9d6b09b"
+      ],
+      "statement": "Checkout's server error ratio rose from about 0.016 to 0.51 between 18:42 and 18:48Z, peaking at 0.5147."
+     },
+     {
+      "evidence_ids": [
+       "ev_f34085a8beee14c2",
+       "ev_3e87542830b6a206",
+       "ev_3b5866787b869755"
+      ],
+      "statement": "Checkout's only failing client span is PaymentService/Charge (about 0.134 errors/s). Its Charge ERROR rate rose from about 0.003/s to 0.144/s while UNSET Charge calls fell."
+     },
+     {
+      "evidence_ids": [
+       "ev_22f8f64853da4552"
+      ],
+      "statement": "Jaeger shows 20 Charge client spans and 20 PlaceOrder server spans failing with 'dns: A record lookup error: lookup badAddress on 10.96.0.10:53: server misbehaving'. Frontend and frontend-proxy show matching 500s."
+     },
+     {
+      "evidence_ids": [
+       "ev_28d50533ec654e79"
+      ],
+      "statement": "In trace 7a3e0494090dc81edcc5d41598a12ef6, the deepest failing span is checkout's Charge call with the DNS error. Its parent PlaceOrder fails with 'failed to charge card'."
+     },
+     {
+      "evidence_ids": [
+       "ev_19573b0b319baf74",
+       "ev_b18671d92469f660",
+       "ev_61c4426c30341446",
+       "ev_c0de65e4f088ba45",
+       "ev_7537a1cf0580f29f"
+      ],
+      "statement": "Payment has zero error-status Charge spans and zero error-level logs in the window. Its server Charge spans are UNSET (about 0.11/s), and its p95 latency rose only slightly."
+     },
+     {
+      "evidence_ids": [
+       "ev_66d490ed66a2f0f2",
+       "ev_e025760d9c09d645"
+      ],
+      "statement": "Exactly one of 18 flagd flags is on: paymentUnreachable (ENABLED, variant 'on', targeting false), so it was set directly."
+     },
+     {
+      "evidence_ids": [
+       "ev_8d83cd49b258036b",
+       "ev_421427145f871faf",
+       "ev_938ddd79ba51f230",
+       "ev_2f40810dd74192e7"
+      ],
+      "statement": "Checkout and payment each have a single Deployment revision created at 18:16Z, with no change-cause. No checkout or payment restart, OOM, or probe failure appears near 18:48Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_252262160e91f3b5",
+       "ev_549bd42926ee57e8",
+       "ev_7f1ae0730550fec7"
+      ],
+      "statement": "Checkout's own logs show no error-level lines and no 'dns' or 'charge' matches, so the failure is visible only in traces and metrics."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check checkout's flag evaluation code or env for paymentUnreachable. Then check flagd's config or audit history for when the flag was enabled, and compare it with 18:42Z. Optionally disable it in a lab and confirm the error ratio recovers.",
+      "statement": "Checkout reads the paymentUnreachable flag and maps it to the 'badAddress' payment target. If so, setting the flag to off should restore the Charge calls and drop the error ratio."
+     },
+     {
+      "how_to_verify": "Compare checkout's live env and ConfigMap with the revision-1 manifest. Also read the server.address attribute on failing Charge spans in Jaeger.",
+      "statement": "The payment address in checkout's config (for example PAYMENT_ADDR or a similar env var) was overwritten, independent of the flag."
+     },
+     {
+      "how_to_verify": "Re-query that trace in Jaeger and check whether the orphan spans come from another service or from checkout's async work.",
+      "statement": "The 3 orphan spans in trace 7a3e0494090dc81edcc5d41598a12ef6 hide an additional failure path."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_22f8f64853da4552",
+       "ev_28d50533ec654e79",
+       "ev_19573b0b319baf74",
+       "ev_61c4426c30341446"
+      ],
+      "statement": "Payment is not the broken service. Checkout fails at name resolution before the call reaches payment, so the fault is on checkout's side of the call."
+     },
+     {
+      "evidence_ids": [
+       "ev_66d490ed66a2f0f2",
+       "ev_e025760d9c09d645",
+       "ev_8d83cd49b258036b"
+      ],
+      "statement": "The paymentUnreachable flag is the most likely source of the 'badAddress' target: it was set directly, it matches the failing dependency, and no deployment change explains the failure."
+     },
+     {
+      "evidence_ids": [
+       "ev_f34085a8beee14c2",
+       "ev_22f8f64853da4552"
+      ],
+      "statement": "Kafka, currency, cart, product-catalog, shipping and email show no checkout client-span errors, so they are not the cause of this burn."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Checkout's payment target resolves to the non-existent host 'badAddress' (DNS 'server misbehaving'), so every Charge call fails before reaching payment. The most likely trigger is the enabled paymentUnreachable flag, which was set directly and not by a rollout. Checkout's own config or env was not changed, since its single Deployment revision predates the alert.",
+      "confidence": 0.8,
+      "evidence_ids": [
+       "ev_22f8f64853da4552",
+       "ev_28d50533ec654e79",
+       "ev_19573b0b319baf74",
+       "ev_3b5866787b869755",
+       "ev_66d490ed66a2f0f2",
+       "ev_e025760d9c09d645",
+       "ev_8d83cd49b258036b"
+      ],
+      "service": "checkout"
+     }
+    ],
+    "summary": "ErrorBudgetBurn (fast) on checkout is caused by checkout failing its outbound PaymentService/Charge calls. Those calls fail with a DNS error resolving host 'badAddress' (grpc UNAVAILABLE), so PlaceOrder fails with 'failed to charge card' and the 500s propagate through frontend to frontend-proxy. Payment is healthy with no error spans or logs. No checkout or payment rollout or restart lines up with the alert. The only flag on is paymentUnreachable, which was set directly and is the likely source of the bad payment target. Next step: confirm that checkout's payment target resolves from this flag, then turn the flag off or restore the payment address."
+   },
+   "findings": 19,
+   "plan": {
+    "actions": [],
+    "alternatives": [
+     {
+      "action": "rollout_undo",
+      "why_not": "Checkout has a single Deployment revision, created at 18:16Z with no change-cause, well before the alert. There is no earlier revision to return to, and no release is the trigger."
+     },
+     {
+      "action": "restart_deployment",
+      "why_not": "A restart would reload the same config and flag state, so Charge calls would keep resolving 'badAddress'. No stuck or leaking process is shown."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "The failure is a name-resolution error on every Charge call, not a capacity shortage, so more replicas would not lower the error ratio."
+     }
+    ],
+    "no_action_reason": "Fix is to turn off paymentUnreachable or restore checkout's payment address, a flag or config change outside my actions. Human should confirm the flag maps to 'badAddress', then correct it and watch the Charge error rate.",
+    "summary": "Checkout's PaymentService/Charge calls fail with a DNS error on 'badAddress', which fails PlaceOrder and the 500s above it. No checkout rollout, restart or deployment change lines up with the alert, so the available actions would not fix it. A human should check the paymentUnreachable flag and checkout's payment address, and restore the correct target."
+   },
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": "2026-10-27 18:50:10.151102+00:00",
+   "created_at": "2026-10-27 18:48:03.034973+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "fd0d12e9-a1c7-49f8-a487-ecfd356f89d5",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "ESCALATED",
+   "tenant_id": "lab",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}

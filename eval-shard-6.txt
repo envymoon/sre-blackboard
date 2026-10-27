@@ -1,0 +1,20 @@
+[eval] 2 scenario(s): email-memory-leak, recommendation-bad-release
+[eval] variants: default (lab), 
+[baseline] watching for 300s with no fault injected
+=== scenario 1/2: email-memory-leak (medium): Email leaks memory on every confirmation
+[email-memory-leak] inject: email leaks memory on every confirmation until it is OOM-killed
+[email-memory-leak] no alert within 900s
+[email-memory-leak] peak SLIs: email: errors 0.0%, p95 10ms, 0.24 req/s; checkout: errors 0.0%, p95 48ms, 0.24 req/s (pages at errors 14.4% fast, 6% slow, p95 1000ms)
+[email-memory-leak] recover
+[email-memory-leak] all alerts resolved 0.0s after recovery
+[email-memory-leak] closed 0 incident(s)
+=== email-memory-leak: lab check FAILED; 0 incident(s)
+=== scenario 2/2: recommendation-bad-release (medium): A recommendation release points its catalog client at a dead port
+[recommendation-bad-release] inject: a recommendation rollout points its product-catalog client at a dead port
+[recommendation-bad-release] no alert within 900s
+[recommendation-bad-release] peak SLIs: recommendation: errors 0.0%, p95 8ms, 0.41 req/s; frontend: errors 16.0%, p95 37ms, 8.33 req/s (pages at errors 14.4% fast, 6% slow, p95 1000ms)
+[recommendation-bad-release] recover
+[recommendation-bad-release] all alerts resolved 1.0s after recovery
+[recommendation-bad-release] closed 0 incident(s)
+=== recommendation-bad-release: lab check FAILED; 0 incident(s)
+[eval] 2 observation(s) in lab-out/eval/results.json
