@@ -10,7 +10,8 @@ name: Evaluation
 # Expensive (a few hours of runners, real model use on the subscription), so never on a
 # plain push: dispatch it, or push a commit whose message contains "[eval]", optionally with
 # settings, e.g. "[eval scenarios=bad-release,network-delay variants= shards=1]" (empty
-# variants: the default agents only). Dispatch needs this file on the default branch.
+# variants: the default agents only; alert_timeout=900 waits longer for every first alert
+# than the scenarios' own timeouts). Dispatch needs this file on the default branch.
 
 on:
   workflow_dispatch:
@@ -27,6 +28,10 @@ on:
         description: "Parallel lab jobs"
         required: false
         default: "4"
+      alert_timeout:
+        description: "Seconds to wait for a scenario's first alert, at least"
+        required: false
+        default: "300"
   push:
     branches: ["milestone/**"]
 
@@ -46,6 +51,7 @@ jobs:
       count: ${{ steps.plan.outputs.count }}
       scenarios: ${{ steps.plan.outputs.scenarios }}
       variants: ${{ steps.plan.outputs.variants }}
+      alert_timeout: ${{ steps.plan.outputs.alert_timeout }}
     steps:
       - id: plan
         env:
@@ -54,14 +60,15 @@ jobs:
           IN_SCENARIOS: ${{ inputs.scenarios }}
           IN_VARIANTS: ${{ inputs.variants }}
           IN_SHARDS: ${{ inputs.shards }}
+          IN_ALERT_TIMEOUT: ${{ inputs.alert_timeout }}
           EVENT: ${{ github.event_name }}
         run: |
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import json, os, re
-          settings = {"scenarios": "", "variants": "single strong-plan canary", "shards": "4"}
+          settings = {"scenarios": "", "variants": "single strong-plan canary", "shards": "4", "alert_timeout": "300"}
           if os.environ["EVENT"] == "workflow_dispatch":
               settings |= {"scenarios": os.environ["IN_SCENARIOS"], "variants": os.environ["IN_VARIANTS"],
-                           "shards": os.environ["IN_SHARDS"]}
+                           "shards": os.environ["IN_SHARDS"], "alert_timeout": os.environ["IN_ALERT_TIMEOUT"]}
           else:
               m = re.search(r"\[eval([^\]]*)\]", os.environ["MESSAGE"])
               for key, value in re.findall(r"(\w+)=([^\s\]]*)", m.group(1) if m else ""):
@@ -76,6 +83,7 @@ jobs:
           print(f"count={n}")
           print(f"scenarios={' '.join(names)}")
           print(f"variants={' '.join(variants)}")
+          print(f"alert_timeout={max(60, min(1800, int(settings['alert_timeout']) if settings['alert_timeout'].isdigit() else 300))}")
           PY
           cat "$GITHUB_OUTPUT"
 
@@ -103,6 +111,7 @@ jobs:
         env:
           SCENARIOS: ${{ needs.plan.outputs.scenarios }}
           SHARD: ${{ matrix.shard }}/${{ needs.plan.outputs.count }}
+          ALERT_TIMEOUT: ${{ needs.plan.outputs.alert_timeout }}
         run: |
           set -o pipefail
           if [ ! -f lab-out/agents.enabled ]; then
@@ -119,7 +128,7 @@ jobs:
             shard_args=(--shard "$SHARD")
           fi
           uv run python -m scripts.lab eval "${shard_args[@]}" --out lab-out/eval --run "${{ github.run_id }}" \
-            2>&1 | tee lab-out/eval.txt
+            --alert-timeout "$ALERT_TIMEOUT" 2>&1 | tee lab-out/eval.txt
           uv run python -m app.eval report lab-out/eval/results.json --baseline "" --gate --canary \
             | tee lab-out/eval/report.md >> "$GITHUB_STEP_SUMMARY"
 
@@ -138,7 +147,7 @@ jobs:
       - name: Publish results as annotations
         if: always()
         run: |
-          grep -E "^=== |answer:|plan for|execution|\[baseline\]|error|not resolved|no alert" lab-out/eval.txt \
+          grep -E "^=== |answer:|plan for|execution|\[baseline\]|error|not resolved|no alert|peak SLIs" lab-out/eval.txt \
             > lab-out/eval-events.txt 2>/dev/null || true
           uv run python -m scripts.lab.annotate lab-out/eval-events.txt:250 lab-out/worker-check.txt:40
       - name: Publish logs as annotations

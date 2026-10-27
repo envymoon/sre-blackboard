@@ -67,6 +67,9 @@ class Scenario(_Model):
     tags: tuple[str, ...] = ()
     inject: tuple[Injection, ...] = Field(min_length=1)
     expect: Expected
+    # How long the lab waits for the first alert, when longer than the run's default: a fault
+    # that only crosses the slow burn threshold takes 10-15 minutes to page.
+    alert_timeout_s: float | None = Field(default=None, gt=0)
     notes: str = ""
 
     @model_validator(mode="after")

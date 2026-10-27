@@ -297,6 +297,43 @@ def test_acceptance_fails_without_alert_and_still_recovers(sync_engine: Engine) 
     assert sim.recovered == ["bad-release"]
 
 
+class MeasuredLab(SimulatedLab):
+    """Prometheus answers the SLI queries: checkout errs a little more each time it is asked."""
+
+    asked = 0
+
+    def query(self, promql: str) -> list[dict[str, Any]]:
+        if promql == accept.SLIS["errors"]:
+            self.asked += 1
+            return [
+                {"metric": {"service_name": "checkout"}, "value": [NOW, str(0.02 * self.asked)]},
+                {"metric": {"service_name": "frontend"}, "value": [NOW, "NaN"]},
+            ]
+        return [{"metric": {"service_name": "checkout"}, "value": [NOW, "250"]}]
+
+
+def test_a_fault_that_never_pages_is_reported_with_how_close_it_came(
+    sync_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(accept, "SLI_EVERY_S", 0)
+    sim = MeasuredLab(sync_engine, on_inject=[], on_recover=[])
+    lines: list[str] = []
+    (result,) = accept.run(
+        sim,  # type: ignore[arg-type]
+        sync_engine,
+        [get("bad-release")],
+        tenant="lab",
+        log=lines.append,
+        alert_timeout=0.3,
+        resolve_timeout=0.3,
+        **FAST,
+    )
+    assert sim.asked > 1 and result.peaks["checkout"]["errors"] == pytest.approx(0.02 * sim.asked)
+    assert "frontend" not in result.peaks  # NaN: no traffic, not a peak
+    [line] = [x for x in lines if "peak SLIs" in x]
+    assert "checkout: errors" in line and "p95 250ms" in line and "pages at errors 14.4%" in line
+
+
 def test_acceptance_reports_unresolved_alerts(sync_engine: Engine) -> None:
     sim = SimulatedLab(sync_engine, on_recover=[])
     (result,) = accept.run(
@@ -536,3 +573,59 @@ def test_the_report_shows_each_plan_and_whether_the_loop_closed() -> None:
     assert "| bad-release | checkout | rollout_undo checkout | require_approval (R3) | approve | resolved: " in markdown
     assert "| 170s | succeeded: rollout_undo checkout (revision 2 -> 3) |" in markdown
     assert "Closed loop for bad-release (rollout_undo checkout): closed" in markdown
+
+
+def test_the_expected_repair_is_approved_once_however_many_incidents_propose_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.core.config import Settings
+    from scripts.lab.diagnose import DiagnosisSeen
+    from scripts.lab.remediate import Remediator
+
+    plans = {
+        "i1": ["rollout_undo shipping"],
+        "i2": ["rollout_undo shipping"],
+        "i3": ["restart_deployment quote"],
+    }
+    decisions: dict[str, str] = {}
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        incident = request.url.path.split("/")[4]
+        if request.method == "POST":
+            decisions[incident] = json.loads(request.content)["decision"]
+            return httpx.Response(201, json={})
+        if request.url.path.endswith("/plans"):
+            actions = [dict(zip(("action", "deployment"), a.split(), strict=True)) for a in plans[incident]]
+            plan = {"actions": actions}
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "plan": plan,
+                        "plan_hash": "h",
+                        "verdict": "require_approval",
+                        "risk": "R3",
+                        "checks": [],
+                        "executions": [],
+                    }
+                ],
+            )
+        return httpx.Response(200, json=[])
+
+    remediator = Remediator(None, Settings(_env_file=None, jwt_secret="x" * 40), "lab", timeout_s=0)  # type: ignore[arg-type]
+    remediator.http = httpx.Client(base_url="http://api", transport=httpx.MockTransport(answer))
+    monkeypatch.setattr(remediator, "_last", lambda incident_id: ("AWAITING_APPROVAL", ""))
+    seen = [
+        DiagnosisSeen(i, "lab", "ErrorBudgetBurn", s, 1, "AWAITING_APPROVAL", 1.0)
+        for i, s in (("i1", "checkout"), ("i2", "shipping"), ("i3", "frontend"))
+    ]
+    lines: list[str] = []
+    out = remediator.run(get("shipping-bad-release"), seen, lines.append, label="shipping-bad-release")
+    # The first rollback approved, the same rollback on the next incident left alone, the wrong plan rejected.
+    assert decisions == {"i1": "approve", "i3": "reject"}
+    assert [(r.decision, r.left) for r in out] == [
+        ("approve", ""),
+        (None, "already approved on ErrorBudgetBurn/checkout"),
+        ("reject", ""),
+    ]
+    assert all(line.startswith("[shipping-bad-release]") for line in lines)

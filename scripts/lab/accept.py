@@ -85,6 +85,9 @@ class ScenarioResult:
     repair: str | None = None  # the fault's known repair, "rollout_undo checkout"
     remediated: bool = False
     remediations: list[RemediationSeen] = field(default_factory=list)
+    # M7: the worst each SLI got while waiting for the alert, per service, to tell a fault the
+    # alert rules cannot see from one that needed longer: {"ad": {"errors": 0.096, ...}}.
+    peaks: dict[str, dict[str, float]] = field(default_factory=dict)
     error: str | None = None
 
     @property
@@ -117,6 +120,48 @@ class ScenarioResult:
             and (not self.remediated or self.repair is None or self.closed_loop)
             and self.resolved_s is not None
         )
+
+
+# The SLIs the alert rules use (deploy/kind/rules/slo.yml), and where they page.
+SLIS = {
+    "errors": "service:sli_error_ratio:rate1m",
+    "p95_ms": "service:sli_latency_p95_ms:rate5m",
+    "rps": "service:sli_requests:rate5m",
+}
+PAGES_AT = {"errors": "14.4% fast, 6% slow", "p95_ms": "1000ms"}
+SLI_EVERY_S = 30
+
+
+def _sample_slis(lab: Lab, peaks: dict[str, dict[str, float]]) -> None:
+    """Fold the current SLI values into ``peaks``. Best effort: a missed sample only makes the
+    peaks less exact."""
+    for name, series in SLIS.items():
+        try:
+            rows = lab.query(series)
+        except Exception:  # diagnostics only
+            return
+        for row in rows:
+            service = row.get("metric", {}).get("service_name")
+            try:
+                value = float(row["value"][1])
+            except (KeyError, IndexError, TypeError, ValueError):
+                continue
+            if service and value == value:  # not NaN
+                slot = peaks.setdefault(service, {})
+                slot[name] = max(slot.get(name, 0.0), value)
+
+
+def describe_peaks(peaks: dict[str, dict[str, float]], services: Sequence[str]) -> str:
+    parts = []
+    for service in dict.fromkeys(services):
+        p = peaks.get(service)
+        if p is None:
+            parts.append(f"{service}: no data")
+            continue
+        parts.append(
+            f"{service}: errors {p.get('errors', 0):.1%}, p95 {p.get('p95_ms', 0):.0f}ms, {p.get('rps', 0):.2f} req/s"
+        )
+    return "; ".join(parts) + f" (pages at errors {PAGES_AT['errors']}, p95 {PAGES_AT['p95_ms']})"
 
 
 def _db_now(engine: Engine) -> datetime:
@@ -256,7 +301,11 @@ def run_scenario(
         lab.inject(fault)
         deadline = time.monotonic() + alert_timeout
         settle_until: float | None = None
+        next_sample = time.monotonic()
         while True:
+            if settle_until is None and time.monotonic() >= next_sample:
+                _sample_slis(lab, result.peaks)
+                next_sample = time.monotonic() + SLI_EVERY_S
             for row in _alert_rows(engine, tenant, first):
                 key = _key(row)
                 if row.status == "firing" and key not in seen:
@@ -280,6 +329,8 @@ def run_scenario(
                 break
             if settle_until is None and now > deadline:
                 log(f"[{name}] no alert within {alert_timeout:.0f}s")
+                watched = [fault.root_cause, *fault.symptoms]
+                log(f"[{name}] peak SLIs: {describe_peaks(result.peaks, watched)}")
                 break
             time.sleep(poll_s)
         if probe is not None and seen:
@@ -298,7 +349,7 @@ def run_scenario(
         if remediator is not None and result.diagnoses:
             result.remediated = True
             decided_at = _db_now(engine)
-            result.remediations = remediator.run(fault, result.diagnoses, log)
+            result.remediations = remediator.run(fault, result.diagnoses, log, label=name)
             if any(r.decision == "approve" for r in result.remediations):
                 repaired_at = decided_at
     except Exception as exc:  # report and still try to recover; one broken fault should not stop the run

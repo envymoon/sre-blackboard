@@ -110,13 +110,14 @@ def run(
     for i, scenario in enumerate(scenarios, 1):
         log(f"=== scenario {i}/{len(scenarios)}: {scenario.id} ({scenario.difficulty}): {scenario.title}")
         distractors, fault = steps(scenario)
+        timeout = max(alert_timeout, scenario.alert_timeout_s or 0)
         r = accept.run_scenario(
             lab,
             engine,
             fault,
             tenant=tenant,
             log=log,
-            alert_timeout=alert_timeout,
+            alert_timeout=timeout,
             diagnoser=diagnoser,
             remediator=remediator,
             distractors=distractors,
@@ -129,7 +130,7 @@ def run(
             for t in diagnoser.variants:
                 ids = [UUID(d.incident_id) for d in everything if d.tenant == t]
                 by_tenant[t] = asyncio.run(_observe(database_url, ids, r.cause_at)) if ids else []
-        results.observations += observations(scenario, r, diagnoser.variants, by_tenant, run_id, alert_timeout)
+        results.observations += observations(scenario, r, diagnoser.variants, by_tenant, run_id, timeout)
         results.dump(out / "results.json")
-        log(f"=== {scenario.id}: {'ok' if r.ok(alert_timeout) else 'lab check FAILED'}; {len(everything)} incident(s)")
+        log(f"=== {scenario.id}: {'ok' if r.ok(timeout) else 'lab check FAILED'}; {len(everything)} incident(s)")
     return results
