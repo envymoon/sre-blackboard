@@ -55,8 +55,8 @@ class Settings(BaseSettings):
     kb_model_dir: str | None = None
     kb_offline: bool = False
     # A result the reranker scores below this is dropped: "no relevant knowledge" is an
-    # answer. Chosen on the retrieval evaluation (eval/retrieval).
-    kb_min_score: float = 0.05
+    # answer. The cut the retrieval evaluation chose on its dev split (eval/retrieval/report.json).
+    kb_min_score: float = 0.03
 
     # Read-only tools (M3). Defaults are the lab's ports on the host (deploy/kind/cluster.yaml).
     prometheus_url: str = "http://localhost:19090"

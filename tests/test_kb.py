@@ -7,6 +7,7 @@ with the real models, in CI (eval/retrieval/report.json).
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -15,10 +16,11 @@ import httpx
 import pytest
 from sqlalchemy import func, select
 
+from app.core.config import Settings
 from app.db.schema import kb_chunks, kb_documents
 from app.kb import evaluate
-from app.kb.chunking import PRESETS, ChunkParams, chunk, load_dir, parse, redact, slug
-from app.kb.models import DIM, HashEmbedder, OverlapReranker
+from app.kb.chunking import DEFAULT_CHUNKING, PRESETS, ChunkParams, chunk, load_dir, parse, redact, slug
+from app.kb.models import DEFAULT_EMBEDDER, DEFAULT_RERANKER, DIM, HashEmbedder, OverlapReranker
 from app.kb.search import Hit, KnowledgeBase, or_query, rrf
 from app.kb.store import ingest
 from app.tools import ALL_TOOLS, ToolContext, ToolRegistry
@@ -274,3 +276,12 @@ async def test_kb_search_runs_in_the_incidents_tenant_and_replays() -> None:
     assert none.error is not None and none.error.code == "unavailable"
     await clients.aclose()
     await unconfigured.aclose()
+
+
+def test_the_committed_report_and_the_defaults_agree() -> None:
+    """The default threshold is the one the evaluation chose, for the default chunking."""
+    report = json.loads(evaluate.REPORT.read_text())
+    assert report["models"] == {"embedder": DEFAULT_EMBEDDER, "reranker": DEFAULT_RERANKER}
+    chosen = next(r for r in report["results"] if r["chunking"] == DEFAULT_CHUNKING and r["mode"] == "rerank")
+    assert Settings(_env_file=None).kb_min_score == pytest.approx(chosen["threshold"]["dev"]["threshold"], abs=0.005)  # type: ignore[call-arg]
+    assert report["queries"]["answerable"] + report["queries"]["unanswerable"] == len(evaluate.load_queries())
