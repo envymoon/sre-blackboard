@@ -211,6 +211,7 @@ def cmd_eval(args: argparse.Namespace) -> int:
         run_id=args.run,
         commit=args.commit,
         alert_timeout=args.alert_timeout,
+        deadline=args.deadline,
         settle_s=args.settle,
         resolve_timeout=args.resolve_timeout,
         hold_s=args.hold,
@@ -403,6 +404,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--resolve-timeout", type=float, default=600)
     p.add_argument("--hold", type=float, default=60)
     p.add_argument("--diagnose-timeout", type=float, default=1500)
+    p.add_argument(
+        "--deadline", type=float, help="epoch seconds the run must end by (waits for a usage window only before it)"
+    )
     p.add_argument("--api-url", default="http://localhost:8000")
     p.set_defaults(func=cmd_eval)
     p = sub.add_parser("fixtures", help="contract test fixtures from a lab-recordings checkout")

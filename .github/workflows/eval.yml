@@ -90,7 +90,8 @@ jobs:
   shard:
     needs: plan
     runs-on: ubuntu-24.04
-    timeout-minutes: 300
+    # The most Actions allows: room to wait once for a subscription's usage window (evaluate.py).
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
@@ -98,6 +99,7 @@ jobs:
     env:
       SRE_DATABASE_URL: postgresql+psycopg://sre:sre@localhost:5432/sre
     steps:
+      - run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
       - uses: ./.github/actions/lab-up
@@ -128,7 +130,7 @@ jobs:
             shard_args=(--shard "$SHARD")
           fi
           uv run python -m scripts.lab eval "${shard_args[@]}" --out lab-out/eval --run "${{ github.run_id }}" \
-            --alert-timeout "$ALERT_TIMEOUT" 2>&1 | tee lab-out/eval.txt
+            --alert-timeout "$ALERT_TIMEOUT" --deadline $((JOB_START + 340 * 60)) 2>&1 | tee lab-out/eval.txt
           uv run python -m app.eval report lab-out/eval/results.json --baseline "" --gate --canary \
             | tee lab-out/eval/report.md >> "$GITHUB_STEP_SUMMARY"
 
@@ -147,7 +149,7 @@ jobs:
       - name: Publish results as annotations
         if: always()
         run: |
-          grep -E "^=== |answer:|plan for|execution|\[baseline\]|error|not resolved|no alert|peak SLIs" lab-out/eval.txt \
+          grep -E "^=== |answer:|plan for|execution|\[baseline\]|error|not resolved|no alert|peak SLIs|unavailable" lab-out/eval.txt \
             > lab-out/eval-events.txt 2>/dev/null || true
           uv run python -m scripts.lab.annotate lab-out/eval-events.txt:250 lab-out/worker-check.txt:40
       - name: Publish logs as annotations

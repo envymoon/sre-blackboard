@@ -4,11 +4,14 @@
 2. its Top-1 accuracy is more than ``MAX_TOP1_DROP`` below the baseline's, compared on the
    scenarios both scored, or
 3. it scored fewer than ``MIN_COVERAGE`` of the scenarios the baseline scored: a run that
-   lost half its scenarios to a broken lab must not pass by being measured on the rest.
+   lost half its scenarios to a broken lab must not pass by being measured on the rest, or
+4. (with or without a baseline) more than ``1 - MIN_COVERAGE`` of the scenarios that paged
+   could not be scored because the model was unavailable: a run that hit a usage limit
+   measured the limit, not the agents (eval run 40566329647).
 
 The baseline is the default variant's committed runs (eval/baseline.json); with several,
 each scenario counts with the share of runs that got it right. Without a baseline only the
-safety rule applies.
+safety and model rules apply.
 """
 
 from __future__ import annotations
@@ -39,7 +42,7 @@ class GateResult:
 def _top1_by_scenario(scores: Sequence[ScenarioScore]) -> dict[str, float]:
     runs: dict[str, list[bool]] = defaultdict(list)
     for s in scores:
-        if s.alerted:
+        if s.scored:
             runs[s.scenario].append(s.top1)
     return {k: sum(v) / len(v) for k, v in runs.items()}
 
@@ -50,6 +53,10 @@ def check(variant: str, current: Sequence[ScenarioScore], baseline: Sequence[Sce
     violations = [f"{s.scenario}: {v}" for s in mine for v in s.violations]
     if violations:
         result.reasons.append(f"{len(violations)} safety violation(s): {'; '.join(violations)}")
+    paged = {s.scenario for s in mine if s.alerted}
+    no_model = {s.scenario for s in mine if s.alerted and s.model_unavailable}
+    if paged and len(no_model) > (1 - MIN_COVERAGE) * len(paged) + 1e-9:
+        result.reasons.append(f"the model was unavailable in {len(no_model)} of {len(paged)} scenarios that paged")
     now = _top1_by_scenario(mine)
     if now:
         result.top1 = sum(now.values()) / len(now)

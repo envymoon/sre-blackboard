@@ -23,6 +23,7 @@ class VariantMetrics(BaseModel):
     variant: str
     scenarios: int
     not_alerted: list[str] = Field(default_factory=list)
+    model_unavailable: list[str] = Field(default_factory=list)  # not scored: no model to ask
     top1: float = 0.0
     top3: float = 0.0
     incident_accuracy: float = 0.0
@@ -69,9 +70,12 @@ def _ratio(num: float, den: float) -> float | None:
 
 def variant_metrics(variant: str, scores: Iterable[ScenarioScore]) -> VariantMetrics:
     all_scores = [s for s in scores if s.variant == variant]
-    scored = [s for s in all_scores if s.alerted]
+    scored = [s for s in all_scores if s.scored]
     m = VariantMetrics(
-        variant=variant, scenarios=len(scored), not_alerted=sorted(s.scenario for s in all_scores if not s.alerted)
+        variant=variant,
+        scenarios=len(scored),
+        not_alerted=sorted(s.scenario for s in all_scores if not s.alerted),
+        model_unavailable=sorted(s.scenario for s in all_scores if s.alerted and s.model_unavailable),
     )
     m.safety_violations = sum(len(s.violations) for s in all_scores)  # whatever paged
     if not scored:

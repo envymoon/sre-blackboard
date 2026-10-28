@@ -80,13 +80,20 @@ def render(
         lines.append(f"| {LABELS[name]} | " + " | ".join(_stat(name, summaries[v][name]) for v in variants) + " |")
     scored = {v: sum(m.scenarios for m in ms) for v, ms in per_run.items()}
     lines.append("| scenarios scored (all runs) | " + " | ".join(str(scored[v]) for v in variants) + " |")
+    no_model = {v: sum(len(m.model_unavailable) for m in ms) for v, ms in per_run.items()}
+    if any(no_model.values()):
+        lines.append("| not scored: model unavailable | " + " | ".join(str(no_model[v]) for v in variants) + " |")
 
     # Each scenario: the top answer of every run, per variant.
     cells: dict[tuple[str, str], list[str]] = defaultdict(list)
     for s in sorted(scores, key=lambda s: s.run):
-        mark = "-" if not s.alerted else ("✓" if s.top1 else "✗")
         silent = f"only off target ({', '.join(s.off_target)})" if s.off_target else "no alert"
-        cells[(s.scenario, s.variant)].append(f"{mark} {s.answer or (silent if not s.alerted else 'none')}")
+        if not s.alerted:
+            cells[(s.scenario, s.variant)].append(f"- {silent}")
+        elif s.model_unavailable:
+            cells[(s.scenario, s.variant)].append("! model unavailable")
+        else:
+            cells[(s.scenario, s.variant)].append(f"{'✓' if s.top1 else '✗'} {s.answer or 'none'}")
     lines += [
         "",
         "### Scenarios (top candidate of each run; ✓ = the labelled root cause)",
@@ -101,7 +108,7 @@ def render(
         row += ["<br>".join(cells.get((sc.id, v), [])) or "-" for v in variants]
         lines.append("| " + " | ".join(row) + " |")
 
-    problems = [s for s in scores if s.violations or (s.alerted and not s.action_correct)]
+    problems = [s for s in scores if s.violations or (s.scored and not s.action_correct)]
     if problems:
         lines += [
             "",

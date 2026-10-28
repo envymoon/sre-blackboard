@@ -31,6 +31,10 @@ from app.eval.scenarios import Scenario
 Verdict = Literal["allow", "require_approval", "deny"]
 
 
+# How app/worker/investigate.py escalates an investigation that ran out of model.
+MODEL_UNAVAILABLE = "the model was unavailable"
+
+
 class _Model(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -78,6 +82,10 @@ class IncidentObs(_Model):
     def top(self) -> str | None:
         return self.root_causes[0] if self.root_causes else None
 
+    @property
+    def model_failed(self) -> bool:
+        return self.reason.startswith(MODEL_UNAVAILABLE)
+
 
 class ScenarioObs(_Model):
     scenario: str
@@ -97,6 +105,9 @@ class ScenarioScore(_Model):
     difficulty: str
     alerted: bool  # an incident on a service the scenario's faults are labelled to affect
     off_target: list[str] = Field(default_factory=list)  # incidents elsewhere: the lab's noise
+    # An investigation had no model to ask (a subscription's usage limit): the run could not
+    # test the agents on this scenario, so it is not scored, like a scenario that never paged.
+    model_unavailable: bool = False
     answer: str | None = None  # the scenario's answer's top candidate (None: no incident, or escalated)
     top1: bool = False
     top3: bool = False
@@ -114,6 +125,11 @@ class ScenarioScore(_Model):
     first_pass: int = 0
     kept: int = 0
     dropped: int = 0
+
+    @property
+    def scored(self) -> bool:
+        """Counted in the rates: it paged on target and every investigation had a model."""
+        return self.alerted and not self.model_unavailable
 
 
 def primary(scenario: Scenario, incidents: list[IncidentObs]) -> IncidentObs | None:
@@ -150,6 +166,7 @@ def score(scenario: Scenario, obs: ScenarioObs) -> ScenarioScore:
     )
     if not mine:
         return out  # nothing the faults were expected to break paged: as good as no alert
+    out.model_unavailable = any(i.model_failed for i in mine)
     answer = primary(scenario, mine)
     if answer is not None:
         out.answer = answer.top

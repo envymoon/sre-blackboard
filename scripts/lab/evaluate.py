@@ -12,11 +12,18 @@ The variants run side by side on the same fault: Alertmanager posts every alert 
 tenant per variant (deploy/kind/up.sh, SRE_LAB_VARIANTS), and the workers investigate each
 tenant's incidents with its variant (SRE_EVAL_TENANT_VARIANTS). Same alerts, same cluster,
 same minute; only the agents differ.
+
+A subscription has a usage window. When a scenario's investigations ran out of it (the
+worker escalates them, "the model was unavailable: rate_limited ..."), the run waits until
+the window reopens and runs that scenario once more, if ``deadline`` (epoch seconds) leaves
+time for it; otherwise it stops: the scenarios left would only measure the limit. Either
+way the scoring does not count an investigation without a model (app/eval/score.py).
 """
 
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
@@ -29,7 +36,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.eval.collect import observe
 from app.eval.results import ResultFile
 from app.eval.scenarios import Scenario
-from app.eval.score import IncidentObs, ScenarioObs
+from app.eval.score import MODEL_UNAVAILABLE, IncidentObs, ScenarioObs
+from app.llm.cli import seconds_until_reset
 from scripts.lab import accept, faults
 from scripts.lab.cluster import Lab
 from scripts.lab.diagnose import Diagnoser
@@ -37,6 +45,9 @@ from scripts.lab.faults import Fault
 from scripts.lab.remediate import Remediator
 
 Log = Callable[[str], None]
+# What one scenario takes once the model answers again: quiet lab, alert, investigations,
+# recovery. A retry is only started when this much time is left after the wait.
+SCENARIO_S = 30 * 60
 
 
 def shard(items: Sequence[Scenario], spec: str | None) -> list[Scenario]:
@@ -104,11 +115,18 @@ def run(
     commit: str = "",
     log: Log = print,
     alert_timeout: float = 300,
+    deadline: float | None = None,
+    sleep: Callable[[float], None] = time.sleep,
     **kwargs: Any,
 ) -> ResultFile:
     results = ResultFile(run=run_id, kind="live", commit=commit)
-    for i, scenario in enumerate(scenarios, 1):
-        log(f"=== scenario {i}/{len(scenarios)}: {scenario.id} ({scenario.difficulty}): {scenario.title}")
+    queue = list(scenarios)
+    retried: set[str] = set()
+    i = 0
+    while queue:
+        scenario = queue.pop(0)
+        i += 1
+        log(f"=== scenario {i}/{i + len(queue)}: {scenario.id} ({scenario.difficulty}): {scenario.title}")
         distractors, fault = steps(scenario)
         timeout = max(alert_timeout, scenario.alert_timeout_s or 0)
         r = accept.run_scenario(
@@ -124,8 +142,28 @@ def run(
             label=scenario.id,
             **kwargs,
         )
-        by_tenant: dict[str, list[IncidentObs]] = {}
         everything = r.diagnoses + r.variant_diagnoses
+        limited = [d.reason for d in everything if d.reason.startswith(MODEL_UNAVAILABLE)]
+        if limited:
+            wait = max((w for x in limited if (w := seconds_until_reset(x)) is not None), default=None)
+            left = None if deadline is None else deadline - time.time()
+            log(
+                f"=== {scenario.id}: the model was unavailable in {len(limited)} of {len(everything)} investigation(s)"
+                + (f"; the usage window reopens in {wait / 60:.0f} min" if wait is not None else "")
+            )
+            if wait is not None and scenario.id not in retried and (left is None or left > wait + SCENARIO_S):
+                log(f"=== waiting {wait / 60:.0f} min, then {scenario.id} again")
+                sleep(wait + 60)
+                retried.add(scenario.id)
+                queue.insert(0, scenario)
+                i -= 1
+                continue
+            if wait is not None:
+                log(
+                    f"=== stopping: no time left to wait for the model; not run: {', '.join(q.id for q in queue) or '-'}"
+                )
+                queue.clear()
+        by_tenant: dict[str, list[IncidentObs]] = {}
         if everything and r.cause_at is not None:
             for t in diagnoser.variants:
                 ids = [UUID(d.incident_id) for d in everything if d.tenant == t]

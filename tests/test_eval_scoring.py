@@ -226,3 +226,18 @@ def test_the_report_cli_fails_the_gate_and_voids_a_run_whose_canary_passes(tmp_p
     f.dump(tmp_path / "r2.json")
     assert main(["report", str(tmp_path / "r2.json"), "--baseline", ""]) == 1
     assert "evaluation void" in capsys.readouterr().out
+
+
+def test_a_run_without_a_model_is_not_scored_and_fails_the_gate() -> None:
+    # eval run 40566329647: the subscription's session limit, an hour into the run.
+    sc, other = scenarios.get("payment-failure"), scenarios.get("bad-release")
+    limited = inc("payment", [])
+    limited.reason = "the model was unavailable: rate_limited: exit 1, HTTP 429: You've hit your session limit"
+    s = score(sc, obs(sc.id, limited, inc("checkout", ["payment"], opened=40)))
+    assert s.alerted and s.model_unavailable and not s.scored
+    good = score(other, obs(other.id, inc("checkout", ["checkout"])))
+    m = variant_metrics("default", [s, good])
+    assert m.scenarios == 1 and m.model_unavailable == ["payment-failure"] and m.top1 == 1.0
+    result = gate.check("default", [s, good])
+    assert not result.passed and "the model was unavailable in 1 of 2" in result.reasons[0]
+    assert gate.check("default", [good]).passed

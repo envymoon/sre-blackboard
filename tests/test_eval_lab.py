@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.db import incidents
 from app.eval import scenarios
 from app.eval.results import ResultFile, score_all
+from app.eval.score import MODEL_UNAVAILABLE
 from scripts.lab import evaluate
 from scripts.lab.diagnose import Diagnoser
 
@@ -57,8 +59,18 @@ class TwoTenantLab:
         if status == "firing":
             asyncio.run(self._diagnose(incident_id, TENANTS[tenant]))
 
+    limited = 0  # how many injections the "model" sits out, rate limited
+
     async def _diagnose(self, incident_id: Any, top: str) -> None:
         engine = create_async_engine(self.database_url)
+        if self.limited:
+            async with engine.begin() as conn:
+                await incidents.transition(
+                    conn, incident_id, from_state="INVESTIGATING", to_state="ESCALATED", expected_version=1,
+                    actor="test", reason=f"{MODEL_UNAVAILABLE}: rate_limited: HTTP 429: session limit · resets 8:50pm (UTC)",
+                )  # fmt: skip
+            await engine.dispose()
+            return
         body = {
             "summary": "s",
             "root_causes": [{"service": top, "cause": "c", "confidence": 0.8, "evidence_ids": ["ev_0000000000000001"]}],
@@ -85,6 +97,7 @@ class TwoTenantLab:
         if fault.name == "payment-failure":
             for tenant in TENANTS:
                 self._post(tenant, "firing")
+            self.limited = max(0, self.limited - 1)
 
     def recover(self, fault: Any) -> bool:
         self.recovered.append(fault.name)
@@ -168,3 +181,56 @@ def test_scenarios_are_dealt_out_over_shards_and_steps_keep_their_order() -> Non
         evaluate.shard(catalogue, "5/4")
     before, fault = evaluate.steps(scenarios.get("network-delay-with-ad-failure"))
     assert [(f.name, wait) for f, wait in before] == [("ad-failure", 60)] and fault.name == "network-delay"
+
+
+def run_limited(
+    sync_engine: Engine, migrated_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, deadline: float | None
+) -> tuple[TwoTenantLab, ResultFile, list[float], list[str]]:
+    monkeypatch.setattr(evaluate.accept.time, "sleep", lambda s: None)
+    lab = TwoTenantLab(sync_engine, migrated_url)
+    lab.limited = 1
+    diagnoser = Diagnoser(sync_engine, migrated_url, "lab", tmp_path / "agent", timeout_s=5, planning=False)
+    waits: list[float] = []
+    lines: list[str] = []
+    results = evaluate.run(
+        lab,  # type: ignore[arg-type]
+        sync_engine,
+        [scenarios.get("payment-failure"), scenarios.get("bad-release")],
+        diagnoser=diagnoser,
+        remediator=None,
+        database_url=migrated_url,
+        tenant="lab",
+        out=tmp_path,
+        run_id="t1",
+        log=lines.append,
+        deadline=deadline,
+        sleep=waits.append,
+        alert_timeout=0.3,
+        resolve_timeout=0.3,
+        **FAST,
+    )
+    return lab, results, waits, lines
+
+
+def test_a_scenario_that_ran_out_of_model_is_run_again_once_the_usage_window_reopens(
+    sync_engine: Engine, migrated_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lab, results, waits, lines = run_limited(sync_engine, migrated_url, tmp_path, monkeypatch, deadline=None)
+    assert lab.injected[:2] == ["payment-failure", "payment-failure"] and len(waits) == 1
+    assert 0 < waits[0] <= 24 * 3600 + 60
+    # Only the second attempt is observed, and it had a model.
+    [first] = [o for o in results.observations if o.scenario == "payment-failure"]
+    assert [i.top for i in first.incidents] == ["payment"]
+    assert any("again" in x for x in lines)
+
+
+def test_without_time_to_wait_the_run_stops_instead_of_measuring_the_limit(
+    sync_engine: Engine, migrated_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lab, results, waits, lines = run_limited(
+        sync_engine, migrated_url, tmp_path, monkeypatch, deadline=time.time() + 60
+    )
+    assert waits == [] and lab.injected == ["payment-failure"]
+    [only] = results.observations
+    assert only.incidents[0].model_failed
+    assert any("stopping" in x and "bad-release" in x for x in lines)
