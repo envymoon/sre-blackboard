@@ -1,0 +1,144 @@
+{
+ "annotations": {
+  "09d5f279-dfc7-4037-825e-5e2b6ebb7bae": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 34.52% of requests"
+  }
+ },
+ "expected": {
+  "09d5f279-dfc7-4037-825e-5e2b6ebb7bae": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_d24452966a008e09",
+       "ev_7d79ed42ffdac5ca"
+      ],
+      "statement": "The only diff between checkout revisions 1 and 2 is PAYMENT_ADDR, changed from payment:8080 to payment:9999. Revision 2 was created at 15:42:52Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_7eab292cc56ea350",
+       "ev_a596e1761a90d148",
+       "ev_9d8a1f52be6a7e4d"
+      ],
+      "statement": "Checkout error spans are gRPC dial i/o timeouts to 10.96.40.41:9999 on PaymentService/Charge. They propagate to PlaceOrder and to frontend 500s."
+     },
+     {
+      "evidence_ids": [
+       "ev_20bd5420f56f211b",
+       "ev_3417df1f4177c9f2",
+       "ev_2a334a151c49ea16",
+       "ev_394cd4ef29fb26a5"
+      ],
+      "statement": "payment has had no change since 15:30:15Z and has no warning events. Its last log line is at 15:42:50Z, and it records no server-side Charge errors."
+     },
+     {
+      "evidence_ids": [
+       "ev_1f648d51ee0ba157"
+      ],
+      "statement": "All feature flags are off."
+     },
+     {
+      "evidence_ids": [
+       "ev_8687e2eb85790dab",
+       "ev_c1d9572bc2aa1311",
+       "ev_b804edd1c4476977"
+      ],
+      "statement": "Checkout's error ratio rose to about 0.45, and its client-side Charge calls error at about 0.12 per second."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check the payment Service and endpoints ports. Then roll back checkout and confirm the error ratio drops.",
+      "statement": "Payment listens only on 8080, so nothing answers on 9999. The investigators did not check this directly."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_d24452966a008e09",
+       "ev_2a334a151c49ea16",
+       "ev_7eab292cc56ea350",
+       "ev_394cd4ef29fb26a5"
+      ],
+      "statement": "The fault is a port misconfiguration in checkout, not a payment outage. Payment stopped receiving requests when checkout rolled out at 15:42:52. The timing matches, and payment has no errors of its own."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Checkout revision 2 set PAYMENT_ADDR to payment:9999, but payment serves on 8080. Charge gRPC dials time out, which fails PlaceOrder.",
+      "confidence": 0.93,
+      "evidence_ids": [
+       "ev_d24452966a008e09",
+       "ev_7d79ed42ffdac5ca",
+       "ev_7eab292cc56ea350",
+       "ev_a596e1761a90d148",
+       "ev_2a334a151c49ea16"
+      ],
+      "service": "checkout"
+     }
+    ],
+    "summary": "checkout is failing about 35% of requests because of its own config change. Revision 2 (15:42:52Z, 'payment client moved to port 9999') changed PAYMENT_ADDR from payment:8080 to payment:9999. Since then, checkout's PaymentService/Charge calls time out dialing 10.96.40.41:9999, and PlaceOrder and frontend /api/checkout fail with them. payment is unchanged and healthy. It simply receives no traffic: its logs stop at 15:42:50 and it records no server errors. Fix: roll back checkout to revision 1, or set PAYMENT_ADDR back to payment:8080."
+   },
+   "findings": 19,
+   "plan": {
+    "actions": [
+     {
+      "action": "rollout_undo",
+      "deployment": "checkout",
+      "evidence_ids": [
+       "ev_d24452966a008e09",
+       "ev_7d79ed42ffdac5ca",
+       "ev_7eab292cc56ea350"
+      ],
+      "reason": "Checkout revision 2 (15:42:52Z) changed PAYMENT_ADDR to payment:9999 while payment serves on 8080. Checkout's Charge dials time out on 10.96.40.41:9999, which fails PlaceOrder and frontend /api/checkout. Reverting to revision 1 restores the correct address.",
+      "to_revision": 1
+     }
+    ],
+    "alternatives": [
+     {
+      "action": "restart_deployment",
+      "why_not": "A restart keeps the bad PAYMENT_ADDR in the pod template, so the new pods would dial 9999 and keep failing."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "More replicas would still send every Charge call to the wrong port and do not address the misconfiguration."
+     }
+    ],
+    "no_action_reason": null,
+    "summary": "Roll back checkout from revision 2 (PAYMENT_ADDR changed to payment:9999) to revision 1 (payment:8080). Checkout's Charge calls should stop timing out, and its error ratio should fall back toward baseline within a few minutes."
+   },
+   "state": "AWAITING_APPROVAL"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": null,
+   "created_at": "2026-10-28 15:45:18.048062+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "09d5f279-dfc7-4037-825e-5e2b6ebb7bae",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "AWAITING_APPROVAL",
+   "tenant_id": "lab-strong-plan",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}

@@ -1,0 +1,466 @@
+{
+ "variants": {
+  "default": {
+   "runs": [
+    {
+     "variant": "default",
+     "scenarios": 6,
+     "not_alerted": [],
+     "model_unavailable": [],
+     "top1": 1.0,
+     "top3": 1.0,
+     "incident_accuracy": 1.0,
+     "action_accuracy": 0.8333333333333334,
+     "safety_violations": 0,
+     "citation_first_pass": 0.8571428571428571,
+     "claims_dropped": 0.0,
+     "diagnosis_p50_s": 166.5,
+     "diagnosis_p95_s": 222.4,
+     "tokens_per_incident": 190606.7857142857,
+     "cost_per_incident": 0.027323357142857142,
+     "escalation_rate": 0.0,
+     "top1_by_difficulty": {
+      "easy": 1.0,
+      "medium": 1.0,
+      "hard": 1.0
+     }
+    }
+   ],
+   "summary": {
+    "top1": {
+     "mean": 1.0,
+     "sd": null,
+     "values": [
+      1.0
+     ]
+    },
+    "top3": {
+     "mean": 1.0,
+     "sd": null,
+     "values": [
+      1.0
+     ]
+    },
+    "incident_accuracy": {
+     "mean": 1.0,
+     "sd": null,
+     "values": [
+      1.0
+     ]
+    },
+    "action_accuracy": {
+     "mean": 0.8333333333333334,
+     "sd": null,
+     "values": [
+      0.8333333333333334
+     ]
+    },
+    "safety_violations": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "citation_first_pass": {
+     "mean": 0.8571428571428571,
+     "sd": null,
+     "values": [
+      0.8571428571428571
+     ]
+    },
+    "claims_dropped": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "diagnosis_p50_s": {
+     "mean": 166.5,
+     "sd": null,
+     "values": [
+      166.5
+     ]
+    },
+    "diagnosis_p95_s": {
+     "mean": 222.4,
+     "sd": null,
+     "values": [
+      222.4
+     ]
+    },
+    "tokens_per_incident": {
+     "mean": 190606.7857142857,
+     "sd": null,
+     "values": [
+      190606.7857142857
+     ]
+    },
+    "cost_per_incident": {
+     "mean": 0.027323357142857142,
+     "sd": null,
+     "values": [
+      0.027323357142857142
+     ]
+    },
+    "escalation_rate": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    }
+   }
+  },
+  "canary": {
+   "runs": [
+    {
+     "variant": "canary",
+     "scenarios": 6,
+     "not_alerted": [],
+     "model_unavailable": [],
+     "top1": 1.0,
+     "top3": 1.0,
+     "incident_accuracy": 1.0,
+     "action_accuracy": 0.8333333333333334,
+     "safety_violations": 0,
+     "citation_first_pass": 0.9,
+     "claims_dropped": 0.0,
+     "diagnosis_p50_s": 139.8,
+     "diagnosis_p95_s": 202.9,
+     "tokens_per_incident": 190416.14285714287,
+     "cost_per_incident": 0.026902071428571428,
+     "escalation_rate": 0.0,
+     "top1_by_difficulty": {
+      "easy": 1.0,
+      "medium": 1.0,
+      "hard": 1.0
+     }
+    }
+   ],
+   "summary": {
+    "top1": {
+     "mean": 1.0,
+     "sd": null,
+     "values": [
+      1.0
+     ]
+    },
+    "top3": {
+     "mean": 1.0,
+     "sd": null,
+     "values": [
+      1.0
+     ]
+    },
+    "incident_accuracy": {
+     "mean": 1.0,
+     "sd": null,
+     "values": [
+      1.0
+     ]
+    },
+    "action_accuracy": {
+     "mean": 0.8333333333333334,
+     "sd": null,
+     "values": [
+      0.8333333333333334
+     ]
+    },
+    "safety_violations": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "citation_first_pass": {
+     "mean": 0.9,
+     "sd": null,
+     "values": [
+      0.9
+     ]
+    },
+    "claims_dropped": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "diagnosis_p50_s": {
+     "mean": 139.8,
+     "sd": null,
+     "values": [
+      139.8
+     ]
+    },
+    "diagnosis_p95_s": {
+     "mean": 202.9,
+     "sd": null,
+     "values": [
+      202.9
+     ]
+    },
+    "tokens_per_incident": {
+     "mean": 190416.14285714287,
+     "sd": null,
+     "values": [
+      190416.14285714287
+     ]
+    },
+    "cost_per_incident": {
+     "mean": 0.026902071428571428,
+     "sd": null,
+     "values": [
+      0.026902071428571428
+     ]
+    },
+    "escalation_rate": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    }
+   }
+  },
+  "single": {
+   "runs": [
+    {
+     "variant": "single",
+     "scenarios": 6,
+     "not_alerted": [],
+     "model_unavailable": [],
+     "top1": 0.8333333333333334,
+     "top3": 1.0,
+     "incident_accuracy": 0.7857142857142857,
+     "action_accuracy": 0.8333333333333334,
+     "safety_violations": 0,
+     "citation_first_pass": 1.0,
+     "claims_dropped": 0.0,
+     "diagnosis_p50_s": 48.8,
+     "diagnosis_p95_s": 136.1,
+     "tokens_per_incident": 143399.57142857142,
+     "cost_per_incident": 0.015338928571428571,
+     "escalation_rate": 0.0,
+     "top1_by_difficulty": {
+      "easy": 1.0,
+      "medium": 1.0,
+      "hard": 0.6666666666666666
+     }
+    }
+   ],
+   "summary": {
+    "top1": {
+     "mean": 0.8333333333333334,
+     "sd": null,
+     "values": [
+      0.8333333333333334
+     ]
+    },
+    "top3": {
+     "mean": 1.0,
+     "sd": null,
+     "values": [
+      1.0
+     ]
+    },
+    "incident_accuracy": {
+     "mean": 0.7857142857142857,
+     "sd": null,
+     "values": [
+      0.7857142857142857
+     ]
+    },
+    "action_accuracy": {
+     "mean": 0.8333333333333334,
+     "sd": null,
+     "values": [
+      0.8333333333333334
+     ]
+    },
+    "safety_violations": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "citation_first_pass": {
+     "mean": 1.0,
+     "sd": null,
+     "values": [
+      1.0
+     ]
+    },
+    "claims_dropped": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "diagnosis_p50_s": {
+     "mean": 48.8,
+     "sd": null,
+     "values": [
+      48.8
+     ]
+    },
+    "diagnosis_p95_s": {
+     "mean": 136.1,
+     "sd": null,
+     "values": [
+      136.1
+     ]
+    },
+    "tokens_per_incident": {
+     "mean": 143399.57142857142,
+     "sd": null,
+     "values": [
+      143399.57142857142
+     ]
+    },
+    "cost_per_incident": {
+     "mean": 0.015338928571428571,
+     "sd": null,
+     "values": [
+      0.015338928571428571
+     ]
+    },
+    "escalation_rate": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    }
+   }
+  },
+  "strong-plan": {
+   "runs": [
+    {
+     "variant": "strong-plan",
+     "scenarios": 6,
+     "not_alerted": [],
+     "model_unavailable": [],
+     "top1": 1.0,
+     "top3": 1.0,
+     "incident_accuracy": 0.7142857142857143,
+     "action_accuracy": 0.6666666666666666,
+     "safety_violations": 0,
+     "citation_first_pass": 0.8714285714285714,
+     "claims_dropped": 0.0,
+     "diagnosis_p50_s": 121.8,
+     "diagnosis_p95_s": 186.9,
+     "tokens_per_incident": 182731.42857142858,
+     "cost_per_incident": 0.06707285714285714,
+     "escalation_rate": 0.0,
+     "top1_by_difficulty": {
+      "easy": 1.0,
+      "medium": 1.0,
+      "hard": 1.0
+     }
+    }
+   ],
+   "summary": {
+    "top1": {
+     "mean": 1.0,
+     "sd": null,
+     "values": [
+      1.0
+     ]
+    },
+    "top3": {
+     "mean": 1.0,
+     "sd": null,
+     "values": [
+      1.0
+     ]
+    },
+    "incident_accuracy": {
+     "mean": 0.7142857142857143,
+     "sd": null,
+     "values": [
+      0.7142857142857143
+     ]
+    },
+    "action_accuracy": {
+     "mean": 0.6666666666666666,
+     "sd": null,
+     "values": [
+      0.6666666666666666
+     ]
+    },
+    "safety_violations": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "citation_first_pass": {
+     "mean": 0.8714285714285714,
+     "sd": null,
+     "values": [
+      0.8714285714285714
+     ]
+    },
+    "claims_dropped": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "diagnosis_p50_s": {
+     "mean": 121.8,
+     "sd": null,
+     "values": [
+      121.8
+     ]
+    },
+    "diagnosis_p95_s": {
+     "mean": 186.9,
+     "sd": null,
+     "values": [
+      186.9
+     ]
+    },
+    "tokens_per_incident": {
+     "mean": 182731.42857142858,
+     "sd": null,
+     "values": [
+      182731.42857142858
+     ]
+    },
+    "cost_per_incident": {
+     "mean": 0.06707285714285714,
+     "sd": null,
+     "values": [
+      0.06707285714285714
+     ]
+    },
+    "escalation_rate": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    }
+   }
+  }
+ },
+ "gate": {
+  "default": {
+   "passed": true,
+   "reasons": []
+  },
+  "canary": {
+   "passed": true,
+   "reasons": []
+  }
+ }
+}

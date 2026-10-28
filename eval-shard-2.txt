@@ -1,0 +1,76 @@
+[eval] 3 scenario(s): bad-release, pod-failure, payment-failure-after-currency-release
+[eval] variants: default (lab), single (lab-single), strong-plan (lab-strong-plan), canary (lab-canary)
+[baseline] watching for 300s with no fault injected
+=== scenario 1/3: bad-release (easy): A checkout release points its payment client at a dead port
+[bad-release] inject: a checkout rollout points its payment client at a port nobody listens on
+[bad-release] alert ErrorBudgetBurn[fast] on checkout after 145.9s
+[bad-release] [single] awaiting_approval ErrorBudgetBurn/checkout: root causes checkout 90%; 6 model calls, 76,312 tokens, $0.008
+[bad-release] [canary] awaiting_approval ErrorBudgetBurn/checkout: root causes checkout 85%, payment 10%; 16 model calls, 177,381 tokens, $0.025
+[bad-release] [strong-plan] awaiting_approval ErrorBudgetBurn/checkout: root causes checkout 93%; 17 model calls, 180,446 tokens, $0.063
+[bad-release] awaiting_approval ErrorBudgetBurn/checkout: root causes checkout 85%, payment 8%; 16 model calls, 158,544 tokens, $0.023
+[bad-release] recorded 16 model steps, 30 tool answers
+[bad-release] recorded 6 model steps, 12 tool answers (single)
+[bad-release] recorded 17 model steps, 31 tool answers (strong-plan)
+[bad-release] recorded 16 model steps, 29 tool answers (canary)
+[bad-release] answer: checkout - correct
+[bad-release] plan for ErrorBudgetBurn/checkout: rollout_undo checkout -> require_approval (R3); approved by lab-approver
+[bad-release] checkout: RESOLVED (checkout error ratio over 1m is 0 ratio, below 0.06, for 3 checks in a row) 130s after the decision
+[bad-release] execution succeeded: rollout_undo checkout (revision 2 -> 3)
+[bad-release] console case: lab-out/eval/agent/cases/bad-release-checkout.json
+[bad-release] recover
+[bad-release] nothing to recover: sre-blackboard already repaired it
+[bad-release] all alerts resolved 295.6s after recovery
+[bad-release] closed 3 incident(s)
+=== bad-release: ok; 4 incident(s); 0.6M tokens so far of 6.0M
+=== scenario 2/3: pod-failure (hard): Every cart pod stops serving
+[pod-failure] inject: every cart pod stops serving (container replaced by a pause image)
+[pod-failure] alert ErrorBudgetBurn[fast] on checkout after 127.1s
+[pod-failure] [strong-plan] awaiting_approval ErrorBudgetBurn/checkout: root causes cart 60%, checkout 30%; 18 model calls, 175,320 tokens, $0.068
+[pod-failure] [canary] awaiting_approval ErrorBudgetBurn/checkout: root causes cart 50%, checkout 15%; 17 model calls, 214,968 tokens, $0.030
+[pod-failure] awaiting_approval ErrorBudgetBurn/checkout: root causes cart 65%, checkout 25%; 19 model calls, 225,656 tokens, $0.030
+[pod-failure] [single] awaiting_approval ErrorBudgetBurn/checkout: root causes cart 70%; 8 model calls, 167,364 tokens, $0.014
+[pod-failure] [single] awaiting_approval ErrorBudgetBurn/frontend: root causes cart 55%, checkout 20%; 11 model calls, 183,843 tokens, $0.026
+[pod-failure] [strong-plan] awaiting_approval ErrorBudgetBurn/frontend: root causes cart 60%, checkout 30%; 17 model calls, 196,735 tokens, $0.068
+[pod-failure] escalated ErrorBudgetBurn/frontend: root causes cart 60%, cart 20%; 17 model calls, 197,259 tokens, $0.026 (root cause candidate: cart (60%): Cart stopped at 15:53:56 (graceful shutdown, no error logs) and was not seen restarting, so callers get connection refused on port 8080 from 15:54:47. The reason for the stop is unknown: scale-down, pod termination, or a crash that left no logs.)
+[pod-failure] [canary] escalated ErrorBudgetBurn/frontend: root causes cart 70%, checkout 30%; 19 model calls, 283,748 tokens, $0.039 (root cause candidate: cart (70%): The cart service stopped serving at about 15:53:56Z (graceful shutdown, no restart or rollout found). Callers get connection refused on 10.96.223.207:8080, failing frontend and checkout cart calls. The trigger is unknown; scale-to-zero or endpoint removal is the leading guess.)
+[pod-failure] [canary] escalated ErrorBudgetBurn/frontend-proxy: root causes cart 70%, checkout 25%; 19 model calls, 275,720 tokens, $0.042 (root cause candidate: cart (70%): cart stopped serving after a shutdown at about 15:53:56Z, so frontend gets connection refused on cart:8080 and every cart call fails. The reason for the stop is not known (crash, eviction, scale-down, or an external shutdown are all possible).)
+[pod-failure] [single] awaiting_approval ErrorBudgetBurn/frontend-proxy: root causes cart 80%; 10 model calls, 191,853 tokens, $0.022
+[pod-failure] [strong-plan] awaiting_approval ErrorBudgetBurn/frontend-proxy: root causes cart 60%, checkout 40%; 21 model calls, 259,699 tokens, $0.082
+[pod-failure] awaiting_approval ErrorBudgetBurn/frontend-proxy: root causes cart 80%, checkout 15%; 18 model calls, 214,276 tokens, $0.035
+[pod-failure] recorded 54 model steps, 93 tool answers
+[pod-failure] recorded 29 model steps, 64 tool answers (single)
+[pod-failure] recorded 56 model steps, 100 tool answers (strong-plan)
+[pod-failure] recorded 55 model steps, 98 tool answers (canary)
+[pod-failure] answer: cart - correct
+[pod-failure] plan for ErrorBudgetBurn/checkout: restart_deployment cart -> require_approval (R2)
+[pod-failure] plan for ErrorBudgetBurn/frontend: no action -> deny; failed checks: actions: the plan has no actions
+[pod-failure] plan for ErrorBudgetBurn/frontend-proxy: restart_deployment cart -> require_approval (R2)
+[pod-failure] recover
+[pod-failure] all alerts resolved 410.7s after recovery
+[pod-failure] closed 9 incident(s)
+=== pod-failure: ok; 12 incident(s); 3.2M tokens so far of 6.0M
+=== scenario 3/3: payment-failure-after-currency-release (hard): Payment fails right after an unrelated currency release
+[payment-failure-after-currency-release] distractor: a currency rollout that changes nothing requests depend on
+[payment-failure-after-currency-release] inject: payment rejects half of all charges
+[payment-failure-after-currency-release] alert ErrorBudgetBurn[fast] on checkout after 173.9s
+[payment-failure-after-currency-release] alert ErrorBudgetBurn[fast] on payment after 173.9s
+[payment-failure-after-currency-release] [canary] escalated ErrorBudgetBurn/checkout: root causes payment 80%, checkout 30%; 14 model calls, 127,701 tokens, $0.019 (root cause candidate: payment (80%): The paymentFailure flagd flag is enabled at 50%, causing payment Charge to fail with 'Invalid token ... loyalty_level=gold'. Checkout's PlaceOrder then fails for roughly half of the orders that reach payment.)
+[payment-failure-after-currency-release] [strong-plan] escalated ErrorBudgetBurn/payment: root causes payment 70%, checkout 25%; 16 model calls, 168,438 tokens, $0.063 (root cause candidate: payment (70%): Feature flag paymentFailure is enabled at the 50% variant, so payment's Charge fails a fraction of requests with 'Invalid token' errors. Turning the flag off should fix it.)
+[payment-failure-after-currency-release] [canary] escalated ErrorBudgetBurn/payment: root causes payment 80%, checkout 20%; 14 model calls, 126,654 tokens, $0.018 (root cause candidate: payment (80%): The flagd flag paymentFailure is ENABLED at variant 50%, which makes payment's charge path throw 'Invalid token' for part of the traffic. Disabling the flag or reverting it should stop the errors. The onset timestamp is not confirmed, and 25.9% is below 50%, so the effect may be partial.)
+[payment-failure-after-currency-release] escalated ErrorBudgetBurn/checkout: root causes payment 75%, checkout 10%; 14 model calls, 150,829 tokens, $0.021 (root cause candidate: payment (75%): Charge path rejects requests (fast errors, 'Invalid token' for gold loyalty) because the paymentFailure flagd flag is ON at 0.5. Checkout's failures are relayed from this.)
+[payment-failure-after-currency-release] [single] escalated ErrorBudgetBurn/checkout: root causes payment 90%; 6 model calls, 62,313 tokens, $0.007 (root cause candidate: payment (90%): The paymentFailure feature flag is on at 50%, so payment's Charge fails for about half of requests with 'Payment request failed. Invalid token.' Checkout and frontend surface these as 422/INTERNAL errors.)
+[payment-failure-after-currency-release] [single] escalated ErrorBudgetBurn/payment: root causes payment 85%; 5 model calls, 63,260 tokens, $0.006 (root cause candidate: payment (85%): Feature flag paymentFailure is enabled at the 50% variant, so roughly half of payment Charge calls return 'Payment request failed. Invalid token' errors. The payment error ratio ramped from about 5.6% to about 29.8% over the last hour, consistent with the flag being switched on around 16:00-16:14Z.)
+[payment-failure-after-currency-release] escalated ErrorBudgetBurn/payment: root causes payment 60%, checkout 30%; 15 model calls, 156,816 tokens, $0.021 (root cause candidate: payment (60%): payment's Charge path rejects gold-tier requests with 'Invalid token'. The most likely trigger is the paymentFailure flagd flag (ON at 50%) or a payment-side validation rule. There was no payment rollout, so the flag is the leading trigger, but its effect is not confirmed.)
+[payment-failure-after-currency-release] [strong-plan] escalated ErrorBudgetBurn/checkout: root causes payment 70%, cart 20%; 15 model calls, 139,615 tokens, $0.059 (root cause candidate: payment (70%): Feature flag paymentFailure enabled at 50% makes payment Charge fail about half of requests with 'Invalid token'. checkout relays these failures as errors.)
+[payment-failure-after-currency-release] recorded 29 model steps, 44 tool answers
+[payment-failure-after-currency-release] recorded 11 model steps, 19 tool answers (single)
+[payment-failure-after-currency-release] recorded 31 model steps, 52 tool answers (strong-plan)
+[payment-failure-after-currency-release] recorded 28 model steps, 44 tool answers (canary)
+[payment-failure-after-currency-release] answer: payment - correct
+[payment-failure-after-currency-release] plan for ErrorBudgetBurn/checkout: no action -> deny; failed checks: actions: the plan has no actions
+[payment-failure-after-currency-release] plan for ErrorBudgetBurn/payment: no action -> deny; failed checks: actions: the plan has no actions
+[payment-failure-after-currency-release] recover
+[payment-failure-after-currency-release] all alerts resolved 281.0s after recovery
+[payment-failure-after-currency-release] closed 0 incident(s)
+=== payment-failure-after-currency-release: ok; 8 incident(s); 4.2M tokens so far of 6.0M
+[eval] 12 observation(s) in lab-out/eval/results.json

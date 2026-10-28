@@ -1,0 +1,951 @@
+{
+ "annotations": {
+  "5f101954-1e25-4de7-b085-60b4ecbeba62": {
+   "description": "95th percentile of server span duration over 5m is above 1000ms.",
+   "summary": "product-catalog p95 latency is 8.744kms"
+  },
+  "605ecc23-f676-4bf6-b3e9-4f1471f6151b": {
+   "description": "95th percentile of server span duration over 5m is above 1000ms.",
+   "summary": "frontend-proxy p95 latency is 9.592kms"
+  },
+  "c89185ed-8c9f-4288-a7c1-a3b87adf9866": {
+   "description": "95th percentile of server span duration over 5m is above 1000ms.",
+   "summary": "recommendation p95 latency is 7.536kms"
+  },
+  "de1a9569-3707-4bbc-bb6b-bb06dfd12ccf": {
+   "description": "95th percentile of server span duration over 5m is above 1000ms.",
+   "summary": "checkout p95 latency is 15kms"
+  },
+  "f1349b79-4706-4b43-96e3-8058d2ffd47d": {
+   "description": "95th percentile of server span duration over 5m is above 1000ms.",
+   "summary": "frontend p95 latency is 9.908kms"
+  }
+ },
+ "expected": {
+  "5f101954-1e25-4de7-b085-60b4ecbeba62": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_e8f236f1aa884540"
+      ],
+      "statement": "product-catalog server p95 went from about 10ms to 329.6ms at 15:36:26 and 7810ms at 15:37:26, reaching 9496ms at 15:56Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_e8f236f1aa884540",
+       "ev_3b2dd37be2a9c209"
+      ],
+      "statement": "recommendation and frontend-proxy p95 rose in the same window, reaching about 9.2s and 13.8s. Their 504s pass through product-catalog."
+     },
+     {
+      "evidence_ids": [
+       "ev_762a537aa7693b35",
+       "ev_e5bf54c1b05811fa",
+       "ev_de7cbf4c87ee7110"
+      ],
+      "statement": "product-catalog to astronomy-db client-span p95 rose from about 2ms to 4.4-4.7s, in the same minute as the server p95."
+     },
+     {
+      "evidence_ids": [
+       "ev_b7eb26ef779e8714"
+      ],
+      "statement": "In the slowest trace (15.9s), product-catalog self time is about 5-5.6s per GetProduct/ListProducts span, and astronomy-db client spans are about 2s each."
+     },
+     {
+      "evidence_ids": [
+       "ev_ecf0bb3a0eab4e45",
+       "ev_e0dd9ca5ce5bf942",
+       "ev_bf903d4b7a03bfcc",
+       "ev_0f7a03280b0f2794"
+      ],
+      "statement": "No warn/error logs and no error spans in product-catalog; request volume did not spike and no ERROR status series exists."
+     },
+     {
+      "evidence_ids": [
+       "ev_b22c2534dbee695a",
+       "ev_dc252cdad6da6242",
+       "ev_b8022b7bc576aa7e",
+       "ev_dd90617fd04442ab",
+       "ev_e30a62dbeaa0582c"
+      ],
+      "statement": "All 18 flagd flags are off. product-catalog and astronomy-db each have one rollout revision (15:25Z, no change-cause), and neither pod has warning events."
+     },
+     {
+      "evidence_ids": [
+       "ev_f10353992502b6ef",
+       "ev_2943610282f0c6d6",
+       "ev_14a9d1e320299732"
+      ],
+      "statement": "CPU throttling, restart-count and error-ratio metric queries returned no data, so they are unresolved."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check pool-wait or connection-acquire metrics in product-catalog, and active connections on astronomy-db (pg_stat_activity).",
+      "statement": "Connection-pool wait in product-catalog: time spent waiting for a DB connection is not captured by the client span, so self time looks large."
+     },
+     {
+      "how_to_verify": "Query pg_stat_statements and pg_stat_activity for wait events and lock waits; check astronomy-db server spans and DB CPU/IO metrics.",
+      "statement": "astronomy-db slow queries or locks (for example table growth, a missing index, or autovacuum) started around 15:36Z."
+     },
+     {
+      "how_to_verify": "Check container_cpu_cfs_throttled metrics and runtime GC metrics for product-catalog; the earlier throttling query returned no data, so verify the metric name.",
+      "statement": "product-catalog CPU throttling or GC pressure at onset."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_e8f236f1aa884540",
+       "ev_3b2dd37be2a9c209",
+       "ev_b7eb26ef779e8714"
+      ],
+      "statement": "product-catalog is the origin of the incident; recommendation and frontend-proxy are downstream victims and should not be treated as roots."
+     },
+     {
+      "evidence_ids": [
+       "ev_dc252cdad6da6242",
+       "ev_b22c2534dbee695a",
+       "ev_e8f236f1aa884540"
+      ],
+      "statement": "No deploy or flag change explains the onset, which is about 11 minutes after the 15:25Z rollout. The cause is likely runtime state (DB data growth, locks, pool exhaustion) rather than a config change."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Latency is added inside product-catalog itself: GetProduct and ListProducts show about 5s self time, more than the about 2s astronomy-db client time. This is consistent with connection-pool wait, lock wait or CPU contention in the app. No change explains the onset.",
+      "confidence": 0.45,
+      "evidence_ids": [
+       "ev_b7eb26ef779e8714",
+       "ev_e8f236f1aa884540",
+       "ev_e5ab801564d8d192",
+       "ev_dc252cdad6da6242",
+       "ev_dd90617fd04442ab"
+      ],
+      "service": "product-catalog"
+     },
+     {
+      "cause": "The PostgreSQL backend is slow for product-catalog: its client-span p95 is about 4.6s, moving in the same minute as the server p95. astronomy-db's own server-side behavior (slow queries, locks) is not verified.",
+      "confidence": 0.3,
+      "evidence_ids": [
+       "ev_762a537aa7693b35",
+       "ev_e5bf54c1b05811fa",
+       "ev_de7cbf4c87ee7110",
+       "ev_b8022b7bc576aa7e",
+       "ev_e30a62dbeaa0582c"
+      ],
+      "service": "astronomy-db"
+     }
+    ],
+    "summary": "product-catalog server p95 rose from about 10ms to about 9.5s starting around 15:36-15:37Z. recommendation and frontend-proxy rose in the same minute and are downstream victims (504s). Latency has no errors, no log lines and no flag or rollout trigger. Slow traces show about 5s of product-catalog self time and only about 2s in astronomy-db calls. The cause is therefore either inside product-catalog (e.g. pool wait or CPU) or in astronomy-db, and is not yet confirmed."
+   },
+   "findings": 17,
+   "plan": {
+    "actions": [],
+    "alternatives": [
+     {
+      "action": "rollout_undo",
+      "why_not": "Both product-catalog and astronomy-db have only one revision (15:25Z, no change-cause), and the onset is about 11 minutes later with no config change. There is no earlier good revision that the evidence says would help."
+     },
+     {
+      "action": "restart_deployment",
+      "why_not": "A restart of product-catalog might relieve pool exhaustion, but it is not confirmed and would not address astronomy-db slowness. It is a candidate for a human to try after checking pool metrics, not a supported action now."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "Nothing shows capacity shortage: request volume did not spike and no throttling data is available. Scaling product-catalog would not fix a slow database backend."
+     }
+    ],
+    "no_action_reason": "The root cause is not confirmed and no release or flag explains the onset. A human should check astronomy-db server-side query and lock metrics and product-catalog connection-pool wait and CPU throttling from 15:36Z, since the missing throttling and restart metrics leave those unresolved.",
+    "summary": "No automated repair is supported: no bad release or flag change is evidenced, and the cause is unconfirmed between product-catalog runtime state and astronomy-db. Recommend a human check astronomy-db server-side (slow queries, locks, autovacuum, table growth from 15:36Z) and product-catalog pool, CPU throttling and GC metrics at onset, then decide on restart or scale."
+   },
+   "state": "ESCALATED"
+  },
+  "605ecc23-f676-4bf6-b3e9-4f1471f6151b": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_a498077453f2a1ee"
+      ],
+      "statement": "frontend-proxy server p95 rose from about 36-42ms to 10743ms by 15:54:12Z, with the sharp rise in the last two buckets."
+     },
+     {
+      "evidence_ids": [
+       "ev_a498077453f2a1ee",
+       "ev_936b27f54dccca2c"
+      ],
+      "statement": "product-catalog p95 was about 9-23ms until about 15:52, then rose to 1241ms and then 9005ms by 15:54:12Z. GetProduct server p95 went to about 8710ms and ListProducts to about 7782ms."
+     },
+     {
+      "evidence_ids": [
+       "ev_991b272a8395b4cc"
+      ],
+      "statement": "product-catalog's client span to astronomy-db has a p95 of about 4477ms over the latest 5m window."
+     },
+     {
+      "evidence_ids": [
+       "ev_dbaf5cad7a88d9ff",
+       "ev_60ad033f335262ac",
+       "ev_86da700e122cb3e7"
+      ],
+      "statement": "In slow traces, product-catalog GetProduct and ListProducts spans run 6-8s, with about 4.5-5.7s of self time. Each trace has several astronomy-db spans of 1-2s."
+     },
+     {
+      "evidence_ids": [
+       "ev_8c28d53f6344ae19",
+       "ev_dba2e98afa81c73a",
+       "ev_dd7e33988ee1272b",
+       "ev_8fa5386dd4cc0d2c",
+       "ev_4bf38ac2773fbe5a",
+       "ev_5a2c61aee87e2d8a"
+      ],
+      "statement": "No error-level logs appear in recommendation, product-catalog or frontend in the last 15 minutes, and no log lines mention slow or timeout."
+     },
+     {
+      "evidence_ids": [
+       "ev_b3b456e690740670",
+       "ev_a498077453f2a1ee"
+      ],
+      "statement": "recommendation's client span to product-catalog ListProducts has a p95 of about 8550ms, and its server p95 rose from about 4-9ms to 8333ms."
+     },
+     {
+      "evidence_ids": [
+       "ev_a498077453f2a1ee",
+       "ev_5d9cc88fccab8ee4"
+      ],
+      "statement": "flagd server p95 stayed near 1.9ms and its error ratio stayed near 0 (max 0.00047)."
+     },
+     {
+      "evidence_ids": [
+       "ev_b3b456e690740670"
+      ],
+      "statement": "frontend's slow calls are CheckoutService/PlaceOrder (about 15s) and ProductCatalogService/GetProduct (about 9.2s). Ad and cart stayed in the low milliseconds."
+     },
+     {
+      "evidence_ids": [
+       "ev_faec2238b326bb8f",
+       "ev_d5d084498d183f80",
+       "ev_dfc101b6b5b06d53",
+       "ev_62c1b491c576e77a",
+       "ev_8a571f4fec271bc0",
+       "ev_1347b5b6fd86744d"
+      ],
+      "statement": "No deploy changed frontend-proxy, frontend, recommendation or product-catalog in the hour before the alert: each has a single revision created about 15:25Z. All 18 feature flags are off. The only Kubernetes warnings are readiness failures on alertmanager, otel-collector-agent and loki."
+     },
+     {
+      "evidence_ids": [
+       "ev_5d9cc88fccab8ee4",
+       "ev_2eb00438864dfe92",
+       "ev_c83fbbcd8a2959b8",
+       "ev_dbaf5cad7a88d9ff"
+      ],
+      "statement": "frontend-proxy's error ratio is only about 0.02 at the latest point. The slow traces show one 'router frontend egress' error with http.status_code=0 and one 504."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check product-catalog pool metrics and wait time, CPU throttling and pod resource usage, and whether self time is queueing before the span starts.",
+      "statement": "product-catalog is saturated on its database connection pool or CPU, so requests queue before the DB spans start, which would explain the 5s of self time."
+     },
+     {
+      "how_to_verify": "Query astronomy-db server metrics and pg_stat_activity for long-running queries, lock waits and connection counts, starting around 15:50Z.",
+      "statement": "astronomy-db is slow from locks, a long query, or connection exhaustion."
+     },
+     {
+      "how_to_verify": "Break down product-catalog and frontend-proxy p95 by span_name and route over the window, and check whether any route is unaffected.",
+      "statement": "Latency is limited to some product-catalog routes (GetProduct and ListProducts), not all of them."
+     },
+     {
+      "how_to_verify": "Compare request rate to product-catalog and astronomy-db against the 15:50-15:52 window, and check table sizes and recent data-load jobs.",
+      "statement": "Something outside the deploy record (an external load spike or a data growth event in the product table) started the slowdown."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_936b27f54dccca2c",
+       "ev_a498077453f2a1ee",
+       "ev_dbaf5cad7a88d9ff"
+      ],
+      "statement": "The origin of the latency is product-catalog or its database path, not frontend-proxy or flagd. The order of the metric rise (product-catalog first, then recommendation and frontend, then frontend-proxy) and the trace self-time both support this."
+     },
+     {
+      "evidence_ids": [
+       "ev_faec2238b326bb8f",
+       "ev_1347b5b6fd86744d"
+      ],
+      "statement": "The recent deploys and flag state do not explain the latency, so the trigger is likely load, data, or a dependency problem rather than a change."
+     },
+     {
+      "evidence_ids": [
+       "ev_b3b456e690740670",
+       "ev_8c28d53f6344ae19"
+      ],
+      "statement": "recommendation's alert is a downstream effect of product-catalog slowness, not a separate fault."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "product-catalog is slow in GetProduct and ListProducts: about 5s of self time not covered by child spans, on top of 1-2s astronomy-db calls. This is the earliest point in the latency chain, and it propagates to recommendation, frontend and frontend-proxy. The cause inside product-catalog (connection pool wait, serialization, or unrecorded work) is not yet isolated.",
+      "confidence": 0.6,
+      "evidence_ids": [
+       "ev_dbaf5cad7a88d9ff",
+       "ev_60ad033f335262ac",
+       "ev_a498077453f2a1ee",
+       "ev_936b27f54dccca2c",
+       "ev_991b272a8395b4cc"
+      ],
+      "service": "product-catalog"
+     },
+     {
+      "cause": "The PostgreSQL database behind product-catalog is slow or saturated (locks, connections or CPU), so product-catalog's database calls take about 4.5s at p95. This is not confirmed: no server-side database metrics were checked.",
+      "confidence": 0.35,
+      "evidence_ids": [
+       "ev_991b272a8395b4cc",
+       "ev_dbaf5cad7a88d9ff"
+      ],
+      "service": "astronomy-db"
+     }
+    ],
+    "summary": "frontend-proxy p95 (about 10.7s vs 1s threshold) is a downstream symptom. The latency rise begins in product-catalog around 15:52, then spreads to recommendation and frontend, then frontend-proxy. product-catalog GetProduct/ListProducts server p95 went from single-digit ms to seconds, and its astronomy-db client p95 is about 4.5s. Traces show about 5s of unexplained self time in product-catalog GetProduct, plus 1-2s astronomy-db spans. No deploy, config or flag change explains it, and flagd is healthy. The fault is slowness (no error logs), most likely in product-catalog and/or its PostgreSQL dependency. Recommendation's alert is a consequence of the same product-catalog slowness."
+   },
+   "findings": 21,
+   "plan": {
+    "actions": [],
+    "alternatives": [
+     {
+      "action": "rollout_undo",
+      "why_not": "product-catalog, frontend, recommendation and frontend-proxy each have a single revision created about 15:25Z, so there is no earlier revision to return to and no bad release in the window."
+     },
+     {
+      "action": "restart_deployment",
+      "why_not": "No stuck or leaking process is evidenced: no warnings, no OOM or restart events, and the 5s self time is not isolated to a process fault. A restart would only give temporary relief."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "No queueing or CPU saturation evidence was shown for product-catalog. The bottleneck may be the single astronomy-db instance or its connection pool, which more product-catalog replicas would not relieve and could worsen by adding connections."
+     }
+    ],
+    "no_action_reason": null,
+    "summary": "No action proposed. The evidence points to product-catalog's database path (connection pool, locks or DB load) as the origin of the latency, but no release, restart-worthy fault or capacity signal justifies a change. A human should check astronomy-db and product-catalog pool metrics directly, including whether a product-table data growth or external load event began about 15:52Z."
+   },
+   "state": "ESCALATED"
+  },
+  "c89185ed-8c9f-4288-a7c1-a3b87adf9866": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_260dbf11d693b3cf",
+       "ev_141251c81ece0c20"
+      ],
+      "statement": "recommendation's client-span p95 for ProductCatalogService/ListProducts rose from about 3.8ms to 8333ms, with no error status codes."
+     },
+     {
+      "evidence_ids": [
+       "ev_260dbf11d693b3cf"
+      ],
+      "statement": "product-catalog's client-span p95 for astronomy-db rose from about 1.9ms to 4346ms, a step change beginning around 15:53."
+     },
+     {
+      "evidence_ids": [
+       "ev_9648b9d8c6c0143d",
+       "ev_fa1f5e2b7b875879"
+      ],
+      "statement": "product-catalog server-span p95 is about 9.2s for GetProduct and 8.6s for ListProducts, up from roughly 9-24ms, so it is slow for all callers."
+     },
+     {
+      "evidence_ids": [
+       "ev_abf464b82b41edbb"
+      ],
+      "statement": "In slow trace 2fbe026d, product-catalog GetProduct spans take 7.4-7.6s and ListProducts takes 6.1s, with 5.0-5.7s self time and astronomy-db child spans of 1.9-2.2s each."
+     },
+     {
+      "evidence_ids": [
+       "ev_c935f2deb3e5200c"
+      ],
+      "statement": "Trace f59ea621 shows the same pattern, with product-catalog GetProduct spans of 6.6-7.7s and astronomy-db spans of about 2s."
+     },
+     {
+      "evidence_ids": [
+       "ev_c0b6720964178fac"
+      ],
+      "statement": "The slowest traces through recommendation end in HTTP 504 at frontend-proxy with no error spans in product-catalog."
+     },
+     {
+      "evidence_ids": [
+       "ev_1d860e096bf1c447",
+       "ev_445a567e406083e9"
+      ],
+      "statement": "recommendation, product-catalog and astronomy-db each have only one revision with no change-cause, and no rollout preceded 15:53."
+     },
+     {
+      "evidence_ids": [
+       "ev_baa20abed3adc4ae"
+      ],
+      "statement": "All 18 feature flags in flagd are off."
+     },
+     {
+      "evidence_ids": [
+       "ev_07ba795feda684be"
+      ],
+      "statement": "Namespace warnings show only readiness probe failures on alertmanager, otel-collector-agent and loki; none concern recommendation, product-catalog or astronomy-db."
+     },
+     {
+      "evidence_ids": [
+       "ev_492734ef21f093f6",
+       "ev_5bf8c2dcca138fd9",
+       "ev_0b104c87aa0fa417"
+      ],
+      "statement": "Product-catalog and recommendation logs contain no error or slow-query messages, only info lines."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check astronomy-db pg_stat_activity and pg_locks, active connection counts vs max_connections, and its CPU/IO metrics around 15:50-15:55.",
+      "statement": "astronomy-db has lock contention or connection-pool exhaustion, with queries queuing behind each other."
+     },
+     {
+      "how_to_verify": "Check product-catalog pool metrics and profiling, and whether pod lpgbw restarted at 15:27 (kubectl describe, restart count).",
+      "statement": "product-catalog has a connection-pool or thread-pool wait, which would explain its high self time."
+     },
+     {
+      "how_to_verify": "Check container_cpu_cfs_throttled and memory/IO metrics for both pods, plus their node pressure, over 15:45-16:00.",
+      "statement": "Resource throttling on astronomy-db or product-catalog (CPU limits, IO) is causing the slowdown."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_260dbf11d693b3cf",
+       "ev_c935f2deb3e5200c",
+       "ev_9648b9d8c6c0143d"
+      ],
+      "statement": "recommendation's p95 is inherited from product-catalog, not caused by recommendation itself. Its own spans are not among the slowest, and its client spans track product-catalog's server latency."
+     },
+     {
+      "evidence_ids": [
+       "ev_1d860e096bf1c447",
+       "ev_baa20abed3adc4ae",
+       "ev_445a567e406083e9"
+      ],
+      "statement": "The cause is a runtime slowdown beginning around 15:53 in the product-catalog/astronomy-db path, not a deploy, config change, or flag, since none of those changed."
+     },
+     {
+      "evidence_ids": [
+       "ev_b2610fddc808eff4",
+       "ev_9931ec832a182ff3"
+      ],
+      "statement": "The recommendation OTel exporter errors at 15:26 and the flagd EventStream DEADLINE_EXCEEDED are not the cause of the 15:53 latency."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Slow product-catalog path: GetProduct/ListProducts spans show about 5-5.7s of self time plus 2s per astronomy-db call. Possible causes include connection-pool wait, lock waits, or per-request work. Pod lpgbw had repeated container start events at 15:27 that may be a restart. Not yet confirmed.",
+      "confidence": 0.5,
+      "evidence_ids": [
+       "ev_abf464b82b41edbb",
+       "ev_c935f2deb3e5200c",
+       "ev_9648b9d8c6c0143d",
+       "ev_fa1f5e2b7b875879",
+       "ev_66e3c527b8b5ce4a",
+       "ev_96e51d8407c3b2b9"
+      ],
+      "service": "product-catalog"
+     },
+     {
+      "cause": "The PostgreSQL database is slow or saturated (lock contention, resource exhaustion, or slow queries), giving about 2s per query from product-catalog. This is a hypothesis: no DB metrics or astronomy-db server spans were available.",
+      "confidence": 0.35,
+      "evidence_ids": [
+       "ev_260dbf11d693b3cf",
+       "ev_abf464b82b41edbb",
+       "ev_445a567e406083e9"
+      ],
+      "service": "astronomy-db"
+     }
+    ],
+    "summary": "recommendation's p95 (about 7.5s vs a 1s threshold) is inherited latency. Starting around 15:53, the product-catalog to astronomy-db client span p95 rose from about 2ms to about 4.3s, and that propagated to product-catalog server spans (about 9s) and to recommendation's ListProducts client spans (about 8.3s). No errors are present, only latency. No deploy, config change, flag, or resource event explains it. The root cause is most likely in product-catalog or its database (astronomy-db), which is not yet confirmed. recommendation is where the alert fires, but the fix lies downstream."
+   },
+   "findings": 18,
+   "plan": {
+    "actions": [],
+    "alternatives": [
+     {
+      "action": "rollout_undo",
+      "why_not": "product-catalog and astronomy-db each have only revision 1, created at 15:25 when the stack started (ev_445a567e406083e9, ev_82cf113ff2f77b72). There is no earlier revision and no release just before 15:53 to undo."
+     },
+     {
+      "action": "restart_deployment",
+      "why_not": "A restart of product-catalog would not reduce the about 2s per astronomy-db query (ev_260dbf11d693b3cf). The only container re-create was at 15:27, 26 minutes before the step, so it does not match the onset. Restarting would also not touch astronomy-db."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "Nothing shows capacity shortage. Each slow span is a single slow query, not queueing across replicas, so more replicas would not lower per-query latency."
+     }
+    ],
+    "no_action_reason": "The top cause is in astronomy-db or the product-catalog to database path, and no catalogued action fixes it. A human should check astronomy-db directly: sessions, lock waits, slow queries, CPU or IO throttling, and product-catalog's DB pool metrics.",
+    "summary": "No action is supported by the catalogue. The cause is most likely a runtime slowdown in astronomy-db or its connection path starting near 15:53, with no bad release, flag, or capacity shortfall shown; a human should check the database directly."
+   },
+   "state": "ESCALATED"
+  },
+  "de1a9569-3707-4bbc-bb6b-bb06dfd12ccf": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_b74b6eeaf30ed879"
+      ],
+      "statement": "Checkout server p95 rose from about 48ms to 11585ms at 15:52Z and peaked at 15000ms. Frontend, frontend-proxy, product-catalog and recommendation rose in the same window."
+     },
+     {
+      "evidence_ids": [
+       "ev_1064c6ec99cf022a",
+       "ev_ffe4d725c8567d94"
+      ],
+      "statement": "Checkout's client p95 for ProductCatalogService/GetProduct rose to 9250ms, tracking product-catalog's server GetProduct p95. Its payment, cart and currency client p95s stayed low."
+     },
+     {
+      "evidence_ids": [
+       "ev_5467fa520e9cdd52",
+       "ev_ffe4d725c8567d94"
+      ],
+      "statement": "Product-catalog's client p95 for astronomy-db rose from about 2ms to 738ms at about 15:49:38 and to 3991-4677ms by 15:52-15:59."
+     },
+     {
+      "evidence_ids": [
+       "ev_7bf4538163738da7"
+      ],
+      "statement": "The astronomy-db call rate stayed flat at about 2.3-4.7 calls/s, with no volume spike when latency rose."
+     },
+     {
+      "evidence_ids": [
+       "ev_d9d99d42644499cc",
+       "ev_a4455aaee6c21c24"
+      ],
+      "statement": "In the slowest trace (48.8s), product-catalog GetProduct spans take 6.7-7.7s each and astronomy-db client spans take about 2.0-2.1s each."
+     },
+     {
+      "evidence_ids": [
+       "ev_ad74c22e4f5eec4d",
+       "ev_f8f15801d300c84a",
+       "ev_15bba0bbb2b3087e",
+       "ev_5cae5dc994ec7542",
+       "ev_76839c16f8a1fe32",
+       "ev_3e660fc7fba18cdd"
+      ],
+      "statement": "Product-catalog, checkout, payment, shipping, cart and astronomy-db each have only revision 1, with no rollout since about 15:25Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_2788226576e23578"
+      ],
+      "statement": "All 18 flagd flags are at their default (off)."
+     },
+     {
+      "evidence_ids": [
+       "ev_797eb5380209d37d",
+       "ev_a5d857405faab649",
+       "ev_09443839c485d159",
+       "ev_1056f803bf163312"
+      ],
+      "statement": "Checkout and product-catalog have no warn or error logs in the last 30 minutes, and product-catalog logs show only info lines."
+     },
+     {
+      "evidence_ids": [
+       "ev_096f38fc7118ae9c",
+       "ev_0e46ee72e97959ac"
+      ],
+      "statement": "Namespace warning events in the window are only readiness probe failures on observability pods at 15:25-15:26Z. Checkout has no warnings or restarts."
+     },
+     {
+      "evidence_ids": [
+       "ev_bacdbbce3c10d825",
+       "ev_9bd45b26303793dd"
+      ],
+      "statement": "Checkout had an error episode from about 15:38 to 15:50 (peak 0.62 ratio at 15:43), mostly PaymentService/Charge. Error ratio returned to 0 after 15:50 while latency kept rising."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check astronomy-db pg_stat_activity for long-running or waiting queries, lock waits, connection count against max, and CPU/IO metrics from about 15:45-15:52Z.",
+      "statement": "astronomy-db is saturated on connections, locks, CPU or I/O (for example, a long-running query or a bloated table), causing every query to queue."
+     },
+     {
+      "how_to_verify": "Check product-catalog pool metrics (active/idle/wait time) and whether the astronomy-db query time itself is slow in the DB, not only the client-side wait.",
+      "statement": "product-catalog's DB connection pool is exhausted or leaking, so requests wait for a connection before the query runs."
+     },
+     {
+      "how_to_verify": "Pull payment server error spans and logs for 15:38-15:50 and check whether they share a cause with the astronomy-db slowdown.",
+      "statement": "The checkout payment error episode (15:38-15:50) is a separate fault in PaymentService, not part of the latency incident."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_5467fa520e9cdd52",
+       "ev_b74b6eeaf30ed879",
+       "ev_1064c6ec99cf022a"
+      ],
+      "statement": "The astronomy-db slowdown is the common upstream cause of the latency alerts on product-catalog, recommendation, frontend, frontend-proxy and checkout."
+     },
+     {
+      "evidence_ids": [
+       "ev_7bf4538163738da7",
+       "ev_ad74c22e4f5eec4d",
+       "ev_2788226576e23578"
+      ],
+      "statement": "The slowdown is not load-driven and no deployment, flag or pod failure caused it. The trigger is internal to the database or its path."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "The PostgreSQL dependency (astronomy-db) became slow for all callers from about 15:49Z, with queries taking about 2-4.7s instead of about 2ms. Product-catalog GetProduct and ListProducts then take seconds, and checkout, recommendation, frontend and frontend-proxy inherit the latency. The likely locus is the database (locks, pool, CPU or I/O), since no product-catalog or astronomy-db change occurred.",
+      "confidence": 0.7,
+      "evidence_ids": [
+       "ev_5467fa520e9cdd52",
+       "ev_ffe4d725c8567d94",
+       "ev_7bf4538163738da7",
+       "ev_d9d99d42644499cc",
+       "ev_a4455aaee6c21c24",
+       "ev_1064c6ec99cf022a",
+       "ev_b74b6eeaf30ed879"
+      ],
+      "service": "product-catalog"
+     },
+     {
+      "cause": "Checkout's 15s p95 comes from its GetProduct calls to product-catalog. Checkout's pod is healthy and its other dependencies stay in the low milliseconds, so checkout is a victim, not a root cause. Its earlier 15:38-15:50 payment error episode is separate and unexplained by this path.",
+      "confidence": 0.3,
+      "evidence_ids": [
+       "ev_1064c6ec99cf022a",
+       "ev_0e46ee72e97959ac",
+       "ev_bacdbbce3c10d825",
+       "ev_9bd45b26303793dd"
+      ],
+      "service": "checkout"
+     }
+    ],
+    "summary": "Checkout's p95 (about 15s) is a downstream effect. Its GetProduct client latency tracks product-catalog's server latency, and product-catalog's astronomy-db client latency rose from about 2ms to about 4.7s around 15:49-15:52Z with no matching call-volume rise. Traces show roughly 2s astronomy-db queries inside GetProduct. No deployment, flag or pod change explains the timing, and checkout's own spans are not slow. The trigger inside the database is unknown. Fix target is astronomy-db / product-catalog's database path, not checkout."
+   },
+   "findings": 20,
+   "plan": {
+    "actions": [],
+    "alternatives": [
+     {
+      "action": "rollout_undo",
+      "why_not": "No revision change on product-catalog, checkout or astronomy-db since about 15:25Z, so there is no bad release to roll back to."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "Call rate is flat at about 2.3-4.7/s and the slow time is inside the database queries, so more replicas would not shorten them and could add load on the database."
+     },
+     {
+      "action": "restart_deployment",
+      "why_not": "A product-catalog restart might clear a leaked connection pool, but that is unverified; no pool metric or log supports it. Restarting checkout would not help because its pod is healthy."
+     }
+    ],
+    "no_action_reason": "The root cause is in astronomy-db, which has no action in the allowed set. A human should check for long-running or blocking queries, lock waits, connection saturation, CPU or I/O pressure, and table bloat, and check product-catalog's pool wait time. The checkout payment error episode (15:38-15:50) needs a separate investigation.",
+    "summary": "No action is proposed. The slowdown is inside astronomy-db, which has no action in the allowed set, and no release or flag change explains it. A human should investigate the database and product-catalog's connection pool."
+   },
+   "state": "ESCALATED"
+  },
+  "f1349b79-4706-4b43-96e3-8058d2ffd47d": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_2f770fce464e7a5e",
+       "ev_3ec412238fc757b7",
+       "ev_a7cdcde7fe433768"
+      ],
+      "statement": "product-catalog's client p95 to astronomy-db rose from about 2ms to about 4.7s, while the call rate rose from about 0.5/s to about 4.7/s, peaking near 15:39."
+     },
+     {
+      "evidence_ids": [
+       "ev_a8672e7676fa17c4"
+      ],
+      "statement": "product-catalog server p95 rose to about 9.5s for GetProduct and about 9.2s for ListProducts, over the same window."
+     },
+     {
+      "evidence_ids": [
+       "ev_95da89ce3f71cdf2"
+      ],
+      "statement": "In the slowest checkout trace (47.9s), product-catalog GetProduct spans take about 7.2-7.6s with 5.2-5.5s self time each, and astronomy-db child spans take about 2.0s each."
+     },
+     {
+      "evidence_ids": [
+       "ev_7a1cb4145122f727",
+       "ev_3aa369bc3f15f974"
+      ],
+      "statement": "Frontend-facing traces show p95 about 15.5s with 504 errors at frontend-proxy. Most time sits under frontend and product-catalog."
+     },
+     {
+      "evidence_ids": [
+       "ev_7e498ceff2749a9d",
+       "ev_e6a5963ea9687be3",
+       "ev_fc8f139515887c0e"
+      ],
+      "statement": "Product-catalog logs show only info lines in the window, with no warn or error. astronomy-db has no logs in the window."
+     },
+     {
+      "evidence_ids": [
+       "ev_55e54ee743463fb9"
+      ],
+      "statement": "All 18 flagd flags are off, and none was turned on."
+     },
+     {
+      "evidence_ids": [
+       "ev_471b482a59520884",
+       "ev_1f5625450ce6cb4b",
+       "ev_58586b561e12e2b5",
+       "ev_37e85faf57ffb195"
+      ],
+      "statement": "product-catalog, recommendation, checkout and astronomy-db each have only revision 1, created about 15:25Z. No rollout occurred shortly before the alerts."
+     },
+     {
+      "evidence_ids": [
+       "ev_266e0ff56f128330",
+       "ev_07bf930311ff3038"
+      ],
+      "statement": "Warning events in the last 60 minutes are only readiness-probe failures at 15:25-15:26Z. There are no OOM, restart or throttling events near 15:53Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_9976990184668f4d",
+       "ev_c7fc78599b135c8a"
+      ],
+      "statement": "Checkout's dependencies (payment, cart, currency) show client latency back to about 4-16ms. Checkout's only error spike (about 0.6) was around 15:43 and has recovered."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check product-catalog pod CPU and memory usage and throttling against its limits, and compare with request rate over 15:30-15:55Z.",
+      "statement": "product-catalog is CPU- or memory-saturated or throttled under the higher request volume, adding self time per request."
+     },
+     {
+      "how_to_verify": "Query astronomy-db pg_stat_activity and lock waits, and product-catalog's connection pool wait metrics; check whether the 2s per query matches waits.",
+      "statement": "astronomy-db has lock contention or connection-pool exhaustion, making each query slow."
+     },
+     {
+      "how_to_verify": "Compare queries per GetProduct span and inbound request rate to frontend and recommendation before and after 15:39Z.",
+      "statement": "The 10x rise in astronomy-db call volume comes from a new code path in product-catalog (for example, N+1 queries per request), or from a traffic spike upstream."
+     },
+     {
+      "how_to_verify": "Confirm shipping's latency to checkout is normal in the client spans over 15:27-15:53Z.",
+      "statement": "shipping's pod recreation at 15:27Z is a weak lead for checkout's slowdown. It is not a likely cause, since checkout's own dependencies are healthy."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_28b88ffec7fa1dda",
+       "ev_9976990184668f4d",
+       "ev_d67cb06af7f93e91",
+       "ev_c7fc78599b135c8a"
+      ],
+      "statement": "product-catalog is the bottleneck that the other alerting services (frontend, checkout, recommendation, frontend-proxy) inherit. Their latency tracks product-catalog's rise."
+     },
+     {
+      "evidence_ids": [
+       "ev_471b482a59520884",
+       "ev_55e54ee743463fb9",
+       "ev_9976990184668f4d",
+       "ev_6d59966496109ec7"
+      ],
+      "statement": "A recent deploy or feature flag change is unlikely to be the cause, since all revisions predate the incident by about 28 minutes and all flags are off. flagd is also unlikely, since per-call flag spans are about 2-5ms."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "product-catalog is slow per request, with about 5s of unexplained self time per GetProduct plus slow astronomy-db queries (about 2s each). Its call rate to astronomy-db rose about 10x. Likely cause: resource saturation or an unexplained change in its request path. Not confirmed; no errors or warnings are logged.",
+      "confidence": 0.6,
+      "evidence_ids": [
+       "ev_95da89ce3f71cdf2",
+       "ev_c237ad6eb124869d",
+       "ev_a8672e7676fa17c4",
+       "ev_2f770fce464e7a5e",
+       "ev_3ec412238fc757b7",
+       "ev_a7cdcde7fe433768",
+       "ev_7e498ceff2749a9d"
+      ],
+      "service": "product-catalog"
+     },
+     {
+      "cause": "Increased load or more database calls per request (astronomy-db call rate about 0.5/s to about 4.7/s) is saturating product-catalog or its database path. This would explain the rise without any deploy or flag change. Unverified; needs request-rate and per-request query-count checks.",
+      "confidence": 0.35,
+      "evidence_ids": [
+       "ev_a7cdcde7fe433768",
+       "ev_3ec412238fc757b7",
+       "ev_d67cb06af7f93e91"
+      ],
+      "service": "product-catalog"
+     },
+     {
+      "cause": "The PostgreSQL database may be slow (locks, connection pool exhaustion, slow queries). Not checked: astronomy-db has no logs in the window and no lock or connection metrics were pulled.",
+      "confidence": 0.25,
+      "evidence_ids": [
+       "ev_2f770fce464e7a5e",
+       "ev_37e85faf57ffb195"
+      ],
+      "service": "astronomy-db"
+     }
+    ],
+    "summary": "frontend's LatencyP95High (about 9.9s p95 vs 1s) is a symptom. The slowdown sits in product-catalog: its GetProduct and ListProducts server p95 went to about 9.5s and 9.2s, and its client spans to astronomy-db went from about 2ms to about 4.7s. Callers (checkout, frontend, recommendation) see the same latency. Traces show about 5s of self time in product-catalog per GetProduct, not explained by the 2s database child spans. No recent rollout, flag change, or crash explains the 15:53Z onset. The cause is still unidentified, and logs show no errors. Next: product-catalog saturation and error metrics, astronomy-db connection and lock metrics, and what drove the roughly 10x rise in astronomy-db call volume."
+   },
+   "findings": 21,
+   "plan": {
+    "actions": [],
+    "alternatives": [
+     {
+      "action": "rollout_undo",
+      "why_not": "No release happened in the window. product-catalog and astronomy-db have only revision 1, created at about 15:25Z, so there is no earlier revision to return to (ev_b38b549d59b7b582, ev_fa851b6256159ba3)."
+     },
+     {
+      "action": "restart_deployment",
+      "why_not": "No evidence of a stuck or leaking process: no restarts, OOM kills, or warnings in the window. A restart would not reduce the 10x database call volume or the per-request self time."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "Saturation is suspected but not measured. No throttling or CPU/memory metrics were pulled, and scaling product-catalog would not fix astronomy-db lock or pool contention if that is the cause. Only justified after a human confirms saturation."
+     }
+    ],
+    "no_action_reason": null,
+    "summary": "No automated repair is supported. The slowdown originates in product-catalog (with astronomy-db call volume up about 10x and roughly 5s unexplained self time per GetProduct), but no release, flag change, restart, or capacity event explains the onset, and there is only one revision of each Deployment. A human should examine product-catalog CPU/memory throttling and per-request query counts, and astronomy-db locks and connection pool, and find what drove the call-volume increase."
+   },
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": "2026-10-28 15:57:25.034983+00:00",
+   "created_at": "2026-10-28 15:53:33.019203+00:00",
+   "environment": "lab",
+   "fingerprint": "c7a34308caa28b3547dbf2e0d7d089a9",
+   "id": "c89185ed-8c9f-4288-a7c1-a3b87adf9866",
+   "labels": {
+    "alertname": "LatencyP95High",
+    "environment": "lab",
+    "service_name": "recommendation",
+    "severity": "warning",
+    "slo": "latency"
+   },
+   "priority": 2,
+   "service": "recommendation",
+   "state": "ESCALATED",
+   "tenant_id": "lab-canary",
+   "title": "LatencyP95High"
+  },
+  {
+   "closed_at": "2026-10-28 15:56:56.779660+00:00",
+   "created_at": "2026-10-28 15:53:48.024594+00:00",
+   "environment": "lab",
+   "fingerprint": "3a289d7a6fb399cde65d46e6cc95037c",
+   "id": "605ecc23-f676-4bf6-b3e9-4f1471f6151b",
+   "labels": {
+    "alertname": "LatencyP95High",
+    "environment": "lab",
+    "service_name": "frontend-proxy",
+    "severity": "warning",
+    "slo": "latency"
+   },
+   "priority": 2,
+   "service": "frontend-proxy",
+   "state": "ESCALATED",
+   "tenant_id": "lab-canary",
+   "title": "LatencyP95High"
+  },
+  {
+   "closed_at": "2026-10-28 16:00:17.004433+00:00",
+   "created_at": "2026-10-28 15:53:48.077447+00:00",
+   "environment": "lab",
+   "fingerprint": "05182654616e57e4e60e14bc28f7a473",
+   "id": "5f101954-1e25-4de7-b085-60b4ecbeba62",
+   "labels": {
+    "alertname": "LatencyP95High",
+    "environment": "lab",
+    "service_name": "product-catalog",
+    "severity": "warning",
+    "slo": "latency"
+   },
+   "priority": 2,
+   "service": "product-catalog",
+   "state": "ESCALATED",
+   "tenant_id": "lab-canary",
+   "title": "LatencyP95High"
+  },
+  {
+   "closed_at": "2026-10-28 16:01:53.506986+00:00",
+   "created_at": "2026-10-28 15:54:03.029978+00:00",
+   "environment": "lab",
+   "fingerprint": "7d3c22bfff3583271006e8d4df5f3976",
+   "id": "de1a9569-3707-4bbc-bb6b-bb06dfd12ccf",
+   "labels": {
+    "alertname": "LatencyP95High",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "warning",
+    "slo": "latency"
+   },
+   "priority": 2,
+   "service": "checkout",
+   "state": "ESCALATED",
+   "tenant_id": "lab-canary",
+   "title": "LatencyP95High"
+  },
+  {
+   "closed_at": "2026-10-28 16:01:52.775734+00:00",
+   "created_at": "2026-10-28 15:54:03.031122+00:00",
+   "environment": "lab",
+   "fingerprint": "b6c8000993410261806563a92dc682f4",
+   "id": "f1349b79-4706-4b43-96e3-8058d2ffd47d",
+   "labels": {
+    "alertname": "LatencyP95High",
+    "environment": "lab",
+    "service_name": "frontend",
+    "severity": "warning",
+    "slo": "latency"
+   },
+   "priority": 2,
+   "service": "frontend",
+   "state": "ESCALATED",
+   "tenant_id": "lab-canary",
+   "title": "LatencyP95High"
+  }
+ ]
+}

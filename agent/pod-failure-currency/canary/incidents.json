@@ -1,0 +1,185 @@
+{
+ "annotations": {
+  "57130125-a249-45ce-ab7c-06b32ffb7f0e": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 42.37% of requests"
+  }
+ },
+ "expected": {
+  "57130125-a249-45ce-ab7c-06b32ffb7f0e": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_3f36f5488d0c61b7"
+      ],
+      "statement": "Currency logs end with 'Received SIGTERM, shutting down Currency Server' at 16:09:36Z, about 2.7 minutes before the alert. Its last conversion success is at 16:09:34Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_491bed4282f8a620",
+       "ev_6392591f88eb3bca"
+      ],
+      "statement": "Checkout's CurrencyService/Convert client spans fail with 'dial tcp 10.96.57.183:8080: connect: connection refused' (20 spans in 15 min). PlaceOrder then fails with 'failed to convert price ... to USD'."
+     },
+     {
+      "evidence_ids": [
+       "ev_ecfddacceb3e45eb",
+       "ev_060cf6fe704c4903",
+       "ev_e6cc5286b45e6e70"
+      ],
+      "statement": "Checkout emits no error-level logs and no log lines mentioning connection refused or currency. Its failures are visible only in spans."
+     },
+     {
+      "evidence_ids": [
+       "ev_22decdae63475959",
+       "ev_a7f56941be98e1bb",
+       "ev_3d65d30b421f22b4",
+       "ev_4b4e1f27776a742c",
+       "ev_08466ec14b0e2241"
+      ],
+      "statement": "Currency has no error traces in the window, and its server spans show only Convert with STATUS_CODE_OK at 0.147/s with flat 1.9 ms p95. Its SLI recording rule returns no data."
+     },
+     {
+      "evidence_ids": [
+       "ev_e2f7981247804467",
+       "ev_90a524edf66f9a66"
+      ],
+      "statement": "checkout's 5m error ratio is about 0.58 (up from about 0.2 at the start of the window). Frontend-proxy and frontend show about 0.027, so they are symptoms only."
+     },
+     {
+      "evidence_ids": [
+       "ev_c7c08f187ddb937a",
+       "ev_a32fa0fcceb74702",
+       "ev_a9aad49274127cec"
+      ],
+      "statement": "checkout's client Convert errors rose from about 0.025/s at 16:10Z to 0.17/s by 16:13Z. Its PaymentService/Charge errors are at 0 now, after a burst that peaked around 15:43Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_49af81f91ade490a",
+       "ev_61aee883cb5e81de",
+       "ev_50b6ed936919bb92",
+       "ev_926803b4b9629a2a"
+      ],
+      "statement": "All 18 feature flags are off. checkout and its dependencies have only their original revisions, created around 15:25Z, with no change-cause. Warning events are readiness-probe failures on alertmanager, otel-collector and loki only, with no checkout or payment restarts or OOMKills."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check the currency Deployment rollout history and replica count, Kubernetes events in otel-demo around 16:09Z (Killing, Evicted, OOMKilled, ScalingReplicaSet), and whether the currency Service has empty endpoints.",
+      "statement": "Currency was deleted, scaled down, evicted or OOM-killed at about 16:09:36Z, and it has no endpoints now."
+     },
+     {
+      "how_to_verify": "Diff currency's current ReplicaSet against the previous one and inspect its change-cause annotation.",
+      "statement": "A rollout or config change to currency, not visible in the earlier checks, caused the shutdown."
+     },
+     {
+      "how_to_verify": "Query payment and product-catalog error spans and logs for 15:40-16:00Z to see their exception messages.",
+      "statement": "The earlier payment Charge errors (15:43Z) and product-catalog latency (15:52-16:00Z) have a cause separate from the current outage."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_3f36f5488d0c61b7",
+       "ev_491bed4282f8a620",
+       "ev_22decdae63475959"
+      ],
+      "statement": "The checkout errors are caused by currency being down since 16:09:36Z. A dead listener yields connection refused, and no currency spans appear afterward, which is consistent with the missing error spans."
+     },
+     {
+      "evidence_ids": [
+       "ev_3d65d30b421f22b4",
+       "ev_491bed4282f8a620"
+      ],
+      "statement": "The metrics investigator's checkout-side inference is superseded. Refused connections point to a missing listener, not to a timeout or client configuration issue."
+     },
+     {
+      "evidence_ids": [
+       "ev_93faef2385767f47",
+       "ev_1aa9dc7237b75ec8"
+      ],
+      "statement": "The checkout p95 spike to 15 s (15:52-16:00Z) with product-catalog GetProduct near 9.3 s is a separate, recovered episode and does not explain the current failure."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "The currency server process/pod was terminated (SIGTERM at 16:09:36Z) and has no listener on 10.96.57.183:8080, so checkout's Convert calls are refused. The trigger for the termination is unknown (rollout, scale-down, eviction or OOM are candidates).",
+      "confidence": 0.75,
+      "evidence_ids": [
+       "ev_3f36f5488d0c61b7",
+       "ev_491bed4282f8a620",
+       "ev_6392591f88eb3bca",
+       "ev_22decdae63475959",
+       "ev_a7f56941be98e1bb",
+       "ev_3d65d30b421f22b4",
+       "ev_08466ec14b0e2241"
+      ],
+      "service": "currency"
+     },
+     {
+      "cause": "Checkout's client path to currency (timeouts or client config) could be contributing. This is considered unlikely because connection-refused errors point to a missing listener rather than a checkout-side fault.",
+      "confidence": 0.1,
+      "evidence_ids": [
+       "ev_c7c08f187ddb937a",
+       "ev_3d65d30b421f22b4"
+      ],
+      "service": "checkout"
+     }
+    ],
+    "summary": "checkout's fast error-budget burn (about 42% failing) comes from failed CurrencyService/Convert calls. Those calls get 'connection refused' on 10.96.57.183:8080 because the currency service stopped at 16:09:36Z after SIGTERM and has produced no logs or spans since. Checkout returns 'failed to convert price to USD' from PlaceOrder. Checkout is a symptom; currency is the broken service. Why currency was terminated is not yet shown: the changes investigator did not check currency's rollout history or events. No flag or checkout deploy explains the failure."
+   },
+   "findings": 17,
+   "plan": {
+    "actions": [],
+    "alternatives": [
+     {
+      "action": "rollout_undo",
+      "why_not": "Currency has only revision 1 (15:25:43Z, original image 3.1.0-currency); there is no earlier revision and no release shortly before the outage."
+     },
+     {
+      "action": "restart_deployment",
+      "why_not": "The kill is attributed to a definition change, not a stuck or leaking process; a restart would not address why the spec changed and is not supported by the evidence."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "The problem is a missing listener on a single-replica service, not a capacity shortage."
+     }
+    ],
+    "no_action_reason": "The cause is an unexplained change to currency's pod definition at 16:09:36Z that is not a Deployment revision. A human should check currency's pod spec and live state, e.g. kubectl get pod/endpoints for currency and the change audit log for who edited the Deployment, pod or ConfigMap at that time, and then restore the intended spec.",
+    "summary": "No action proposed. Currency has only its original revision (15:25:43Z, no change-cause), so rollout_undo has no bad release to return from, and no restart or scale is justified. The 16:09:36Z kill reason 'Container currency definition changed' with a pause-image pull suggests an out-of-band pod spec change, which a human must investigate."
+   },
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": "2026-10-28 16:15:29.868964+00:00",
+   "created_at": "2026-10-28 16:12:18.016344+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "57130125-a249-45ce-ab7c-06b32ffb7f0e",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "ESCALATED",
+   "tenant_id": "lab-canary",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}
