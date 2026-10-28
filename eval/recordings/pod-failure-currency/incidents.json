@@ -1,0 +1,176 @@
+{
+ "annotations": {
+  "2a7aab52-5811-4c0a-8848-4f7d57b2020c": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 42.37% of requests"
+  }
+ },
+ "expected": {
+  "2a7aab52-5811-4c0a-8848-4f7d57b2020c": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_d70fd79c0d36fd3a",
+       "ev_504897a7850d8772"
+      ],
+      "statement": "Checkout's CurrencyService/Convert client spans fail with 'dial tcp 10.96.57.183:8080: connect: connection refused' (20 error spans in 30 min). PlaceOrder then fails with 'failed to convert price ... to USD'."
+     },
+     {
+      "evidence_ids": [
+       "ev_2698b80c3161c6d7",
+       "ev_0e16326dd08fd5d8"
+      ],
+      "statement": "Currency logged 99 successful conversions up to 16:09:34Z, then 'Received SIGTERM' at 16:09:36Z, with no lines after that in the 15- and 30-minute windows."
+     },
+     {
+      "evidence_ids": [
+       "ev_d1a71c29c4c5ea06",
+       "ev_06b60502952cdd6c",
+       "ev_08cf11d3d859d35e"
+      ],
+      "statement": "Currency's server spans for Convert show only STATUS_CODE_OK, with no errors. Its p95 latency stayed at about 1.9 ms for the hour."
+     },
+     {
+      "evidence_ids": [
+       "ev_2581297155493bf7"
+      ],
+      "statement": "Checkout's service error ratio rose from about 0.20 at 15:39Z to a peak of 0.60, dipped to 0 around 15:58-16:09Z, and was 0.53 at 16:12Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_2a8a36676c84bb5c",
+       "ev_93b5208937e29815",
+       "ev_e63cbbd3ba7d6e68"
+      ],
+      "statement": "Checkout's client Convert calls show a 0.39 error ratio. PaymentService/Charge shows 0 errors."
+     },
+     {
+      "evidence_ids": [
+       "ev_3aa3b5f8f2050a12",
+       "ev_0c6a737fa71d557b",
+       "ev_eeddadff52fac99f"
+      ],
+      "statement": "Checkout has a single Deployment revision (15:25:42Z, no change-cause). All 18 flagd flags are off. No Kubernetes warnings involve checkout or payment."
+     },
+     {
+      "evidence_ids": [
+       "ev_012ad40d073be615",
+       "ev_6852a7d7dc6aa5fc",
+       "ev_98d49d2159936ef8"
+      ],
+      "statement": "Payment and checkout have no error-level logs in the window."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check currency's Deployment rollout history and replica count, its pod list and events in otel-demo around 15:30-16:10Z, and whether any pod is terminating.",
+      "statement": "Currency's pod was evicted, scaled down, or replaced at about 16:09Z, which would explain the SIGTERM with no restart."
+     },
+     {
+      "how_to_verify": "Run kubectl get endpoints currency and get svc currency, and confirm 10.96.57.183 matches the ClusterIP. Compare with checkout's CURRENCY_ADDR configuration.",
+      "statement": "The Service endpoints for currency are empty or point to a stale pod IP, so checkout dials 10.96.57.183:8080 and is refused."
+     },
+     {
+      "how_to_verify": "Query currency's raw span counts and pod-level logs per minute from 15:30Z to 16:15Z, and check whether the 'conversion successful' lines continue before 16:09Z.",
+      "statement": "The metrics for currency's server spans may be missing spans after 16:09Z, or the 15:39Z onset may come from a different currency instance, which would explain the mismatch."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_d70fd79c0d36fd3a",
+       "ev_2a8a36676c84bb5c",
+       "ev_0c6a737fa71d557b",
+       "ev_3aa3b5f8f2050a12"
+      ],
+      "statement": "Checkout's failures are driven by the currency Convert path. Payment, flags and the checkout rollout are not the current cause."
+     },
+     {
+      "evidence_ids": [
+       "ev_2698b80c3161c6d7",
+       "ev_d70fd79c0d36fd3a",
+       "ev_d1a71c29c4c5ea06"
+      ],
+      "statement": "Currency is the most likely root cause, since it stopped after the SIGTERM at 16:09:36Z and checkout's conversions are refused. The earlier onset and the OK-only metrics mean this is not yet confirmed."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Currency stopped serving at about 16:09:36Z after a SIGTERM with no later log lines, so checkout's Convert calls are refused. The trigger (eviction, scale-down, rollout or crash) is unconfirmed, and the earlier onset and currency's OK-only server metrics are unexplained.",
+      "confidence": 0.55,
+      "evidence_ids": [
+       "ev_2698b80c3161c6d7",
+       "ev_0e16326dd08fd5d8",
+       "ev_d70fd79c0d36fd3a",
+       "ev_504897a7850d8772"
+      ],
+      "service": "currency"
+     },
+     {
+      "cause": "Checkout's path to currency (address, endpoints or connection handling) may be the fault. Connection refused to a fixed ClusterIP, plus the currency server metrics showing no errors, suggest a stale or wrong target on checkout's side rather than currency's processing.",
+      "confidence": 0.25,
+      "evidence_ids": [
+       "ev_d70fd79c0d36fd3a",
+       "ev_d1a71c29c4c5ea06",
+       "ev_08cf11d3d859d35e",
+       "ev_2a8a36676c84bb5c"
+      ],
+      "service": "checkout"
+     }
+    ],
+    "summary": "Checkout's errors come almost entirely from its calls to CurrencyService/Convert, which are refused with connection refused to 10.96.57.183:8080. Currency logged a SIGTERM at 16:09:36Z and nothing after it, which points to currency as the failing service. Payment, flags and checkout's rollout are not the cause. Two things still conflict: currency's own server spans show only OK at 1.9 ms p95 for the whole hour, and checkout's errors began around 15:39Z, before the SIGTERM. Currency's pod events and rollout history were not checked, so the trigger is unknown."
+   },
+   "findings": 17,
+   "plan": {
+    "actions": [],
+    "alternatives": [
+     {
+      "action": "rollout_undo",
+      "why_not": "Currency has only revision 1 (15:25:43Z, no change-cause) and checkout has a single revision, so there is no earlier release to return to."
+     },
+     {
+      "action": "restart_deployment",
+      "why_not": "Currency was already restarted at 16:09:36Z, and a restart would not fix a stale target on checkout's side. The cause is not confirmed."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "Currency runs one replica with no capacity warnings, and the failure is connection refused rather than overload."
+     }
+    ],
+    "no_action_reason": "Currency's events show a definition-change kill and restart at 16:09:36Z, not a bad release. The 15:39Z onset and OK-only currency metrics are unexplained, and checkout's target may be stale. A human should check currency's current pod and Service endpoints against 10.96.57.183:8080, find what changed in the currency container definition at 16:09Z, and decide whether to restart checkout.",
+    "summary": "No action proposed. Currency and checkout have no bad release, and the 16:09Z currency stop was a container definition change with a restart, not a crash or eviction. A human should verify currency's endpoints and checkout's target before acting."
+   },
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": "2026-10-28 16:15:32.505615+00:00",
+   "created_at": "2026-10-28 16:12:18.016820+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "2a7aab52-5811-4c0a-8848-4f7d57b2020c",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "ESCALATED",
+   "tenant_id": "lab",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}

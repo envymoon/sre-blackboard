@@ -1,0 +1,340 @@
+{
+ "annotations": {
+  "0b62b984-cf68-4b4d-82ba-900ef2c56ed6": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 25.33% of requests"
+  },
+  "f44894cc-8d5a-40f9-ad52-992ba75da4f6": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "payment is failing 25.9% of requests"
+  }
+ },
+ "expected": {
+  "0b62b984-cf68-4b4d-82ba-900ef2c56ed6": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_c6b468bda704697d"
+      ],
+      "statement": "Payment's Charge spans fail with 'Payment request failed. Invalid token. loyalty_level=gold' in 19 of 20 sampled checkout error traces."
+     },
+     {
+      "evidence_ids": [
+       "ev_3649274a5e77db0a",
+       "ev_58f68714561f8c7a"
+      ],
+      "statement": "Payment logs show 28 warn lines, all 'Invalid token' with loyalty_level=gold, from charge.js:48, and no error-level lines."
+     },
+     {
+      "evidence_ids": [
+       "ev_68b326c2b002bb80"
+      ],
+      "statement": "flag paymentFailure is ON at 0.5, and it is the only enabled flag among 18."
+     },
+     {
+      "evidence_ids": [
+       "ev_046dd8f779492076",
+       "ev_0b9651dc4f02f58f",
+       "ev_06b755b3b4b38337"
+      ],
+      "statement": "Payment's server error ratio is 0.35 to 0.43 on Charge, with p95 about 2 ms, so the failures are fast errors rather than slowness."
+     },
+     {
+      "evidence_ids": [
+       "ev_4e7648181be51e6a"
+      ],
+      "statement": "Checkout's errors are dominated by its PaymentService/Charge client calls. Its CartService/GetCart calls show zero errors."
+     },
+     {
+      "evidence_ids": [
+       "ev_66ff2e0de9d374dc",
+       "ev_497443017d547509"
+      ],
+      "statement": "Checkout's current revision 3 differs from revision 2 only in PAYMENT_ADDR (9999 to 8080). Revision timestamps are out of order."
+     },
+     {
+      "evidence_ids": [
+       "ev_215d443c307013f2",
+       "ev_0d168962d8683543",
+       "ev_ac4ca7790e6d646c"
+      ],
+      "statement": "Payment has one revision and no restarts, OOMKills or warnings. Checkout has no restarts or scheduling failures."
+     },
+     {
+      "evidence_ids": [
+       "ev_c6b468bda704697d",
+       "ev_6c838c445b0fc658"
+      ],
+      "statement": "Failures reach the edge as HTTP 422 on checkout requests."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check the flagd flag's change history for when it was set to 0.5. Then set it to off in a lab, and confirm payment Charge error ratio and checkout 422s fall.",
+      "statement": "Turning paymentFailure off in flagd will stop the gold 'Invalid token' errors and bring checkout's error ratio back to zero."
+     },
+     {
+      "how_to_verify": "Query payment's Charge span calls_total from 15:30 to 16:20 without filters, and compare with checkout's PaymentService/Charge client error counts for the same window.",
+      "statement": "Checkout's errors began around 15:44, but payment's server error series only appears around 16:14. Either payment's error spans were not recorded earlier, or checkout saw errors that payment did not record."
+     },
+     {
+      "how_to_verify": "Check the flag's authorship or change record in the flagd config, and check the incident timeline for a chaos or game-day entry.",
+      "statement": "The paymentFailure flag may be a deliberate lab fault injection rather than an accidental change."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_c6b468bda704697d",
+       "ev_68b326c2b002bb80",
+       "ev_3649274a5e77db0a"
+      ],
+      "statement": "Payment is the first failing hop. Its gold-tier-specific fast errors, relayed by checkout, match a 50% failure injection targeted at gold users."
+     },
+     {
+      "evidence_ids": [
+       "ev_66ff2e0de9d374dc",
+       "ev_497443017d547509"
+      ],
+      "statement": "The checkout PAYMENT_ADDR change is not the cause, since the live config is 8080 and payment's own errors show the failure."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Charge path rejects requests (fast errors, 'Invalid token' for gold loyalty) because the paymentFailure flagd flag is ON at 0.5. Checkout's failures are relayed from this.",
+      "confidence": 0.75,
+      "evidence_ids": [
+       "ev_68b326c2b002bb80",
+       "ev_c6b468bda704697d",
+       "ev_3649274a5e77db0a",
+       "ev_046dd8f779492076",
+       "ev_06b755b3b4b38337"
+      ],
+      "service": "payment"
+     },
+     {
+      "cause": "Not the root cause. Its errors come from the payment Charge client call. Its PAYMENT_ADDR revision change is not active, and its own logs and pods are healthy.",
+      "confidence": 0.1,
+      "evidence_ids": [
+       "ev_4e7648181be51e6a",
+       "ev_47ef08268d6075d2",
+       "ev_66ff2e0de9d374dc",
+       "ev_ac4ca7790e6d646c"
+      ],
+      "service": "checkout"
+     }
+    ],
+    "summary": "Checkout's ErrorBudgetBurn is a symptom. Payment's Charge spans fail fast with 'Payment request failed. Invalid token' for loyalty_level=gold users, and checkout relays this through PlaceOrder, so users see HTTP 422. The enabled flagd flag paymentFailure (50%) is the most likely trigger. Checkout's PAYMENT_ADDR change (port 9999) is not the live config and is a red herring. Checkout's own logs, restarts and resources are clean."
+   },
+   "findings": 18,
+   "plan": {
+    "actions": [],
+    "alternatives": [
+     {
+      "action": "rollout_undo",
+      "why_not": "Checkout's only revision change (PAYMENT_ADDR 9999 to 8080) is not the active cause, and payment has only one revision, so there is no bad release to roll back."
+     },
+     {
+      "action": "restart_deployment",
+      "why_not": "Payment and checkout show no restarts, OOMKills, or stuck processes. Errors are deterministic flag-driven rejections, so a restart would leave them in place."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "Failures are fast, deliberate 'Invalid token' rejections at p95 around 2 ms, not a capacity shortfall, so more replicas would not reduce the error ratio."
+     }
+    ],
+    "no_action_reason": "The cause is the paymentFailure feature flag in flagd, which none of the permitted actions can change. A human should disable it in flagd (or confirm it is a deliberate lab fault injection), then check that checkout's error ratio falls to zero and the timing gap between checkout's errors (around 15:44) and payment's error series (around 16:14) is explained.",
+    "summary": "The checkout burn is a symptom of payment's Charge path failing fast for gold-loyalty users because the paymentFailure flagd flag is ON at 50%. No rollout_undo, restart, or scale would clear a feature flag, and payment has a single revision with no restarts. A human should review and turn off paymentFailure in flagd (or confirm it is an intentional lab fault injection) and then watch checkout's error ratio return to zero."
+   },
+   "state": "ESCALATED"
+  },
+  "f44894cc-8d5a-40f9-ad52-992ba75da4f6": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_88aa9eb6032c3b10",
+       "ev_2fd8e58cc4421e53"
+      ],
+      "statement": "payment's server error ratio rose from 0.056 at 16:14:07 to 0.314 at 16:16:22. Its Charge errors began about 16:13:50."
+     },
+     {
+      "evidence_ids": [
+       "ev_b9574a07776a24d1",
+       "ev_631c0beaf121c789"
+      ],
+      "statement": "payment's own Charge path raises 'Payment request failed. Invalid token' for gold-tier users (charge.js:48), logged at warn level. There are 26 such lines and no error-level lines."
+     },
+     {
+      "evidence_ids": [
+       "ev_94b3a2b28934ce0d",
+       "ev_954b23e6ab396f5d",
+       "ev_bae823743661a5e1"
+      ],
+      "statement": "payment's client spans show no real dependency failure, and its p95 Charge latency stayed around 2-8 ms."
+     },
+     {
+      "evidence_ids": [
+       "ev_be979366a53dcbe2",
+       "ev_a1657aed858c8023"
+      ],
+      "statement": "flagd flag paymentFailure is ENABLED at variant 50%. It is the only non-default flag on."
+     },
+     {
+      "evidence_ids": [
+       "ev_63075684cf091398",
+       "ev_302ddd2429f1414d",
+       "ev_780facfba8a69cf4"
+      ],
+      "statement": "payment has a single Deployment revision (created 15:30:15Z). There were no payment warning events, restarts, or OOMs in the window."
+     },
+     {
+      "evidence_ids": [
+       "ev_acce8b5ddd282eaf",
+       "ev_8e16e04b2ee34a04"
+      ],
+      "statement": "checkout's current revision 3 reverted PAYMENT_ADDR to payment:8080. Its earlier port 9999 change is no longer active."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Get the flag's change time from flagd history or config audit. Compare the payment error ratio by user loyalty level and check whether it matches the flag's 50% injection.",
+      "statement": "The paymentFailure flag is the trigger. It was switched on near 16:13, and its effect is limited to gold-tier requests."
+     },
+     {
+      "how_to_verify": "Read payment's charge.js token validation and its recent code or image diff. Check whether gold-tier requests fail with the flag OFF.",
+      "statement": "A payment-side validation rule for gold-tier tokens, unrelated to the flag, is causing the rejections."
+     },
+     {
+      "how_to_verify": "Check the error ratios of cart and currency server spans from 15:40 onward, and their logs.",
+      "statement": "checkout's early GetCart and Currency errors come from cart or currency problems, not from checkout itself."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_b461b6df5ad59354",
+       "ev_79f0a9bcb9d96182",
+       "ev_9103aff1b364391a"
+      ],
+      "statement": "payment is the origin of the payment alert. checkout and frontend propagate payment's 'Invalid token' errors."
+     },
+     {
+      "evidence_ids": [
+       "ev_168bca3e7ba1a5b4",
+       "ev_90c9e4b7d022d4c3"
+      ],
+      "statement": "checkout's early errors (GetCart, Currency) are a separate problem from payment's and are not explained by the payment flag."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "payment's Charge path rejects gold-tier requests with 'Invalid token'. The most likely trigger is the paymentFailure flagd flag (ON at 50%) or a payment-side validation rule. There was no payment rollout, so the flag is the leading trigger, but its effect is not confirmed.",
+      "confidence": 0.6,
+      "evidence_ids": [
+       "ev_be979366a53dcbe2",
+       "ev_a1657aed858c8023",
+       "ev_b9574a07776a24d1",
+       "ev_79f0a9bcb9d96182",
+       "ev_b461b6df5ad59354",
+       "ev_88aa9eb6032c3b10",
+       "ev_2fd8e58cc4421e53",
+       "ev_63075684cf091398"
+      ],
+      "service": "payment"
+     },
+     {
+      "cause": "checkout has its own failures that began about 15:46, before payment's errors. Its GetCart and Currency client errors are not explained by the payment flag. Its 15:42 port change to payment:9999 may explain some early Charge errors, but it was reverted and does not explain GetCart or Currency errors.",
+      "confidence": 0.3,
+      "evidence_ids": [
+       "ev_168bca3e7ba1a5b4",
+       "ev_90c9e4b7d022d4c3",
+       "ev_acce8b5ddd282eaf",
+       "ev_8e16e04b2ee34a04"
+      ],
+      "service": "checkout"
+     }
+    ],
+    "summary": "payment is failing about 26% of server requests because its own Charge logic raises 'Payment request failed. Invalid token' for gold-tier users. Payment's dependencies look healthy from its side, and it has had no rollout, restart, or warning events. checkout and frontend show the same error only because they propagate it. The flagd flag paymentFailure is ON at 50% and is the leading candidate trigger, but its link to the gold-tier keying of the message is not yet confirmed. Separately, checkout had its own errors from about 15:46 (GetCart, Currency, Charge), which predate payment's errors."
+   },
+   "findings": 17,
+   "plan": {
+    "actions": [],
+    "alternatives": [
+     {
+      "action": "rollout_undo",
+      "why_not": "payment has only revision 1 (15:30:15Z), so there is no earlier revision to return to, and the deploy_diff check returned not_found."
+     },
+     {
+      "action": "restart_deployment",
+      "why_not": "No stuck or leaking process was found: no restarts, OOMs, or warning events. The 'Invalid token' rejections are logic-level warn logs, so a restart would not change them."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "payment's client spans and latency are healthy (p95 about 2-8 ms) and no capacity shortfall was seen. Extra replicas would still reject the same gold-tier requests."
+     }
+    ],
+    "no_action_reason": null,
+    "summary": "No safe automated fix is supported. payment has a single revision with no warning events, so there is no bad release to roll back, and restarting or scaling would not stop gold-tier rejections. A human should check whether the paymentFailure flagd flag (ON at 50%) is driving the payment errors and, if so, switch it off, then confirm the payment error ratio falls. checkout's earlier GetCart and Currency errors need a separate investigation."
+   },
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": "2026-10-28 16:19:06.991586+00:00",
+   "created_at": "2026-10-28 16:16:03.022381+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "0b62b984-cf68-4b4d-82ba-900ef2c56ed6",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "ESCALATED",
+   "tenant_id": "lab",
+   "title": "ErrorBudgetBurn"
+  },
+  {
+   "closed_at": "2026-10-28 16:18:18.607017+00:00",
+   "created_at": "2026-10-28 16:16:03.066200+00:00",
+   "environment": "lab",
+   "fingerprint": "39ef2128c2727979c8123e1c6df98a52",
+   "id": "f44894cc-8d5a-40f9-ad52-992ba75da4f6",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "payment",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "payment",
+   "state": "ESCALATED",
+   "tenant_id": "lab",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}

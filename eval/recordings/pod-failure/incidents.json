@@ -1,0 +1,584 @@
+{
+ "annotations": {
+  "c9ae4ce2-c68d-49a0-a170-4b65c566c98a": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "frontend-proxy is failing 19.51% of requests"
+  },
+  "cf2e3c7a-ef34-461c-ae1a-6a9441f2f08f": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 33.4% of requests"
+  },
+  "dc1bfe1f-1da5-445e-8678-ce12f0e79e76": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "frontend is failing 19.05% of requests"
+  }
+ },
+ "expected": {
+  "c9ae4ce2-c68d-49a0-a170-4b65c566c98a": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_a8c3d1eaff1c39b4"
+      ],
+      "statement": "Cart's last log line is 'Application is shutting down...' at 15:53:56Z, followed by feature provider shutdown. No later cart logs appear in the 15-minute window."
+     },
+     {
+      "evidence_ids": [
+       "ev_8f20c72a94746984"
+      ],
+      "statement": "Frontend logged 159 'API request failed' errors on /api/cart from 15:58:00 to 16:00:23Z, all with 'connect ECONNREFUSED 10.96.223.207:8080'."
+     },
+     {
+      "evidence_ids": [
+       "ev_8f20c72a94746984"
+      ],
+      "statement": "Checkout failed 41 orders with 'failed to get user cart ... connection refused' on the same cart address."
+     },
+     {
+      "evidence_ids": [
+       "ev_58f7ede060c74372",
+       "ev_49fdba56dc3c4f64",
+       "ev_c0e2913c9647966c"
+      ],
+      "statement": "Frontend-proxy returns about 27 HTTP 500 spans. Its error traces run through frontend's CartService AddItem and GetCart calls, with status 14 (connection refused). Frontend-proxy and checkout have no error logs of their own."
+     },
+     {
+      "evidence_ids": [
+       "ev_bf9325a07c9f9831",
+       "ev_2551cdce97bbc7b8"
+      ],
+      "statement": "Checkout's error ratio rose from about 0.20 at 15:44 to 1.0 by 16:01. Its p95 latency fell from about 48ms to about 1.9ms, which indicates fast failures, not slow dependencies."
+     },
+     {
+      "evidence_ids": [
+       "ev_d80d2df98c7564a0",
+       "ev_e8a6ae9fbc88518d"
+      ],
+      "statement": "Checkout's client-span errors on CartService/GetCart started at 15:55. Payment Charge errors occurred only from 15:44 to 15:50 and then stopped."
+     },
+     {
+      "evidence_ids": [
+       "ev_bb9f0d80f42ee7b9",
+       "ev_a547745bd96a76f6",
+       "ev_ced331aa0ea83d1c"
+      ],
+      "statement": "Cart's server-side traffic dropped to near zero after about 15:53, and cart shows no server-side error series."
+     },
+     {
+      "evidence_ids": [
+       "ev_bf9325a07c9f9831",
+       "ev_e3905e4bd19fb31a"
+      ],
+      "statement": "Flagd error ratio is at most 0.0011, with steady p95 latency. All 18 flags are off and no flag changed."
+     },
+     {
+      "evidence_ids": [
+       "ev_66dbbf6ee1375a0e",
+       "ev_f35f9e7a6258c266",
+       "ev_1c56735fcbd39d9a",
+       "ev_5393ce7aa3218a92",
+       "ev_f72002303f45fe19"
+      ],
+      "statement": "frontend-proxy has one unchanged revision (since 15:30:15Z). Frontend and payment also have unchanged revisions. Namespace warning events are only readiness failures from about 15:30 on alertmanager, otel-collector-agent and loki. There are no cart warning events and no OOM kills."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check the cart Deployment spec replicas and its rollout history for changes near 15:53. Check cart pod status and events, and the cart Service endpoints. Check for scale or delete actions in the audit log.",
+      "statement": "The cart Deployment was scaled to zero, or its pod was deleted or evicted, at about 15:53 (for example by a manual action, a drain or an HPA change), so no endpoint serves 10.96.223.207:8080."
+     },
+     {
+      "how_to_verify": "Check cart pod restart counts, last termination reason and exit code, and the container logs from before 15:53:56. Check whether the cart pod exists in Pending or CrashLoopBackOff.",
+      "statement": "Cart's process exited on its own (a crash or graceful-shutdown trigger such as SIGTERM) and was not restarted, perhaps because of a crash loop or a restart-policy problem."
+     },
+     {
+      "how_to_verify": "Check the node the cart pod ran on, node conditions and cordon or drain events around 15:53, and any evictions in the namespace.",
+      "statement": "Cart's shutdown was caused by a node drain or eviction. Other pods on the same node may also be affected."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_a8c3d1eaff1c39b4",
+       "ev_8f20c72a94746984",
+       "ev_d80d2df98c7564a0",
+       "ev_bf9325a07c9f9831"
+      ],
+      "statement": "Cart is the origin of the outage. Frontend-proxy, frontend and checkout errors are propagated from the refused connection to cart, and the timing fits: cart stopped at 15:53:56 and checkout's errors began around 15:55-15:56."
+     },
+     {
+      "evidence_ids": [
+       "ev_e8a6ae9fbc88518d",
+       "ev_f6576f184a5946ab",
+       "ev_d80d2df98c7564a0"
+      ],
+      "statement": "The checkout-to-payment misconfiguration is resolved and is not what is driving the current 15:56-16:04 errors. Checkout's error rise after 15:55 matches cart's refused connections, not payment."
+     },
+     {
+      "evidence_ids": [
+       "ev_8f20c72a94746984",
+       "ev_bb9f0d80f42ee7b9"
+      ],
+      "statement": "The metrics investigator's reading that cart's silence is 'specific to checkout's view' is wrong. The ECONNREFUSED errors show cart is not listening, and cart's silence is the cause, not a separate question."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "The cart service stopped listening at about 15:53:56Z, after logging 'Application is shutting down' and the feature provider shutting down. Nothing accepts connections on 10.96.223.207:8080, so every CartService call from frontend and checkout is refused. The cause of the shutdown (scale-down, pod deletion, crash, or a drain) is not yet known.",
+      "confidence": 0.8,
+      "evidence_ids": [
+       "ev_a8c3d1eaff1c39b4",
+       "ev_8f20c72a94746984",
+       "ev_58f7ede060c74372",
+       "ev_bb9f0d80f42ee7b9"
+      ],
+      "service": "cart"
+     },
+     {
+      "cause": "Checkout's PAYMENT_ADDR was set to payment:9999 (revision 2, 15:42:52Z) and reverted at 15:47. This caused payment errors from 15:44 to 15:50. It is not the current outage, but it is an earlier, separate contributor to checkout's error rate.",
+      "confidence": 0.15,
+      "evidence_ids": [
+       "ev_f6576f184a5946ab",
+       "ev_7fe1582b8a1c47c6",
+       "ev_e8a6ae9fbc88518d"
+      ],
+      "service": "checkout"
+     }
+    ],
+    "summary": "The alerts are downstream symptoms. The cart service stopped serving at about 15:53:56Z (last log: 'Application is shutting down'). From then on, frontend and checkout get 'connection refused' on cart at 10.96.223.207:8080. Checkout fails orders fast, which drives its error ratio to 1.0, and that error is passed up through frontend to frontend-proxy (about 19.5% of requests). The earlier 15:42-15:47 payment-port misconfiguration in checkout was reverted and does not explain the current outage. Cart's own deployment state (replicas, pod status, events) has not been checked yet."
+   },
+   "findings": 17,
+   "plan": {
+    "actions": [
+     {
+      "action": "restart_deployment",
+      "deployment": "cart",
+      "evidence_ids": [
+       "ev_e6025724feb52b63",
+       "ev_41f9c389d38913a6"
+      ],
+      "reason": "Cart's only revision (15:30:15Z) is unchanged, so this is not a bad release. At 15:53:56Z the cart pod was killed ('Container cart definition changed') and its replacement started gcr.io/google-containers/pause instead of the cart image, so nothing serves 10.96.223.207:8080. A rolling restart recreates the pod from the Deployment template (ghcr.io/open-telemetry/demo:3.1.0-cart)."
+     }
+    ],
+    "alternatives": [
+     {
+      "action": "rollout_undo",
+      "why_not": "Cart has only one revision, so there is no earlier revision to return to, and the template is not the problem."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "Cart is not short of capacity. The fault is that the running container is not the cart app, not the replica count."
+     },
+     {
+      "action": "none",
+      "why_not": "Doing nothing leaves frontend-proxy, frontend and checkout failing on cart, so the outage continues."
+     }
+    ],
+    "no_action_reason": null,
+    "summary": "Restart the cart Deployment so its pod is rebuilt from the correct cart image, which should restore connections on 10.96.223.207:8080 and bring frontend and checkout error ratios back down. After the restart, confirm that cart serves traffic and that the pod runs the cart image, and have a human find out why the pod was redefined to the pause image at 15:53:56Z."
+   },
+   "state": "AWAITING_APPROVAL"
+  },
+  "cf2e3c7a-ef34-461c-ae1a-6a9441f2f08f": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_f5d2ab46a7786efa",
+       "ev_27d1d30cd4238292"
+      ],
+      "statement": "Checkout rev 2 (15:42:52Z) changed PAYMENT_ADDR to payment:9999; rev 3 (current) uses payment:8080."
+     },
+     {
+      "evidence_ids": [
+       "ev_521226aa38abab70"
+      ],
+      "statement": "Checkout rev 2 pods were replaced by rev 3 between 15:47:00Z and 15:47:01Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_c4ba79bba997d5f8",
+       "ev_245b88dac32734b7"
+      ],
+      "statement": "Checkout's GetCart error spans show connection refused dialing cart 10.96.223.207:8080. PlaceOrder fails with 'failed to get user cart during checkout'."
+     },
+     {
+      "evidence_ids": [
+       "ev_65e5adc1b1177874",
+       "ev_675d7f43e3f9ea38",
+       "ev_5ed2b0829243c4a7"
+      ],
+      "statement": "Cart logged 'Application is shutting down' at 15:53:56Z, with no later log lines and no error logs or error traces."
+     },
+     {
+      "evidence_ids": [
+       "ev_8bd31df85a6f478b",
+       "ev_daa7172c9fcde109"
+      ],
+      "statement": "Payment client errors peaked at about 0.204 near 15:47 and were 0 by about 15:53."
+     },
+     {
+      "evidence_ids": [
+       "ev_506d5383f65ec009",
+       "ev_f1c8647a0029db09",
+       "ev_c8b5ae847f547609",
+       "ev_2d87b3f613db33c7",
+       "ev_96e06e6eadb46ab2"
+      ],
+      "statement": "Checkout's GetCart client error rate was about 0.188 at 15:56:54Z and still rising. Checkout's 5m error ratio was 0.4965 at 15:56:54Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_ff2334ff6016998a",
+       "ev_77729ca0e4587838"
+      ],
+      "statement": "All 18 feature flags are off. Cart has only its rev 1 (15:30:15Z), with no rollout change."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check cart's live pods, Endpoints for the cart service, and cart server span timestamps after 15:53Z by pod.",
+      "statement": "Cart's GetCart UNSET-status server spans continuing at about 1.1 to 1.5 per second conflict with logs showing no cart activity after 15:53:56Z. Either other cart replicas are still serving, or the metric is stale."
+     },
+     {
+      "how_to_verify": "Query cart's Deployment replicas and events around 15:53Z, and check the cart pod's last state and exit code.",
+      "statement": "Cart was stopped by a scale-down, eviction, or kill, not a crash, and k8s events may not show it because the window was limited."
+     },
+     {
+      "how_to_verify": "Check valkey-cart pod status, logs, and cart's valkey connection errors before 15:53Z.",
+      "statement": "valkey-cart may be unhealthy and caused cart to shut down. No valkey-cart server spans or logs were available."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_c4ba79bba997d5f8",
+       "ev_65e5adc1b1177874",
+       "ev_8bd31df85a6f478b"
+      ],
+      "statement": "The ongoing checkout errors come from cart being unreachable, not from payment. Payment recovered after the 15:47 revert."
+     },
+     {
+      "evidence_ids": [
+       "ev_903a7839f47c92f5",
+       "ev_5ed2b0829243c4a7"
+      ],
+      "statement": "The cart-side fault is a stop or unreachable state, not request failures, since cart has no error traces before shutdown."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Cart stopped serving around 15:53:56Z (application shutdown, no rollout change). Checkout's GetCart connections to 10.96.223.207:8080 are refused, so checkout's cart calls fail and PlaceOrder fails with 'failed to get user cart'. Cause of the stop is unknown (scale-down, eviction, crash, or external kill).",
+      "confidence": 0.65,
+      "evidence_ids": [
+       "ev_c4ba79bba997d5f8",
+       "ev_245b88dac32734b7",
+       "ev_65e5adc1b1177874",
+       "ev_675d7f43e3f9ea38",
+       "ev_5ed2b0829243c4a7",
+       "ev_77729ca0e4587838"
+      ],
+      "service": "cart"
+     },
+     {
+      "cause": "Revision 2 set PAYMENT_ADDR to payment:9999 (wrong port), causing payment charge failures from 15:42 to about 15:47. This is already reverted in revision 3 and is not the ongoing cause.",
+      "confidence": 0.25,
+      "evidence_ids": [
+       "ev_f5d2ab46a7786efa",
+       "ev_27d1d30cd4238292",
+       "ev_521226aa38abab70",
+       "ev_8bd31df85a6f478b",
+       "ev_daa7172c9fcde109"
+      ],
+      "service": "checkout"
+     }
+    ],
+    "summary": "Checkout's availability burn is ongoing and driven by cart. Checkout's GetCart and PlaceOrder calls are refused by cart at 10.96.223.207:8080, and cart logged a shutdown at 15:53:56Z with no rollout change. A separate payment port misconfiguration (checkout rev 2, 15:42 to 15:47) caused an earlier spike and is already reverted and recovered. Why cart stopped is not established. Metrics conflict slightly: cart's UNSET GetCart spans still show activity, so verify cart's live pods and endpoints."
+   },
+   "findings": 19,
+   "plan": {
+    "actions": [
+     {
+      "action": "restart_deployment",
+      "deployment": "cart",
+      "evidence_ids": [
+       "ev_92896a68b786de95",
+       "ev_77729ca0e4587838",
+       "ev_65e5adc1b1177874"
+      ],
+      "reason": "Cart's container was killed and restarted at 15:53:56Z with no rollout change, and checkout's GetCart to cart is refused. A rolling restart restores cart to serving. The root cause of the kill is still unknown."
+     }
+    ],
+    "alternatives": [
+     {
+      "action": "rollout_undo",
+      "why_not": "Cart has only revision 1 and no rollout change, so there is no bad release to undo."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "Cart is not short of capacity; its single pod is down or unreachable, so adding replicas does not address the stop."
+     },
+     {
+      "action": "none",
+      "why_not": "Leaving cart down keeps checkout failing about a third of requests, so a restart is justified as a low-risk step."
+     }
+    ],
+    "no_action_reason": null,
+    "summary": "Restart the cart Deployment to bring its stopped container back to serving, which should clear checkout's refused GetCart calls and the ongoing availability burn. Confirm checkout's error ratio falls afterwards; the cause of the kill at 15:53:56Z remains open."
+   },
+   "state": "AWAITING_APPROVAL"
+  },
+  "dc1bfe1f-1da5-445e-8678-ce12f0e79e76": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_f0a81f660b5e8a35"
+      ],
+      "statement": "Frontend error logs are all cart connection failures (ECONNREFUSED 10.96.223.207:8080, 167 entries on /api/cart, plus 33 checkout 'cart failure' entries), running from 15:54:47 to about 15:58."
+     },
+     {
+      "evidence_ids": [
+       "ev_7e3cab4f9fe23683",
+       "ev_53ff05f711db6eb0"
+      ],
+      "statement": "Checkout's failing spans are cart calls (GetCart connection refused, PlaceOrder 'failed to get user cart'). Checkout logs show no error-level lines and no failing payment or other dependency spans."
+     },
+     {
+      "evidence_ids": [
+       "ev_e9338e48422164ee",
+       "ev_3b8fd7e011d5128f",
+       "ev_712c38df0fbe545e",
+       "ev_dce30aa4ad5c35ba"
+      ],
+      "statement": "Cart's last log line is 'Application is shutting down...' at 15:53:56. No later cart logs, errors, or error spans appear in the 30-minute window."
+     },
+     {
+      "evidence_ids": [
+       "ev_8a1b34300452fb2f"
+      ],
+      "statement": "Checkout's 1m error ratio jumped from 0 to 0.88 at 15:53:59 and stayed at 1.0 from 15:55 to 15:57. Frontend's rose at the same minute, to about 0.26-0.29."
+     },
+     {
+      "evidence_ids": [
+       "ev_577ffff25bf9f5e3",
+       "ev_08158b82fcb8dd31",
+       "ev_23b55affd0daba96"
+      ],
+      "statement": "Checkout's and frontend's client-span errors toward cart began at 15:54:59."
+     },
+     {
+      "evidence_ids": [
+       "ev_45319616b2a97b1f",
+       "ev_7d65d515c41de59b",
+       "ev_bf2bf7555c828c32",
+       "ev_a98f7a7637395811"
+      ],
+      "statement": "Cart's server spans show no STATUS_CODE_ERROR series and no error ratio data in the window."
+     },
+     {
+      "evidence_ids": [
+       "ev_619b3819808905f0",
+       "ev_2b989af313f72e73",
+       "ev_c7849101706195f5",
+       "ev_577ffff25bf9f5e3"
+      ],
+      "statement": "Checkout's PAYMENT_ADDR was changed to payment:9999 at 15:42:52 and reverted to payment:8080 at about 15:47. Checkout's payment Charge errors stopped by about 15:48."
+     },
+     {
+      "evidence_ids": [
+       "ev_e4ace5a4d0c62b10",
+       "ev_233340879f8032fd",
+       "ev_15f368a37a904b50",
+       "ev_632d68aeda191cf7",
+       "ev_dc0d0027a8bc317f"
+      ],
+      "statement": "Frontend, frontend-proxy, and payment each have a single revision with no change in the window. All 18 flagd flags are off. No cluster warnings exist for checkout, payment, or frontend."
+     },
+     {
+      "evidence_ids": [
+       "ev_51e5732250d62cbe",
+       "ev_1ff767002105ec08"
+      ],
+      "statement": "frontend-proxy POST errors started at 15:43:45 and are still rising at 15:58. This matches the earlier payment episode but is not explained."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check cart's Deployment replicas and events, the HPA, and pod status and restarts around 15:53:56 in otel-demo.",
+      "statement": "Cart's pods were scaled down or terminated at 15:53:56 (for example by an HPA, a manual scale, or a node drain) and not recreated."
+     },
+     {
+      "how_to_verify": "Check cart's last container termination reason and exit code, and node events for OOMKilled or eviction.",
+      "statement": "Cart crashed or was OOM-killed, and the graceful-shutdown log line was a side effect of the crash."
+     },
+     {
+      "how_to_verify": "Check frontend-proxy's upstream response flags and error logs for the POST route, separate from the cart path.",
+      "statement": "frontend-proxy's rising POST errors since 15:43 are a separate fault, not only a symptom of the payment episode."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_f0a81f660b5e8a35",
+       "ev_7e3cab4f9fe23683",
+       "ev_8a1b34300452fb2f",
+       "ev_e9338e48422164ee"
+      ],
+      "statement": "Cart is the origin of the 15:54 incident. Frontend and checkout are victims, and the coordinator's checkout-as-source hypothesis is not supported: checkout's errors are cart errors, not its own or its dependencies'."
+     },
+     {
+      "evidence_ids": [
+       "ev_619b3819808905f0",
+       "ev_c7849101706195f5",
+       "ev_577ffff25bf9f5e3"
+      ],
+      "statement": "The 15:42 checkout port change is not the cause of the current errors. It was reverted before the 15:54 failures, and its own errors ended by 15:48."
+     },
+     {
+      "evidence_ids": [
+       "ev_e4ace5a4d0c62b10",
+       "ev_233340879f8032fd",
+       "ev_15f368a37a904b50"
+      ],
+      "statement": "No recent rollout or flag change explains the incident. Frontend, frontend-proxy, payment, and all flags are unchanged in the window, and cart's rollout was not checked."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Cart stopped at 15:53:56 (graceful shutdown, no error logs) and was not seen restarting, so callers get connection refused on port 8080 from 15:54:47. The reason for the stop is unknown: scale-down, pod termination, or a crash that left no logs.",
+      "confidence": 0.6,
+      "evidence_ids": [
+       "ev_e9338e48422164ee",
+       "ev_3b8fd7e011d5128f",
+       "ev_712c38df0fbe545e",
+       "ev_dce30aa4ad5c35ba",
+       "ev_f0a81f660b5e8a35",
+       "ev_577ffff25bf9f5e3",
+       "ev_08158b82fcb8dd31",
+       "ev_23b55affd0daba96"
+      ],
+      "service": "cart"
+     },
+     {
+      "cause": "Network or service path to cart (mesh, DNS, or endpoints) fails while cart's pod keeps running. Cart's own server spans show no errors, which fits either case. Not verified.",
+      "confidence": 0.2,
+      "evidence_ids": [
+       "ev_45319616b2a97b1f",
+       "ev_7d65d515c41de59b",
+       "ev_bf2bf7555c828c32",
+       "ev_a98f7a7637395811"
+      ],
+      "service": "cart"
+     }
+    ],
+    "summary": "Frontend's ErrorBudgetBurn and checkout's are downstream symptoms. Both began at about 15:54 with 'connection refused' to cart (10.96.223.207:8080). Cart logged a graceful shutdown at 15:53:56 and no restart was seen. The 15:42 checkout PAYMENT_ADDR change was reverted at 15:47 and does not explain the 15:54 errors. Cart's cause is unconfirmed: check cart pod status, restarts, and Deployment scale or events around 15:53:56."
+   },
+   "findings": 19,
+   "plan": {
+    "actions": [],
+    "alternatives": [
+     {
+      "action": "rollout_undo",
+      "why_not": "Cart has a single revision (15:30:15) with no change in the window, so there is no earlier revision to return to and no release to blame."
+     },
+     {
+      "action": "restart_deployment",
+      "why_not": "The events show the container was already recreated at 15:53:56, and it is not shown to be stuck. A restart could help if the new container is not listening, but the cause is unknown, so it is not supported by the evidence yet."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "No evidence shows cart short of capacity. The replica count was 1 with no scale event, and a scale-up would not fix a container that is not accepting connections on 8080."
+     }
+    ],
+    "no_action_reason": "Cart is the origin, but the events show no release or capacity cause, only a container kill and restart at 15:53:56. A human should check the current cart pod's status, restart count, and last termination reason (kubectl describe pod), confirm whether port 8080 is listening in the new container, and check whether anything removed or rescheduled the pod at 15:53:56 (HPA, drain, or manual action).",
+    "summary": "No action proposed. Cart's only revision dates from 15:30 and is unchanged, so there is no bad release to undo. Cart's pod container was killed and recreated at 15:53:56, which matches the shutdown, but the reason and whether the new container is listening are not established."
+   },
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": null,
+   "created_at": "2026-10-28 15:56:03.018303+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "cf2e3c7a-ef34-461c-ae1a-6a9441f2f08f",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "AWAITING_APPROVAL",
+   "tenant_id": "lab",
+   "title": "ErrorBudgetBurn"
+  },
+  {
+   "closed_at": "2026-10-28 16:01:52.587082+00:00",
+   "created_at": "2026-10-28 15:57:48.019398+00:00",
+   "environment": "lab",
+   "fingerprint": "287ec346ba101d7d6273a6ca0c4ccd9b",
+   "id": "dc1bfe1f-1da5-445e-8678-ce12f0e79e76",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "frontend",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "frontend",
+   "state": "ESCALATED",
+   "tenant_id": "lab",
+   "title": "ErrorBudgetBurn"
+  },
+  {
+   "closed_at": null,
+   "created_at": "2026-10-28 15:58:03.035329+00:00",
+   "environment": "lab",
+   "fingerprint": "d3cd3486fc8a41699ced8598e4c9547f",
+   "id": "c9ae4ce2-c68d-49a0-a170-4b65c566c98a",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "frontend-proxy",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "frontend-proxy",
+   "state": "AWAITING_APPROVAL",
+   "tenant_id": "lab",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}

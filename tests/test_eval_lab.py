@@ -265,3 +265,29 @@ def test_no_scenario_starts_once_the_run_has_used_its_token_budget(
     assert lab.injected == ["payment-failure"]
     assert any("2.0M tokens so far of 1.5M" in x for x in lines)
     assert any("stopping: the token budget is spent" in x and "bad-release" in x for x in lines)
+
+
+def test_an_imported_run_replaces_the_recordings_and_a_rerun_variant_is_added_beside_them(tmp_path: Path) -> None:
+    from scripts.lab.__main__ import main
+
+    def run(run_id: str, variants: tuple[str, ...]) -> Path:
+        src = tmp_path / run_id
+        src.mkdir()
+        (src / f"run-{run_id}.json").write_text("{}")
+        for v in ("", *variants):
+            d = src / "agent" / "pod-failure" / v
+            d.mkdir(parents=True, exist_ok=True)
+            for f in ("incidents.json", "llm.jsonl.gz", "tools.jsonl.gz"):
+                (d / f).write_text(run_id)
+        return src
+
+    repo = tmp_path / "repo"
+    full, rerun = run("1", ("single", "canary")), run("2", ("canary",))
+    assert main(["eval-import", str(full), "--run", "1", "--repo", str(repo), "--baseline", "--variants", "single"]) == 0
+    assert main(["eval-import", str(rerun), "--run", "2", "--repo", str(repo), "--add", "--variants", "canary"]) == 0
+    rec = repo / "eval" / "recordings" / "pod-failure"
+    assert (rec / "incidents.json").read_text() == "1"  # the default the canary is gated against
+    assert (rec / "single" / "incidents.json").read_text() == "1"
+    assert (rec / "canary" / "incidents.json").read_text() == "2"
+    assert json.loads((repo / "eval" / "baseline.json").read_text())["results"] == ["eval/results/run-1.json"]
+    assert sorted(p.name for p in (repo / "eval" / "results").iterdir()) == ["run-1.json", "run-2.json"]

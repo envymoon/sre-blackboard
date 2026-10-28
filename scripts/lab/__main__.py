@@ -308,7 +308,9 @@ def cmd_eval_import(args: argparse.Namespace) -> int:
 
     The observations go to eval/results/run-<id>.json; with --baseline the run is added to
     eval/baseline.json. The recordings of the default variant, and of the variants named
-    with --variants, replace eval/recordings (what CI replays on every pull request).
+    with --variants, replace eval/recordings (what CI replays on every pull request). With
+    --add only the --variants recordings are copied, beside the ones already there: a rerun
+    of one variant (a fixed canary) joins the run whose default it is gated against.
     """
     import shutil
 
@@ -328,17 +330,20 @@ def cmd_eval_import(args: argparse.Namespace) -> int:
             doc["results"].append(entry)
         baseline.write_text(json.dumps(doc, indent=2) + "\n")
         print(f"baseline: {', '.join(doc['results'])}")
-    if recordings.exists():
+    if recordings.exists() and not args.add:
         shutil.rmtree(recordings)
     keep = set(args.variants)
     for scenario in sorted(p for p in (src / "agent").iterdir() if p.is_dir() and p.name != "cases"):
-        if (scenario / "incidents.json").exists():
+        if (scenario / "incidents.json").exists() and not args.add:
             out = recordings / scenario.name
             out.mkdir(parents=True)
             for f in ("incidents.json", "llm.jsonl.gz", "tools.jsonl.gz"):
                 shutil.copyfile(scenario / f, out / f)
         for variant in sorted(p for p in scenario.iterdir() if p.is_dir() and p.name in keep):
-            shutil.copytree(variant, recordings / scenario.name / variant.name)
+            out = recordings / scenario.name / variant.name
+            if out.exists():
+                shutil.rmtree(out)
+            shutil.copytree(variant, out)
     size = sum(f.stat().st_size for f in recordings.rglob("*") if f.is_file()) if recordings.exists() else 0
     print(f"recordings: {recordings} ({size / 1e6:.1f} MB)")
     return 0
@@ -423,6 +428,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--repo", default=".")
     p.add_argument("--baseline", action="store_true", help="add the run to eval/baseline.json")
     p.add_argument("--variants", nargs="*", default=[], help="also keep these variants' recordings")
+    p.add_argument("--add", action="store_true", help="add the --variants recordings to eval/recordings, keep the rest")
     p.set_defaults(func=cmd_eval_import)
 
     args = parser.parse_args(argv)

@@ -92,7 +92,7 @@ def test_the_canary_changes_only_the_synthesizer_prompt() -> None:
     changed = {r.agent for r in canary.requests if versions[r.agent] != r.prompt_version}
     assert changed == {"synthesizer"}
     system = next(r.system for r in canary.requests if r.agent == "synthesizer")
-    assert "Rank the service the alert fired on first" in system
+    assert "The first root cause candidate is the service the alert fired on" in system
     assert system != prompts.synthesizer().text
 
 

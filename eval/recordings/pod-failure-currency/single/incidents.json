@@ -1,0 +1,153 @@
+{
+ "annotations": {
+  "6454ee3e-f1e9-4e97-b047-91c6350bf9ad": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 42.37% of requests"
+  }
+ },
+ "expected": {
+  "6454ee3e-f1e9-4e97-b047-91c6350bf9ad": {
+   "agents": {
+    "solo": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_7f21c91c84009580",
+       "ev_c5130afea71c3c51"
+      ],
+      "statement": "Checkout's 1m error ratio was 1.0 at 16:10 to 16:13, and its 5m ratio peaked at about 0.62 earlier."
+     },
+     {
+      "evidence_ids": [
+       "ev_12d0c68b25d3c12e",
+       "ev_2497b1515054fd20"
+      ],
+      "statement": "Checkout's error traces show CurrencyService/Convert failing with connection refused to 10.96.57.183:8080, and checkout returns 'failed to convert price to USD'."
+     },
+     {
+      "evidence_ids": [
+       "ev_3a997c3d4b0af5cd",
+       "ev_1f5148130cbb7944"
+      ],
+      "statement": "Currency logged 'Received SIGTERM, shutting down' at 16:09:36. Its pod was then killed with 'definition changed, will be restarted' and recreated."
+     },
+     {
+      "evidence_ids": [
+       "ev_f04de7f5f4b1cc2d"
+      ],
+      "statement": "Currency's only revision (created 15:25:43) is unchanged, so no rollout happened."
+     },
+     {
+      "evidence_ids": [
+       "ev_3a7d103a82c000b6"
+      ],
+      "statement": "All 18 flags are off."
+     },
+     {
+      "evidence_ids": [
+       "ev_bf28d35e3e1ece07",
+       "ev_7bd8bc37ddc7f9d6"
+      ],
+      "statement": "Checkout logs contain no error-level lines, and no 'connection refused' log lines were found."
+     },
+     {
+      "evidence_ids": [
+       "ev_1614e4e2ebad597a",
+       "ev_692af61209fcbe28"
+      ],
+      "statement": "Currency's Convert server spans resumed after the restart, and checkout's client-side Convert error counter is rising."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check currency pod events and the kubelet/node logs for the reason behind the 16:09:36 kill, and check for liveness probe failures.",
+      "statement": "Something external (manual action, node event or liveness probe) restarted currency; the cause of the SIGTERM is unknown."
+     },
+     {
+      "how_to_verify": "Query payment and checkout server-side error traces and logs for 15:35 to 15:50.",
+      "statement": "The 15:38 checkout and payment spike is a separate, earlier issue that has since cleared."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_1f5148130cbb7944",
+       "ev_2497b1515054fd20"
+      ],
+      "statement": "The currency pod restart at 16:09:36 is the most likely trigger for checkout's failures, since the timing and the connection-refused messages match."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "The currency pod was SIGTERMed and recreated at 16:09:36 with no revision change. Checkout's Convert calls now get connection refused, and checkout fails the order with 'failed to convert price to USD'. The cause of the restart is unknown.",
+      "confidence": 0.7,
+      "evidence_ids": [
+       "ev_1f5148130cbb7944",
+       "ev_3a997c3d4b0af5cd",
+       "ev_f04de7f5f4b1cc2d",
+       "ev_2497b1515054fd20",
+       "ev_d927adf9ba2b30dd"
+      ],
+      "service": "currency"
+     },
+     {
+      "cause": "Currency's server spans were absent before the restart and reappear afterwards, while checkout's client-side Convert errors keep rising. This suggests currency was unreachable from checkout for part of the window. The earlier 15:38 spike is not yet attributed.",
+      "confidence": 0.3,
+      "evidence_ids": [
+       "ev_692af61209fcbe28",
+       "ev_1614e4e2ebad597a",
+       "ev_c5130afea71c3c51"
+      ],
+      "service": "currency"
+     }
+    ],
+    "summary": "Checkout is failing about 100% of requests now (1m ratio 1.0 at 16:12). Its errors come from calls to CurrencyService/Convert, which get connection refused on currency's ClusterIP port 8080. Currency's container was killed and restarted at 16:09:36 ('definition changed, will be restarted') after logging a SIGTERM. Its only revision has been unchanged since 15:25, so this was not a rollout. No feature flags are on. An earlier error spike in checkout and payment around 15:38 to 15:45 is not explained by these data."
+   },
+   "findings": 0,
+   "plan": {
+    "actions": [],
+    "alternatives": [
+     {
+      "action": "rollout_undo",
+      "why_not": "Currency's only revision dates from 15:25:43 and no rollout happened near the incident, so there is no bad release to roll back to (ev_f04de7f5f4b1cc2d)."
+     },
+     {
+      "action": "restart_deployment",
+      "why_not": "Currency already restarted at 16:09:36 and is running. Restarting again would not address the unexplained SIGTERM and adds disruption while checkout is at 100% errors."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "The failures are connection refused on one ClusterIP, not capacity exhaustion, so more replicas would not help."
+     }
+    ],
+    "no_action_reason": "No listed action fixes the cause. A human should find what sent SIGTERM to currency at 16:09:36 (node event, liveness probe, manual action), confirm currency Service endpoints and reachability of 10.96.57.183:8080 from checkout, and check whether the 15:38 spike shares the cause.",
+    "summary": "Checkout's failures come from currency being SIGTERMed and recreated at 16:09:36 with no revision change, so no rollback applies. Currency's pod has already restarted, and the cause of the SIGTERM is still unknown."
+   },
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": "2026-10-28 16:13:46.169697+00:00",
+   "created_at": "2026-10-28 16:12:18.017271+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "6454ee3e-f1e9-4e97-b047-91c6350bf9ad",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "ESCALATED",
+   "tenant_id": "lab-single",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}

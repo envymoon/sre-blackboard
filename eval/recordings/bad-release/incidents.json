@@ -1,0 +1,196 @@
+{
+ "annotations": {
+  "f4acfec8-4d53-4622-85c1-1dbea6d95240": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 34.52% of requests"
+  }
+ },
+ "expected": {
+  "f4acfec8-4d53-4622-85c1-1dbea6d95240": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_55a9d93b4b7bc5bc",
+       "ev_849208339cb45aaa"
+      ],
+      "statement": "Checkout revision 2 was created at 15:42:52Z and was the only change. Its diff changes only PAYMENT_ADDR from payment:8080 to payment:9999."
+     },
+     {
+      "evidence_ids": [
+       "ev_d460608008911486",
+       "ev_c5526e27ea743cf8",
+       "ev_eae3f1b3462da252"
+      ],
+      "statement": "All checkout error spans are PaymentService/Charge or PlaceOrder failures with 'dial tcp 10.96.40.41:9999: i/o timeout'."
+     },
+     {
+      "evidence_ids": [
+       "ev_6730296f9beafa38",
+       "ev_b95ce32b476a2064",
+       "ev_88543fddb1db0727",
+       "ev_55130cb8db7a1b54"
+      ],
+      "statement": "Payment has one revision from 15:30:15Z, shows no restarts or warnings, and has no error or warn logs. Its last log is at 15:42:50."
+     },
+     {
+      "evidence_ids": [
+       "ev_667bdad060305c65",
+       "ev_2d8a972725aedac5",
+       "ev_58b94896aa05e4eb"
+      ],
+      "statement": "Payment's server spans have no error series. Its Charge rate drops to zero by 15:45:49Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_4d49359ff254c306",
+       "ev_fa953be0e7eee68d"
+      ],
+      "statement": "Checkout's Charge client spans are STATUS_CODE_ERROR at about 0.24-0.27 calls/s from about 15:44:49Z, and checkout's Charge p95 is about 1.9 ms, so failures are fast and not timeouts."
+     },
+     {
+      "evidence_ids": [
+       "ev_18873eb88926bf0a"
+      ],
+      "statement": "All 18 flagd flags are off."
+     },
+     {
+      "evidence_ids": [
+       "ev_41df34e60bb93cef"
+      ],
+      "statement": "Kubernetes warnings over 120 minutes are only readiness probes on alertmanager, otel-collector-agent and loki. None involve checkout or payment."
+     },
+     {
+      "evidence_ids": [
+       "ev_5445cf96cf4f69c5"
+      ],
+      "statement": "Frontend server errors are 0.4-0.6/s from 15:44, while cart, currency, shipping, email, product-catalog and kafka show no server-side errors."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check payment's Service ports and container ports, and its endpoints. Confirm nothing is listening on 9999.",
+      "statement": "Payment serves only on 8080, so nothing listens on 9999."
+     },
+     {
+      "how_to_verify": "Roll back checkout to revision 1 and confirm checkout Charge client spans stop erroring and sli_error_ratio falls.",
+      "statement": "Reverting PAYMENT_ADDR to payment:8080 restores checkout's Charge success."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_55a9d93b4b7bc5bc",
+       "ev_849208339cb45aaa",
+       "ev_d50e52f6df155ad9"
+      ],
+      "statement": "The 9999 address change caused checkout's failures. The 2.5-minute gap to the error onset at 15:44:35 is consistent with pods rolling and the metrics lag."
+     },
+     {
+      "evidence_ids": [
+       "ev_667bdad060305c65",
+       "ev_eae3f1b3462da252"
+      ],
+      "statement": "Payment is a victim, not the cause. Its traffic falls to zero because checkout no longer reaches it."
+     },
+     {
+      "evidence_ids": [
+       "ev_5445cf96cf4f69c5",
+       "ev_18873eb88926bf0a",
+       "ev_41df34e60bb93cef"
+      ],
+      "statement": "Frontend's errors are a symptom of checkout failing, and flags, Kafka and checkout resource pressure are unlikely."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Config release revision 2 set PAYMENT_ADDR to payment:9999, but payment serves on 8080, so every Charge dial times out and checkout fails about 34% of requests. Fix by reverting PAYMENT_ADDR to payment:8080 or rolling back to revision 1.",
+      "confidence": 0.85,
+      "evidence_ids": [
+       "ev_55a9d93b4b7bc5bc",
+       "ev_849208339cb45aaa",
+       "ev_eae3f1b3462da252",
+       "ev_d460608008911486",
+       "ev_4d49359ff254c306",
+       "ev_6730296f9beafa38"
+      ],
+      "service": "checkout"
+     },
+     {
+      "cause": "Payment being unreachable or broken. Considered and judged unlikely: payment has no errors, no restarts, and its last log is at 15:42:50, which matches checkout's config change rather than a payment fault.",
+      "confidence": 0.08,
+      "evidence_ids": [
+       "ev_b95ce32b476a2064",
+       "ev_88543fddb1db0727",
+       "ev_1ff434efc0bbed4f"
+      ],
+      "service": "payment"
+     }
+    ],
+    "summary": "Checkout's availability burn comes from its PaymentService/Charge calls failing on every attempt. Checkout revision 2 (15:42:52Z) changed PAYMENT_ADDR from payment:8080 to payment:9999, the only change in the window. Checkout's error traces show 'dial tcp 10.96.40.41:9999: i/o timeout'. Payment has no errors, no restarts, and no changes since 15:30, and its traffic drops to zero. Checkout is the service to fix: revert PAYMENT_ADDR to payment:8080 (rollback to revision 1). Flags and Kafka are ruled out."
+   },
+   "findings": 21,
+   "plan": {
+    "actions": [
+     {
+      "action": "rollout_undo",
+      "deployment": "checkout",
+      "evidence_ids": [
+       "ev_55a9d93b4b7bc5bc",
+       "ev_849208339cb45aaa",
+       "ev_eae3f1b3462da252"
+      ],
+      "reason": "Revision 2 (15:42:52Z), the only change in the window, set PAYMENT_ADDR to payment:9999. Checkout Charge errors are 'dial tcp 10.96.40.41:9999: i/o timeout'. Reverting to revision 1 restores payment:8080.",
+      "to_revision": 1
+     }
+    ],
+    "alternatives": [
+     {
+      "action": "restart_deployment",
+      "why_not": "A restart would reload the same bad PAYMENT_ADDR config and would not fix the failures."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "Checkout is not short of capacity. Its failures are fast dial errors, not overload."
+     },
+     {
+      "action": "none",
+      "why_not": "Leaving it in place keeps about a third of checkout orders failing and burns the error budget at fast-burn rate, so a fix is warranted."
+     }
+    ],
+    "no_action_reason": null,
+    "summary": "Checkout revision 2 pointed PAYMENT_ADDR at payment:9999, which nothing listens on, so every Charge call times out and about 34% of checkout requests fail. Rolling checkout back to revision 1 restores payment:8080 and should bring the error ratio back to baseline within a few minutes, after which payment traffic and frontend errors should recover."
+   },
+   "state": "AWAITING_APPROVAL"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": null,
+   "created_at": "2026-10-28 15:45:18.051846+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "f4acfec8-4d53-4622-85c1-1dbea6d95240",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "AWAITING_APPROVAL",
+   "tenant_id": "lab",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}

@@ -1,0 +1,278 @@
+{
+ "annotations": {
+  "0d724341-8805-4c2d-9eac-8e72b1c709b2": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "payment is failing 25.9% of requests"
+  },
+  "10c9e6f0-207c-4286-9aa8-d27a9b8ff81d": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 25.33% of requests"
+  }
+ },
+ "expected": {
+  "0d724341-8805-4c2d-9eac-8e72b1c709b2": {
+   "agents": {
+    "solo": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_91027617660f9f9f",
+       "ev_45db036892cf01c4"
+      ],
+      "statement": "The only enabled flag is paymentFailure, at variant 50% (value 0.5)."
+     },
+     {
+      "evidence_ids": [
+       "ev_fe1359f341ce0e96",
+       "ev_6135238833ff561c"
+      ],
+      "statement": "Payment's 5m error ratio is 0.2977, with the peak at 16:16:07Z. It rose from 0.0557 at 16:14:07Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_86091b917c57492b"
+      ],
+      "statement": "Error traces show payment's Charge operation failing with 'Payment request failed. Invalid token. demo.user_context.loyalty_level=gold'. The same message propagates through checkout PlaceOrder, frontend and frontend-proxy as HTTP 422 / gRPC 13."
+     },
+     {
+      "evidence_ids": [
+       "ev_6135238833ff561c"
+      ],
+      "statement": "Checkout's 5m error ratio is 0.3026, close to payment's."
+     },
+     {
+      "evidence_ids": [
+       "ev_2027704feef02bc4"
+      ],
+      "statement": "Payment's error logs in the last 30 minutes returned no lines."
+     },
+     {
+      "evidence_ids": [
+       "ev_7ee99360e5482463"
+      ],
+      "statement": "Warning events in the namespace in the last 2 hours were readiness probe failures on alertmanager, otel-collector-agent and loki. None involve payment."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check flagd logs or the flag configuration change history for paymentFailure around 16:00-16:14Z.",
+      "statement": "The paymentFailure flag was switched on shortly before 16:14Z. Flag history or flagd logs would show this."
+     },
+     {
+      "how_to_verify": "Run logs_search on payment without the level filter, or search for 'Invalid token'.",
+      "statement": "Payment's error logs are missing because the failure is raised as a span error without a log line, or because the log query did not match its log format."
+     },
+     {
+      "how_to_verify": "After setting paymentFailure to off, confirm payment's error ratio returns to about 0.1% within a few minutes.",
+      "statement": "The 50% failure rate is a flag injection, not a code defect. Turning the flag off should restore payment."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_86091b917c57492b",
+       "ev_45db036892cf01c4"
+      ],
+      "statement": "Checkout's errors come from its payment dependency, not from checkout itself. The paymentFailure flag is the injected source."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Feature flag paymentFailure is enabled at the 50% variant, so roughly half of payment Charge calls return 'Payment request failed. Invalid token' errors. The payment error ratio ramped from about 5.6% to about 29.8% over the last hour, consistent with the flag being switched on around 16:00-16:14Z.",
+      "confidence": 0.85,
+      "evidence_ids": [
+       "ev_45db036892cf01c4",
+       "ev_91027617660f9f9f",
+       "ev_86091b917c57492b",
+       "ev_fe1359f341ce0e96",
+       "ev_6135238833ff561c"
+      ],
+      "service": "payment"
+     }
+    ],
+    "summary": "Payment is failing about 30% of requests (alert said 25.9%). The feature flag paymentFailure is ON at the 50% variant, and payment's Charge spans fail with a deliberate-looking 'Invalid token' error. Checkout (30.3%) and frontend show the same error propagated from payment. The flag is the most likely cause. I have not confirmed when the flag was switched on, and payment's error logs were empty."
+   },
+   "findings": 0,
+   "plan": {
+    "actions": [],
+    "alternatives": [
+     {
+      "action": "rollout_undo",
+      "why_not": "No Deployment release is cited. The failures come from the flag being on, so rolling back payment's image would not change the flag state."
+     },
+     {
+      "action": "restart_deployment",
+      "why_not": "Payment is not stuck or leaking. Its errors are deliberate flag-driven failures, so a restart would not reduce the 50% failure rate."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "The failures are not capacity-related. Payment rejects about half its requests by design, so extra replicas would only spread the same errors."
+     }
+    ],
+    "no_action_reason": "The root cause is the paymentFailure feature flag, which none of the available actions can change. A human should set paymentFailure to off in flagd, or confirm who enabled it and why. The flag's switch-on time is still unverified, so check flagd history or logs to confirm the cause and timing.",
+    "summary": "No Deployment action is proposed because the cause is the paymentFailure feature flag at 50%, which rollout_undo, restart, and scale cannot change. A human should disable paymentFailure in flagd, after which payment and checkout error rates should return to baseline."
+   },
+   "state": "ESCALATED"
+  },
+  "10c9e6f0-207c-4286-9aa8-d27a9b8ff81d": {
+   "agents": {
+    "solo": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_ce492c9c49ba9815",
+       "ev_41a06c965531f590"
+      ],
+      "statement": "service:sli_error_ratio:rate5m is 0.3026 for checkout and 0.2977 for payment; all other services are below 0.001."
+     },
+     {
+      "evidence_ids": [
+       "ev_243f9600d8f89fb6"
+      ],
+      "statement": "Checkout's error ratio peaked at 1.0 around 15:59Z and is 0.3026 at the alert time."
+     },
+     {
+      "evidence_ids": [
+       "ev_6fb723f8f0888bd1",
+       "ev_e91f22b9006be2ef"
+      ],
+      "statement": "The paymentFailure flag is ENABLED with variant 50% (value 0.5), and targeting is false."
+     },
+     {
+      "evidence_ids": [
+       "ev_64569521f48ac869",
+       "ev_67984bcb872fc598"
+      ],
+      "statement": "Error spans in payment's PaymentService/Charge and checkout's PlaceOrder carry the message 'Payment request failed. Invalid token. demo.user_context.loyalty_level=gold', 20 traces each."
+     },
+     {
+      "evidence_ids": [
+       "ev_24df5436422dece9"
+      ],
+      "statement": "The payment Deployment has a single revision (created 15:30:15Z, image 3.1.0-payment) with no change cause, so no code or image change happened shortly before the alert."
+     },
+     {
+      "evidence_ids": [
+       "ev_3f74da0c9826417b"
+      ],
+      "statement": "Payment's server-side error call rate is low (about 0.01 to 0.08 per second over the last hour)."
+     },
+     {
+      "evidence_ids": [
+       "ev_2cebdcd37e73176b",
+       "ev_c245154fd378c3bf"
+      ],
+      "statement": "Log searches for error-level lines in payment and checkout returned no lines in the window."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check the flagd configuration change history or the owner of the flag. Turning the flag off (variant off) should drop checkout's error ratio to near zero.",
+      "statement": "Someone turned paymentFailure on as a deliberate fault-injection experiment, or it was left on by mistake."
+     },
+     {
+      "how_to_verify": "Query Loki for payment with no level filter, or check the span-metric error counter directly, to confirm the log pipeline.",
+      "statement": "Payment's own error logs are not being ingested, so the empty log result is a gap in logging rather than evidence of no errors."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_64569521f48ac869",
+       "ev_67984bcb872fc598"
+      ],
+      "statement": "Payment is the origin of the checkout failures: checkout's Charge errors are relayed from payment, and payment's own spans show the same error."
+     },
+     {
+      "evidence_ids": [
+       "ev_6fb723f8f0888bd1",
+       "ev_41a06c965531f590"
+      ],
+      "statement": "The paymentFailure flag at 50% is the intended cause: it is consistent with checkout's roughly 30% failure rate and with the deterministic 'Invalid token' message."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "The paymentFailure feature flag is on at 50%, so payment's Charge fails for about half of requests with 'Payment request failed. Invalid token.' Checkout and frontend surface these as 422/INTERNAL errors.",
+      "confidence": 0.9,
+      "evidence_ids": [
+       "ev_6fb723f8f0888bd1",
+       "ev_e91f22b9006be2ef",
+       "ev_64569521f48ac869",
+       "ev_41a06c965531f590"
+      ],
+      "service": "payment"
+     }
+    ],
+    "summary": "Checkout is failing about 30% of requests (fast burn, alert 25.33%). The failures come from payment, which rejects Charge calls with 'Invalid token' for gold-loyalty users. The feature flag paymentFailure is ENABLED at variant 50%, which matches the injected failure rate. Checkout's errors are a pass-through of payment's failures. No pod crashes or deployment changes explain this; the payment deployment has only one revision, created at 15:30:15Z."
+   },
+   "findings": 0,
+   "plan": {
+    "actions": [],
+    "alternatives": [
+     {
+      "action": "rollout_undo",
+      "why_not": "The payment Deployment has only one revision (ev_24df5436422dece9), so there is no earlier release to return to, and the fault comes from a flag, not the image."
+     },
+     {
+      "action": "restart_deployment",
+      "why_not": "Restarting payment or checkout does not change the flag value; the errors would return immediately."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "The failures are injected errors, not a capacity shortage, so more replicas would only spread the same 50% failure rate."
+     }
+    ],
+    "no_action_reason": "The cause is the paymentFailure flag (ENABLED, variant 50%, ev_6fb723f8f0888bd1), which none of the available actions can change. A human should turn the flag off in flagd, or confirm with the experiment owner that the fault injection is intended and set an end time. Checkout's error ratio should then return to baseline (about 0.001 or lower) within a few minutes.",
+    "summary": "The checkout failures come from the paymentFailure feature flag being on at 50% in payment, not from a bad release, so no rollback, restart, or scale would fix it. A human should set paymentFailure to off in flagd (or confirm it is a deliberate experiment and end it), after which checkout's error ratio should drop to near zero."
+   },
+   "state": "ESCALATED"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": "2026-10-28 16:17:03.598554+00:00",
+   "created_at": "2026-10-28 16:16:03.023620+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "10c9e6f0-207c-4286-9aa8-d27a9b8ff81d",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "ESCALATED",
+   "tenant_id": "lab-single",
+   "title": "ErrorBudgetBurn"
+  },
+  {
+   "closed_at": "2026-10-28 16:17:13.701824+00:00",
+   "created_at": "2026-10-28 16:16:03.034701+00:00",
+   "environment": "lab",
+   "fingerprint": "39ef2128c2727979c8123e1c6df98a52",
+   "id": "0d724341-8805-4c2d-9eac-8e72b1c709b2",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "payment",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "payment",
+   "state": "ESCALATED",
+   "tenant_id": "lab-single",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}
