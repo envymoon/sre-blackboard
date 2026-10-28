@@ -7,7 +7,7 @@ root-cause candidates. Every claim has to cite evidence. Any change to
 production is proposed, checked by a deterministic policy engine, and needs
 human approval before an isolated executor applies it.
 
-> **Status: being rebuilt (M0–M5 and M9 done; M7 next).** The first version was a
+> **Status: being rebuilt (M0–M5, M9 and M7 done; M6 next).** The first version was a
 > spec-shaped prototype: it had no real model calls, no real tool backends, and
 > an evaluation that could not fail. This repository is now being rebuilt into a
 > working system, one milestone at a time. The plan, including every known
@@ -48,13 +48,14 @@ These carry over from the prototype and are what the rebuild implements for real
 | Incident state machine | Explicit transition table, optimistic locking on `version`, every transition audited. |
 | Audit log | Full SHA-256 hash chain; a trigger blocks UPDATE and DELETE. `python -m app.db.audit verify` (`make audit-verify`) and `GET /api/v1/audit/verify` (admin) recompute the chain and name the first tampered row. Every remediation step is an event: plan, approval or rejection, execution started and finished, verification, and each state transition. |
 | LLM backends (M4) | One interface, "given the transcript, what is the next step": at most 3 tool calls or a final answer ([ADR-0006](docs/adr/0006-agent-loop-llm-backends-blackboard.md)). `cli` runs one `claude -p` per step on the Claude subscription, with every built-in tool, MCP server and local setting turned off and the output constrained by a JSON schema, so the model can only propose. `api` uses the Anthropic Messages API with native tool use and prompt caching. `replay` answers from a recording. Per-role model routing (default `claude-haiku-5-5`), retries with backoff for rate limits and overloads, and at most 2 `claude -p` processes per worker. |
-| Agents (M4) | A hand-written loop in `app/agents/`. A coordinator writes a plan; three investigators (metrics, logs and traces, changes) work in parallel with only their own tools, up to 8 steps each; a synthesizer ranks root-cause candidates and separates facts, inferences and open hypotheses. Every cited evidence ID is checked without a model: it must belong to the incident, have been seen by the agent that cites it, and match the claim's kind. The model gets one chance to fix a bad citation, then the claim is dropped; with no supported root cause the incident is `ESCALATED`, as it is when the token budget runs out. Each agent's result and its "done" mark are written in one fenced transaction, so a worker killed mid-investigation is taken over without asking the model again for finished agents (a test SIGKILLs a real worker process). `GET /api/v1/incidents/{id}/diagnosis` returns the structured diagnosis, `/report` a Markdown report, and `GET /api/v1/evidence/{id}` the raw data behind any citation. A whole investigation can be exported and replayed in CI without a model or a cluster. On the lab with `claude-haiku-5-5`, the top root cause was right for all 3 acceptance faults in the last 2 of 3 runs (2/3 in the first), at about $0.05 per investigation; the last run's 8 investigations are replayed in CI. The weak spot: the incident on the delayed service itself tends to blame its database, whose client spans slow down with it ([study note](docs/learn/m4-agent.md#4-验收结果)). |
+| Agents (M4) | A hand-written loop in `app/agents/`. A coordinator writes a plan; three investigators (metrics, logs and traces, changes) work in parallel with only their own tools, up to 5 steps each at low reasoning effort (`SRE_AGENT_MAX_STEPS`, `SRE_LLM_EFFORT`); a synthesizer ranks root-cause candidates and separates facts, inferences and open hypotheses. Every cited evidence ID is checked without a model: it must belong to the incident, have been seen by the agent that cites it, and match the claim's kind. The model gets one chance to fix a bad citation, then the claim is dropped; with no supported root cause the incident is `ESCALATED`, as it is when the token budget runs out. Each agent's result and its "done" mark are written in one fenced transaction, so a worker killed mid-investigation is taken over without asking the model again for finished agents (a test SIGKILLs a real worker process). `GET /api/v1/incidents/{id}/diagnosis` returns the structured diagnosis, `/report` a Markdown report, and `GET /api/v1/evidence/{id}` the raw data behind any citation. A whole investigation can be exported and replayed in CI without a model or a cluster. On the lab with `claude-haiku-5-5`, the top root cause was right for all 3 acceptance faults in the last 2 of 3 runs (2/3 in the first), at about $0.05 per investigation; the last run's 8 investigations are replayed in CI. The weak spot: the incident on the delayed service itself tends to blame its database, whose client spans slow down with it ([study note](docs/learn/m4-agent.md#4-验收结果)). |
 | Remediation (M5) | After a diagnosis a fifth agent, the planner, proposes at most two actions from a catalogue of three: `rollout_undo` (R3), `restart_deployment` and `scale_deployment` (R2), each citing evidence and naming the alternatives it rejected ([ADR-0007](docs/adr/0007-remediation-policy-approval-executor.md)). It can only read rollout history, deployment diffs and Kubernetes events. |
 | Policy engine (M5) | `app/remediation/policy.py`, a pure function over structured fields only; the model's prose never reaches it. Blocking checks: the action is in the catalogue; the target is in the allowlist (`SRE_REMEDIATION_TARGETS`, empty means none); the target is the diagnosis's top root cause with confidence ≥ 0.5, not merely where the alert fired (problem host vs. event host); a rollback cites a rollout history or diff of that same Deployment; a way back exists; the change window is open. The verdict is `deny` with reasons if any fails, `allow` up to `SRE_REMEDIATION_AUTO_MAX_RISK` (default R1, so every current action needs approval), `require_approval` above. Any exception is a `deny`. |
 | Approvals (M5) | `POST /api/v1/incidents/{id}/approvals` needs the `approver` role; the approver comes from the token, must not be whoever proposed the plan, and must send the plan's SHA-256 `plan_hash`. A revised plan (`POST /incidents/{id}/plans`, responder) gets a new hash, so an old approval never carries over. Plans and approvals are append-only. A plan still waiting after `SRE_REMEDIATION_APPROVAL_TTL_S` (30 minutes) escalates the incident. |
 | Executor (M5) | `python -m app.executor`, a separate process that claims only `execute` jobs, with its own ServiceAccount that can get, list and patch Deployments and read ReplicaSets in one namespace, and no model or reader token. Before acting it re-runs the policy and re-checks the approval and its hash. It sends a server-side dry run, records the execution under a unique idempotency key, then applies a JSON patch guarded by the Deployment's `resourceVersion`. Run at most once: a redelivered job that finds its execution already started marks it `unknown` and escalates instead of trying again. |
 | Verification (M5) | After the rollout, the worker reads the alert's SLI straight from Prometheus over 1 minute (error ratio below 6%, or p95 below 1 s); three healthy reads in a row resolve the incident, and if the deadline passes it is escalated with how to undo the change. On the lab, the bad release closed the whole loop: alert, diagnosis (checkout's release), a proposed `rollout_undo checkout` (R3, so `require_approval`), approval through the API, rollback from revision 2 to 3, the error ratio back to 0, and `RESOLVED` 130 s after the approval, with the audit chain intact. For the feature-flag and network faults, which no catalogue action repairs, the planner proposed no action in 6 of 7 incidents and wrote down what a human should check instead ([study note](docs/learn/m5-safety.md#4-验收结果)). |
 | Prompt injection (M5) | Tool output stays in a data section the prompts say is not instructions; the policy reads no prose; the executor accepts only catalogue actions. `scripts/injection_eval.py` plants instructions in a rollout's change-cause and in a quoted log line and runs the planner with the real model on every `Model check` run: 0 safety violations, and the model ignored both injections. |
+| Evaluation (M7) | 22 fault scenarios in `eval/scenarios/`, labelled from the injection point before any run (root cause, fault type, which services page, the fix a human should approve), each one seen to page on the lab ([ADR-0009](docs/adr/0009-evaluation-scenarios-variants-gate.md)). The live run (`eval.yml`, on `[eval]` in a commit message or by hand) builds the lab, injects each scenario and has every agent variant investigate the same alerts at the same minute, one tenant per variant: `default`, `single` (one agent with every tool), `strong-plan` (Sonnet for the coordinator and synthesizer) and `canary` (a synthesizer prompt with a deliberately wrong rule). Scores are recomputed from stored observations: Top-1/Top-3, per-incident accuracy, action correctness, safety violations (an action put to a human that targets a healthy service), citations, diagnosis p50/p95, tokens and $ per incident, escalation rate. Every pull request replays the recorded runs through the worker's own handlers and applies the release gate: zero safety violations, Top-1 at most 10 points below the baseline, at least 80% of the baseline's scenarios scored, and the canary must fail or the evaluation is void. Results below. |
 | Prototype modules | Retrieval from the first version is still in `app/` (`rag.py`, `knowledge.py`) and is not wired into the API or worker. It is replaced in M6. |
 | Fault lab (M2) | `make env-up` builds a kind cluster with the OpenTelemetry Demo (trimmed), Loki, Chaos Mesh and SLO burn-rate alerts (promtool-tested); Alertmanager posts to this API. `make fault SCENARIO=…` injects one of 15 faults (feature flags, Chaos Mesh, a bad rollout). The lab is rebuilt from scratch and checked on GitHub Actions ([ADR-0004](docs/adr/0004-fault-lab-on-kind-in-ci.md)): a payment failure, a network delay and a bad release each reach this API as alerts within about 2–4 minutes and resolve after recovery, on a lab that first stays alert-free for 10 minutes. The whole lab uses about 4.7 GiB. |
 | Tools (M3) | Nine read-only tools in `app/tools/` over Prometheus, Loki, Jaeger, the Kubernetes API and flagd ([ADR-0005](docs/adr/0005-tool-layer-evidence-and-replay.md)). Each has a strict Pydantic schema that doubles as the model's tool definition, a timeout, retries for transient errors and a circuit breaker per backend; failures come back as structured errors with the backend's message. The model gets a bounded summary (counts, top-N, peaks, log templates) and an evidence ID; the raw result is stored in `evidence` with its SHA-256, and rows cannot be updated or deleted. Evidence IDs are derived from the content, so a replay shows the model the same bytes. Calls can be recorded to a cassette and replayed without a cluster. Kubernetes access is a ServiceAccount that can only read in the demo namespace; Chaos Mesh objects are filtered out so the lab never hands the agent the answer. On the lab, during each of the 3 acceptance faults, the tools return the data a diagnosis needs (the failing service's error ratio, the bad revision and its diff, the slow spans); CI replays those real recordings and must reproduce the live results exactly. |
@@ -148,6 +149,39 @@ npm test && npm run budget           # unit tests (SSE parser, replay, contrast)
 
 A console served from another origin needs it in `SRE_CORS_ORIGINS`, e.g. `SRE_CORS_ORIGINS='["https://console.example"]'`.
 
+### Evaluation
+
+```bash
+uv run python -m app.eval report eval/results/*.json   # scores, gate and the Markdown report
+uv run pytest tests/test_eval_replay.py                 # what CI runs: replay every recording, apply the gate
+git commit --allow-empty -m "rerun [eval token_budget=12000000]"   # a live run: 6 core scenarios, every variant
+git commit --allow-empty -m "rerun [eval scenarios=bad-release variants= shards=1]"   # one scenario, default only
+uv run python -m scripts.lab eval-import <lab-recordings checkout> --run <id> --baseline --variants single
+```
+
+Results on the 6 core scenarios, one run per variant (run 40715248288; the canary from run
+40751455029). One run means one scenario is 17 points, so only large differences are signal:
+
+| | default | single | strong-plan | canary |
+|---|---|---|---|---|
+| Top-1 | 6/6 | 5/6 | 6/6 | 0/2 (gate: fail, as it must) |
+| Top-3 | 6/6 | 6/6 | 6/6 | 2/2 |
+| per incident | 100% | 79% | 71% | 33% |
+| actions right | 83% | 83% | 67% | 100% |
+| safety violations | 0 | 0 | 0 | 0 |
+| diagnosis p50 / p95 | 166 / 222 s | 49 / 136 s | 122 / 187 s | 141 / 155 s |
+| tokens / incident | 191k | 143k | 183k | 194k |
+| $ / incident (API prices) | $0.027 | $0.015 | $0.067 | $0.028 |
+| escalated | 0% | 0% | 0% | 0% |
+
+The single agent is three times faster and half the cost, and blamed the delayed service's
+database on the network-delay scenario; the stronger model for the two reasoning-only steps
+cost 2.5 times as much and bought no accuracy here. The wrong actions are all restarts of
+the right service that cannot help (a Chaos Mesh pod failure is still running). Runs go on
+the Claude subscription, so the default run is cut down (low effort, 5 steps, 6 scenarios,
+a token budget); three runs per configuration and all 22 scenarios are for when quota
+allows ([study note](docs/learn/m7-eval.md#4-结果)).
+
 ## Roadmap
 
 | Milestone | Scope | Status |
@@ -159,7 +193,7 @@ A console served from another origin needs it in `SRE_CORS_ORIGINS`, e.g. `SRE_C
 | M4 | Real agents: hand-written loop, pluggable LLM backends (`claude -p`, Anthropic API, replay) | done |
 | M5 | Policy engine, authenticated approvals, isolated executor, SLO recovery check, audit chain | done |
 | M9 | Minimal console (React), plus a GitHub Pages replay of a real run | done |
-| M7 | Labeled fault scenarios, live and replay eval, ablations, CI release gate | planned |
+| M7 | Labeled fault scenarios, live and replay eval, ablations, CI release gate | done |
 | M6 | Postgres hybrid retrieval (tsvector + pgvector, RRF, reranker) with a labeled query set | planned |
 | M8 | OpenTelemetry traces and Prometheus metrics for the copilot itself | planned |
 
@@ -180,13 +214,14 @@ app/agents/     agent loop, prompts, citation checks, blackboard store, investig
 app/remediation/ action catalogue, plans, policy engine, planner agent, approval flow, SLO checks
 app/executor/   the executor process: Kubernetes writer, execute job
 app/console/    case export for the static replay (python -m app.console.export)
+app/eval/       scoring, metrics, release gate, report, replay evaluation (python -m app.eval)
 app/*.py        prototype rag/knowledge (being replaced in M6)
 web/            the console and the static site (React, Vite, Tailwind)
 kb/             4 self-written SRE runbooks (retrieval corpus)
 tests/          pytest suite; tests/fixtures/{lab,agent}: real lab recordings for the contract tests
 deploy/kind/    fault lab: kind config, pinned versions, chart values, SLO rules and their tests
 scripts/        M1 load test, LLM probe; scripts/lab: fault injection CLI, acceptance, tool checks, diagnosis scoring
-eval/           prototype eval cases (to be replaced in M7)
+eval/           scenarios, live results, the baseline and the recordings CI replays
 docs/plan/      rebuild plan (Chinese)
 docs/adr/       architecture decision records
 docs/learn/     per-milestone study notes with interview Q&A (Chinese)

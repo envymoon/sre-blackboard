@@ -80,6 +80,11 @@ def test_the_replayed_evaluation_passes_the_release_gate() -> None:
     for variant in sorted({s.variant for s in REPLAYED}):
         result = gate.check(variant, REPLAYED, BASELINE)
         if variant == "canary":
+            # Rerun on fewer scenarios than the baseline (eval-import --add): compared on its own,
+            # it must fail on what it answered, not only on what it did not run.
+            mine = {s.scenario for s in REPLAYED if s.variant == variant}
+            result = gate.check(variant, REPLAYED, [s for s in BASELINE if s.scenario in mine])
             assert not result.passed, "the canary passed the gate: the evaluation cannot tell it apart"
+            assert any("Top-1" in r for r in result.reasons), result.reasons
         elif variant == "default":
             assert result.passed, result.reasons

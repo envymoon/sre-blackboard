@@ -33,7 +33,7 @@ on:
       shards:
         description: "Parallel lab jobs"
         required: false
-        default: "4"
+        default: "2"
       alert_timeout:
         description: "Seconds to wait for a scenario's first alert, at least"
         required: false
@@ -207,6 +207,8 @@ jobs:
 
       - name: Merge, score and gate
         id: gate
+        env:
+          SCENARIOS: ${{ needs.plan.outputs.scenarios }}
         run: |
           set -o pipefail
           mkdir -p out/agent
@@ -215,8 +217,10 @@ jobs:
             --commit "${{ github.sha }}" "${files[@]}"
           for d in shards/*/eval/agent; do cp -r "$d"/. out/agent/; done
           status=0
+          # A run of named scenarios is compared with the baseline on those (empty: all of them).
+          read -ra asked <<< "$SCENARIOS"
           uv run python -m app.eval report "out/run-${{ github.run_id }}.json" --json out/metrics.json \
-            > out/report.md || status=$?
+            --scenarios "${asked[@]}" > out/report.md || status=$?
           cat out/report.md >> "$GITHUB_STEP_SUMMARY"
           grep -E '^- \*\*' out/report.md | sed 's/^/::notice title=gate::/' || true
           grep -E '^\| (Top-1|Top-3|per incident|actions right|safety violations|escalated|\$ / incident) ' out/report.md \

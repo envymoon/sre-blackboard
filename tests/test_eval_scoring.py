@@ -228,6 +228,25 @@ def test_the_report_cli_fails_the_gate_and_voids_a_run_whose_canary_passes(tmp_p
     assert "evaluation void" in capsys.readouterr().out
 
 
+def test_a_run_of_named_scenarios_is_compared_with_the_baseline_on_those(tmp_path: Path, capsys: Any) -> None:
+    # eval run 40751455029: a canary rerun on 2 of the baseline's 6 scenarios.
+    base, run = ResultFile(run="b", kind="live"), ResultFile(run="r", kind="live")
+    for sid in IDS:
+        sc = scenarios.get(sid)
+        base.observations.append(obs(sid, inc(sc.expect.symptoms[0], [sc.expect.root_cause])))
+    run.observations = base.observations[:2]
+    base.dump(tmp_path / "b.json")
+    run.dump(tmp_path / "r.json")
+    (tmp_path / "baseline.json").write_text('{"variant": "default", "results": ["%s"]}' % (tmp_path / "b.json"))
+    args = ["report", str(tmp_path / "r.json"), "--baseline", str(tmp_path / "baseline.json")]
+    assert main(args) == 1
+    assert f"scored 2 of the baseline's {len(IDS)} scenarios" in capsys.readouterr().out
+    assert main([*args, "--scenarios", *IDS[:2]]) == 0
+    # Asked for three, one never ran (a token budget, a deadline): still a broken run.
+    assert main([*args, "--scenarios", *IDS[:3]]) == 1
+    assert "scored 2 of the baseline's 3 scenarios" in capsys.readouterr().out
+
+
 def test_a_run_without_a_model_is_not_scored_and_fails_the_gate() -> None:
     # eval run 40566329647: the subscription's session limit, an hour into the run.
     sc, other = scenarios.get("payment-failure"), scenarios.get("bad-release")

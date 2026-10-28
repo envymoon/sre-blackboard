@@ -2,6 +2,9 @@
 
     report RESULTS...   score result files (eval/results/*.json), print the Markdown report
       --baseline FILE   the runs to compare with (default eval/baseline.json; "" for none)
+      --scenarios S     the scenarios the run was asked for, when not the baseline's whole set:
+                        the baseline is compared on these only (a run that stopped early still
+                        misses some of them, and fails the coverage rule)
       --gate V          variants that must pass the gate (default: default)
       --canary V        variants that must FAIL it (default: canary, when present), compared
                         with the same run's default variant: an evaluation that passes a
@@ -42,6 +45,8 @@ def cmd_report(args: argparse.Namespace) -> int:
     scores = results.load_scores([Path(p) for p in args.results])
     baseline_paths = results.baseline_files(Path(args.baseline)) if args.baseline else []
     baseline = [s for s in results.load_scores(baseline_paths) if s.variant == "default"]
+    if args.scenarios:
+        baseline = [s for s in baseline if s.scenario in set(args.scenarios)]
     per_run = per_run_metrics(scores)
     canaries = args.canary if args.canary is not None else [v for v in ("canary",) if v in per_run]
     same_run = [s for s in scores if s.variant == "default"]
@@ -93,6 +98,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("report")
     p.add_argument("results", nargs="+")
     p.add_argument("--baseline", default=str(results.BASELINE))
+    p.add_argument("--scenarios", nargs="*", default=[])
     p.add_argument("--gate", nargs="*", default=["default"])
     p.add_argument("--canary", nargs="*", default=None)
     p.add_argument("--json")
