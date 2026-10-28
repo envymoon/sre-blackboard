@@ -283,7 +283,9 @@ def test_an_imported_run_replaces_the_recordings_and_a_rerun_variant_is_added_be
 
     repo = tmp_path / "repo"
     full, rerun = run("1", ("single", "canary")), run("2", ("canary",))
-    assert main(["eval-import", str(full), "--run", "1", "--repo", str(repo), "--baseline", "--variants", "single"]) == 0
+    assert (
+        main(["eval-import", str(full), "--run", "1", "--repo", str(repo), "--baseline", "--variants", "single"]) == 0
+    )
     assert main(["eval-import", str(rerun), "--run", "2", "--repo", str(repo), "--add", "--variants", "canary"]) == 0
     rec = repo / "eval" / "recordings" / "pod-failure"
     assert (rec / "incidents.json").read_text() == "1"  # the default the canary is gated against
