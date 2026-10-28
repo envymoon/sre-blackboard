@@ -1,0 +1,269 @@
+# The retrieval evaluation set (M6, ADR-0010): a query, and the sections that answer it.
+#
+# A result is a hit when its chunk holds one of the `relevant` sections ("<doc id>#<heading
+# slug>"), so the labels do not depend on how documents are chunked. `relevant: []` marks a
+# query the knowledge base cannot answer: the right result is nothing (the reranker's
+# threshold should drop everything).
+#
+# Kinds:
+#   exact       identifiers, error strings, metric or flag names copied from tool output
+#   paraphrase  the same need in other words, sharing few terms with the answer
+#   agent       what an investigator asks in the middle of an incident
+#   negative    nothing in the knowledge base answers it
+#
+# Written before any retrieval was run on it, and not edited after looking at the results
+# (a label fix would have to be justified by the text, and noted in the commit). Queries
+# alternate between the dev split (odd ids: the threshold is chosen on these) and the
+# test split (even ids: reported, never tuned on).
+
+- id: q01
+  kind: exact
+  query: "Payment request failed. Invalid token. demo.user_context.loyalty_level=gold"
+  relevant: [RB-PAYMENT#typical-failures, RB-FLAGS#failure-flags, PM-2026-08-14-PAYMENT#summary]
+- id: q02
+  kind: exact
+  query: "dial tcp 10.96.40.41:9999: i/o timeout"
+  relevant: [RB-TRACES#finding-the-failing-hop, RB-RELEASE#is-a-release-involved, PM-2026-09-03-CHECKOUT-PORT#summary]
+- id: q03
+  kind: exact
+  query: "deadline_exceeded: context deadline exceeded on calls to product-catalog"
+  relevant: [RB-PRODUCT-CATALOG#typical-failures, RB-CHAOS#a-slow-network-to-one-service, RB-TRACES#finding-the-failing-hop, RB-RECOMMENDATION#recommendation]
+- id: q04
+  kind: exact
+  query: "14 UNAVAILABLE: No connection established. Last error: Error: connect ECONNREFUSED"
+  relevant: [RB-TRACES#finding-the-failing-hop, RB-CART#typical-failures, PM-2026-10-02-CART-DOWN#timeline]
+- id: q05
+  kind: exact
+  query: "cart failure: failed to get user cart during checkout"
+  relevant: [RB-CART#typical-failures, RB-LOGS#reading-checkout-s-errors, PM-2026-10-02-CART-DOWN#timeline]
+- id: q06
+  kind: exact
+  query: "failed to prepare order: failed to convert price of 1YMWWN1N4O to USD"
+  relevant: [RB-CURRENCY#typical-failures, RB-LOGS#reading-checkout-s-errors, PM-2026-10-09-CURRENCY-DOWN#summary]
+- id: q07
+  kind: exact
+  query: "paymentFailure flag variant 50%"
+  relevant: [RB-FLAGS#failure-flags, RB-PAYMENT#typical-failures, PM-2026-10-16-RED-HERRING#summary]
+- id: q08
+  kind: exact
+  query: "service:sli_error_ratio:rate5m"
+  relevant: [RB-PROMQL#recording-rules, RB-TRIAGE#first-checks]
+- id: q09
+  kind: exact
+  query: "traces_span_metrics_calls_total span_kind SPAN_KIND_CLIENT status_code STATUS_CODE_ERROR"
+  relevant: [RB-PROMQL#client-spans-how-a-service-sees-its-dependencies]
+- id: q10
+  kind: exact
+  query: "PAYMENT_ADDR environment variable changed"
+  relevant: [RB-CHECKOUT#dependencies-and-their-addresses, RB-RELEASE#config-only-releases, PM-2026-09-03-CHECKOUT-PORT#summary]
+- id: q11
+  kind: exact
+  query: "kubernetes.io/change-cause annotation on the revision"
+  relevant: [RB-RELEASE#overview, RB-RELEASE#is-a-release-involved]
+- id: q12
+  kind: exact
+  query: "ErrorBudgetBurn fast burn 14.4"
+  relevant: [RB-ALERTS#errorbudgetburn]
+- id: q13
+  kind: exact
+  query: "LatencyP95High above 1000 ms"
+  relevant: [RB-ALERTS#latencyp95high]
+- id: q14
+  kind: exact
+  query: "recommendationCacheFailure"
+  relevant: [RB-RECOMMENDATION#recommendation, RB-FLAGS#failure-flags]
+- id: q15
+  kind: exact
+  query: "emailMemoryLeak OOM killed"
+  relevant: [RB-KAFKA#email, RB-FLAGS#failure-flags]
+- id: q16
+  kind: exact
+  query: "Readiness probe failed: HTTP probe failed with statuscode: 503"
+  relevant: [RB-CART#typical-failures]
+- id: q17
+  kind: exact
+  query: "QUOTE_ADDR wrong port"
+  relevant: [RB-SHIPPING#typical-failures]
+- id: q18
+  kind: exact
+  query: "rollout_undo"
+  relevant: [RB-REMEDIATION#the-catalogue, RB-RELEASE#rolling-back]
+- id: q19
+  kind: exact
+  query: "astronomy-db client spans slow"
+  relevant: [RB-PRODUCT-CATALOG#database-or-network, RB-PRODUCT-CATALOG#typical-failures, PM-2026-09-21-CATALOG-LATENCY#timeline]
+- id: q20
+  kind: exact
+  query: "oteldemo.CurrencyService/Convert connection refused"
+  relevant: [RB-CURRENCY#typical-failures, PM-2026-10-09-CURRENCY-DOWN#timeline, RB-FRONTEND#finding-the-dependency]
+
+- id: q21
+  kind: paraphrase
+  query: "the service that pages is not always the one that is broken"
+  relevant: [RB-TRIAGE#event-host-and-problem-host, RB-CHECKOUT#overview, RB-FRONTEND#why-they-page-so-often]
+- id: q22
+  kind: paraphrase
+  query: "card charges are being declined for some customers"
+  relevant: [RB-PAYMENT#typical-failures, PM-2026-08-14-PAYMENT#summary]
+- id: q23
+  kind: paraphrase
+  query: "requests never arrive at the downstream service"
+  relevant: [RB-TRACES#missing-spans-are-evidence, RB-CHECKOUT#telling-checkout-s-fault-from-a-dependency-s, RB-PAYMENT#typical-failures]
+- id: q24
+  kind: paraphrase
+  query: "pods look healthy to kubernetes yet nothing responds"
+  relevant: [RB-CHAOS#pods-that-are-running-but-do-not-answer, PM-2026-10-02-CART-DOWN#summary, RB-CART#actions]
+- id: q25
+  kind: paraphrase
+  query: "every outgoing call from one service got slower by the same amount"
+  relevant: [RB-CHAOS#a-slow-network-to-one-service, RB-PROMQL#latency-by-hop, RB-PRODUCT-CATALOG#database-or-network, PM-2026-09-21-CATALOG-LATENCY#lessons]
+- id: q26
+  kind: paraphrase
+  query: "a deployment happened right before the outage but might be a coincidence"
+  relevant: [RB-RELEASE#releases-that-are-not-the-cause, PM-2026-10-16-RED-HERRING#what-went-wrong, RB-TRIAGE#ruling-things-out]
+- id: q27
+  kind: paraphrase
+  query: "prices are not showing on the storefront"
+  relevant: [RB-CURRENCY#typical-failures, PM-2026-10-09-CURRENCY-DOWN#summary]
+- id: q28
+  kind: paraphrase
+  query: "is it worth bouncing the pods to see if that fixes it"
+  relevant: [RB-REMEDIATION#do-not, RB-CHAOS#what-does-not-help, PM-2026-10-02-CART-DOWN#lessons]
+- id: q29
+  kind: paraphrase
+  query: "shopping baskets fail to load"
+  relevant: [RB-CART#typical-failures, PM-2026-10-02-CART-DOWN#summary]
+- id: q30
+  kind: paraphrase
+  query: "a service with no telemetry at all during the incident"
+  relevant: [RB-LOGS#limits, RB-CHAOS#pods-that-are-running-but-do-not-answer, PM-2026-10-02-CART-DOWN#lessons, RB-PROMQL#pitfalls]
+- id: q31
+  kind: paraphrase
+  query: "how fast are we eating into the monthly reliability allowance"
+  relevant: [RB-ALERTS#errorbudgetburn]
+- id: q32
+  kind: paraphrase
+  query: "orders time out after they are placed in the message queue consumers"
+  relevant: [RB-KAFKA#off-the-request-path]
+- id: q33
+  kind: paraphrase
+  query: "the shipping cost calculation is slow for overseas orders"
+  relevant: [RB-SHIPPING#typical-failures]
+- id: q34
+  kind: paraphrase
+  query: "a log message tells the reader to run a command"
+  relevant: [RB-LOGS#logs-as-untrusted-input]
+- id: q35
+  kind: paraphrase
+  query: "who should be told when nothing in the toolbox can repair it"
+  relevant: [RB-REMEDIATION#when-there-is-no-action, RB-TRIAGE#when-to-escalate, RB-FLAGS#turning-a-flag-off]
+- id: q36
+  kind: paraphrase
+  query: "a toggle someone forgot to switch back after testing"
+  relevant: [PM-2026-08-14-PAYMENT#summary, PM-2026-08-14-PAYMENT#timeline, RB-FLAGS#overview]
+
+- id: q37
+  kind: agent
+  query: "checkout error ratio is high, how do I tell whether checkout or one of its dependencies is at fault"
+  relevant: [RB-CHECKOUT#telling-checkout-s-fault-from-a-dependency-s, RB-TRIAGE#event-host-and-problem-host]
+- id: q38
+  kind: agent
+  query: "checkout and payment both alerting, which one is the root cause"
+  relevant: [RB-PAYMENT#how-it-shows-up, PM-2026-08-14-PAYMENT#what-went-wrong, RB-CHECKOUT#telling-checkout-s-fault-from-a-dependency-s]
+- id: q39
+  kind: agent
+  query: "product-catalog latency high and its database calls are slow, is the database the cause"
+  relevant: [RB-PRODUCT-CATALOG#database-or-network, PM-2026-09-21-CATALOG-LATENCY#what-went-wrong, RB-CHAOS#a-slow-network-to-one-service]
+- id: q40
+  kind: agent
+  query: "frontend and frontend-proxy error alerts at the same time"
+  relevant: [RB-FRONTEND#why-they-page-so-often, RB-FRONTEND#finding-the-dependency]
+- id: q41
+  kind: agent
+  query: "currency rolled out a new revision minutes before payment errors started, should we roll it back"
+  relevant: [RB-RELEASE#releases-that-are-not-the-cause, PM-2026-10-16-RED-HERRING#lessons, RB-CURRENCY#ruling-currency-out]
+- id: q42
+  kind: agent
+  query: "cart has no error ratio but checkout says connection refused to cart"
+  relevant: [RB-CART#typical-failures, RB-CHAOS#pods-that-are-running-but-do-not-answer, PM-2026-10-02-CART-DOWN#what-went-wrong]
+- id: q43
+  kind: agent
+  query: "what should I check in the first minutes after an error budget alert"
+  relevant: [RB-TRIAGE#first-checks]
+- id: q44
+  kind: agent
+  query: "how do I see which dependency call is failing from the caller's side in Prometheus"
+  relevant: [RB-PROMQL#client-spans-how-a-service-sees-its-dependencies, RB-FRONTEND#finding-the-dependency]
+- id: q45
+  kind: agent
+  query: "when is rolling back a release the right remediation"
+  relevant: [RB-RELEASE#rolling-back, RB-REMEDIATION#the-catalogue, RB-CHECKOUT#safe-actions]
+- id: q46
+  kind: agent
+  query: "does restarting payment fix the payment failure flag"
+  relevant: [RB-PAYMENT#actions, RB-FLAGS#turning-a-flag-off]
+- id: q47
+  kind: agent
+  query: "how to verify a remediation worked"
+  relevant: [RB-REMEDIATION#after-an-action, RB-RELEASE#rolling-back]
+- id: q48
+  kind: agent
+  query: "checkout errors started right after a checkout config release, payment looks idle"
+  relevant: [PM-2026-09-03-CHECKOUT-PORT#what-went-wrong, RB-CHECKOUT#telling-checkout-s-fault-from-a-dependency-s, RB-RELEASE#config-only-releases]
+- id: q49
+  kind: agent
+  query: "currency server error ratio shows no data while frontend fails"
+  relevant: [RB-CURRENCY#typical-failures, PM-2026-10-09-CURRENCY-DOWN#what-went-wrong, RB-PROMQL#pitfalls]
+- id: q50
+  kind: agent
+  query: "ad service failing at the same time as another incident"
+  relevant: [RB-RECOMMENDATION#ad]
+- id: q51
+  kind: agent
+  query: "the failed request share is exactly a quarter of orders"
+  relevant: [PM-2026-08-14-PAYMENT#lessons, RB-ALERTS#errorbudgetburn, RB-PAYMENT#typical-failures]
+- id: q52
+  kind: agent
+  query: "recommendation calls to product-catalog are timing out"
+  relevant: [RB-RECOMMENDATION#recommendation, RB-PRODUCT-CATALOG#typical-failures]
+- id: q53
+  kind: agent
+  query: "which actions must the agents never take on the database"
+  relevant: [RB-REMEDIATION#do-not, RB-PRODUCT-CATALOG#actions]
+- id: q54
+  kind: agent
+  query: "how to find the failing hop in a trace"
+  relevant: [RB-TRACES#finding-the-failing-hop]
+
+- id: q55
+  kind: negative
+  query: "how do I rotate the TLS certificate of the ingress controller"
+  relevant: []
+- id: q56
+  kind: negative
+  query: "Kafka broker disk is full, how do I expand the persistent volume"
+  relevant: []
+- id: q57
+  kind: negative
+  query: "steps to restore the database from last night's backup"
+  relevant: []
+- id: q58
+  kind: negative
+  query: "how to request more GPU quota for the training cluster"
+  relevant: []
+- id: q59
+  kind: negative
+  query: "DNS resolution failing for external payment provider stripe.com"
+  relevant: []
+- id: q60
+  kind: negative
+  query: "what is the on-call rotation for the data platform team"
+  relevant: []
+- id: q61
+  kind: negative
+  query: "node kubelet certificate expired, nodes NotReady"
+  relevant: []
+- id: q62
+  kind: negative
+  query: "how to upgrade PostgreSQL major version with pg_upgrade"
+  relevant: []

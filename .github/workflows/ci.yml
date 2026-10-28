@@ -56,6 +56,43 @@ jobs:
           VITE_SITE: pages
       - run: npm run budget
 
+  # The retrieval evaluation (M6, ADR-0010) with the real local models: bge-small for
+  # embeddings, a MiniLM cross-encoder for reranking, both on the CPU (no model API, no
+  # subscription use). It recomputes eval/retrieval/report.json and fails when the committed
+  # report no longer reproduces. The weights (~200 MB) are cached between runs.
+  retrieval:
+    runs-on: ubuntu-24.04
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: sre
+          POSTGRES_PASSWORD: sre
+          POSTGRES_DB: sre
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U sre" --health-interval 2s --health-retries 30
+    env:
+      SRE_DATABASE_URL: postgresql+psycopg://sre:sre@localhost:5432/sre
+      SRE_KB_MODEL_DIR: ${{ github.workspace }}/.kb-models
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.32"
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --locked --python 3.12
+      - uses: actions/cache@v4
+        with:
+          path: .kb-models
+          key: kb-models-${{ hashFiles('app/kb/models.py', 'uv.lock') }}
+      - name: Download the models
+        run: uv run python -m app.kb models
+      - name: Migrate
+        run: uv run alembic upgrade head
+      - name: Evaluate
+        run: uv run python -m app.kb eval --check --annotate
+
   # M1 acceptance on every PR: the real image built from the Dockerfile, the whole
   # compose stack (2 API processes, 2 workers), and the duplicate-alert load test.
   e2e:

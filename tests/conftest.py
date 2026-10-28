@@ -61,7 +61,7 @@ async def engine(settings: Settings) -> AsyncIterator[AsyncEngine]:
     async with eng.begin() as conn:
         await conn.execute(
             text(
-                "TRUNCATE executions, approvals, remediation_plans, blackboard, agent_runs, llm_calls, tool_calls, evidence, jobs, alerts, incidents, audit_log RESTART IDENTITY CASCADE"
+                "TRUNCATE kb_chunks, kb_documents, executions, approvals, remediation_plans, blackboard, agent_runs, llm_calls, tool_calls, evidence, jobs, alerts, incidents, audit_log RESTART IDENTITY CASCADE"
             )
         )
     yield eng
