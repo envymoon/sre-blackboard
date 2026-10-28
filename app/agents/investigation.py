@@ -82,7 +82,7 @@ class IncidentView:
 @dataclass(frozen=True)
 class AgentConfig:
     model_for: Callable[[str], str]
-    max_steps: int = 8
+    max_steps: int = 5
     variant: Variant = DEFAULT
 
     def model(self, role: str) -> str:

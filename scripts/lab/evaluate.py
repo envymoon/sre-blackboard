@@ -18,6 +18,11 @@ worker escalates them, "the model was unavailable: rate_limited ..."), the run w
 the window reopens and runs that scenario once more, if ``deadline`` (epoch seconds) leaves
 time for it; otherwise it stops: the scenarios left would only measure the limit. Either
 way the scoring does not count an investigation without a model (app/eval/score.py).
+
+``token_budget`` caps what one run may spend of that window: once the scenarios run so far
+used it, the rest are not started (a scenario under way is finished, so a run can go over
+by one scenario's worth). Eval run 40566329647 and the two before it used ~15M tokens in
+one afternoon, the whole window.
 """
 
 from __future__ import annotations
@@ -116,6 +121,7 @@ def run(
     log: Log = print,
     alert_timeout: float = 300,
     deadline: float | None = None,
+    token_budget: int | None = None,
     sleep: Callable[[float], None] = time.sleep,
     **kwargs: Any,
 ) -> ResultFile:
@@ -170,5 +176,12 @@ def run(
                 by_tenant[t] = asyncio.run(_observe(database_url, ids, r.cause_at)) if ids else []
         results.observations += observations(scenario, r, diagnoser.variants, by_tenant, run_id, timeout)
         results.dump(out / "results.json")
-        log(f"=== {scenario.id}: {'ok' if r.ok(timeout) else 'lab check FAILED'}; {len(everything)} incident(s)")
+        spent = sum(i.tokens for o in results.observations for i in o.incidents)
+        log(
+            f"=== {scenario.id}: {'ok' if r.ok(timeout) else 'lab check FAILED'}; {len(everything)} incident(s); "
+            f"{spent / 1e6:.1f}M tokens so far" + (f" of {token_budget / 1e6:.1f}M" if token_budget else "")
+        )
+        if token_budget and spent >= token_budget and queue:
+            log(f"=== stopping: the token budget is spent; not run: {', '.join(q.id for q in queue)}")
+            queue.clear()
     return results

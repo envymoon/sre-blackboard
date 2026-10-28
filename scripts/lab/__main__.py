@@ -212,6 +212,7 @@ def cmd_eval(args: argparse.Namespace) -> int:
         commit=args.commit,
         alert_timeout=args.alert_timeout,
         deadline=args.deadline,
+        token_budget=args.token_budget,
         settle_s=args.settle,
         resolve_timeout=args.resolve_timeout,
         hold_s=args.hold,
@@ -407,6 +408,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--deadline", type=float, help="epoch seconds the run must end by (waits for a usage window only before it)"
     )
+    p.add_argument("--token-budget", type=int, help="model tokens this run may use; no scenario starts after that")
     p.add_argument("--api-url", default="http://localhost:8000")
     p.set_defaults(func=cmd_eval)
     p = sub.add_parser("fixtures", help="contract test fixtures from a lab-recordings checkout")

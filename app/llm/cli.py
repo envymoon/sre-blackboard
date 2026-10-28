@@ -63,12 +63,14 @@ class ClaudeCLIBackend:
         timeout_s: float = 180.0,
         concurrency: int = 2,
         extra_args: Sequence[str] = (),
+        effort: str = "",
     ) -> None:
         self.binary = binary
         self.timeout_s = timeout_s
         # Every process holds ~250 MB and the subscription has a rate window: few at a time.
         self.semaphore = asyncio.Semaphore(concurrency)
         self.extra_args = tuple(extra_args)
+        self.effort = effort
         # An empty working directory, so no CLAUDE.md or project settings are picked up.
         self.workdir = tempfile.mkdtemp(prefix="sre-llm-")
 
@@ -90,6 +92,7 @@ class ClaudeCLIBackend:
             "--output-format",
             "json",
             "--no-session-persistence",
+            *(("--effort", self.effort) if self.effort else ()),
             *self.extra_args,
         ]
 

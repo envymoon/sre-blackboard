@@ -26,6 +26,7 @@ def build_backend(settings: Settings) -> LLMBackend:
             binary=settings.llm_cli_binary,
             timeout_s=settings.llm_timeout_s,
             concurrency=settings.llm_concurrency,
+            effort=settings.llm_effort,
         )
     elif kind == "api":
         if settings.anthropic_api_key is None:

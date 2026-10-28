@@ -12,12 +12,18 @@ name: Evaluation
 # settings, e.g. "[eval scenarios=bad-release,network-delay variants= shards=1]" (empty
 # variants: the default agents only; alert_timeout=900 waits longer for every first alert
 # than the scenarios' own timeouts). Dispatch needs this file on the default branch.
+#
+# By default it runs CORE, six scenarios that cover every kind of fault (a flag, a release,
+# network delay, a pod down whose service never pages itself, twice, a harmless release
+# first), not the whole catalogue (scenarios=all): a full run with every variant is ~12 of
+# the subscription's 5-hour usage windows. token_budget (whole run, split over the shards)
+# stops starting scenarios once it is spent (scripts/lab/evaluate.py).
 
 on:
   workflow_dispatch:
     inputs:
       scenarios:
-        description: "Scenario ids, comma separated (empty: all)"
+        description: "Scenario ids, comma separated (empty: the core six; all: every one)"
         required: false
         default: ""
       variants:
@@ -32,6 +38,10 @@ on:
         description: "Seconds to wait for a scenario's first alert, at least"
         required: false
         default: "300"
+      token_budget:
+        description: "Model tokens the whole run may use (split over the shards)"
+        required: false
+        default: "8000000"
   push:
     branches: ["milestone/**"]
 
@@ -52,6 +62,7 @@ jobs:
       scenarios: ${{ steps.plan.outputs.scenarios }}
       variants: ${{ steps.plan.outputs.variants }}
       alert_timeout: ${{ steps.plan.outputs.alert_timeout }}
+      token_budget: ${{ steps.plan.outputs.token_budget }}
     steps:
       - id: plan
         env:
@@ -61,20 +72,26 @@ jobs:
           IN_VARIANTS: ${{ inputs.variants }}
           IN_SHARDS: ${{ inputs.shards }}
           IN_ALERT_TIMEOUT: ${{ inputs.alert_timeout }}
+          IN_TOKEN_BUDGET: ${{ inputs.token_budget }}
           EVENT: ${{ github.event_name }}
         run: |
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import json, os, re
-          settings = {"scenarios": "", "variants": "single strong-plan canary", "shards": "4", "alert_timeout": "300"}
+          CORE = "payment-failure bad-release network-delay pod-failure pod-failure-currency payment-failure-after-currency-release"
+          settings = {"scenarios": "", "variants": "single strong-plan canary", "shards": "2", "alert_timeout": "300",
+                      "token_budget": "8000000"}
           if os.environ["EVENT"] == "workflow_dispatch":
               settings |= {"scenarios": os.environ["IN_SCENARIOS"], "variants": os.environ["IN_VARIANTS"],
-                           "shards": os.environ["IN_SHARDS"], "alert_timeout": os.environ["IN_ALERT_TIMEOUT"]}
+                           "shards": os.environ["IN_SHARDS"], "alert_timeout": os.environ["IN_ALERT_TIMEOUT"],
+                           "token_budget": os.environ["IN_TOKEN_BUDGET"]}
           else:
               m = re.search(r"\[eval([^\]]*)\]", os.environ["MESSAGE"])
               for key, value in re.findall(r"(\w+)=([^\s\]]*)", m.group(1) if m else ""):
                   if key in settings:
                       settings[key] = value.replace(",", " ") if key == "variants" else value
-          names = [n for n in re.split(r"[,\s]+", settings["scenarios"]) if re.fullmatch(r"[a-z0-9-]+", n)]
+          wanted = settings["scenarios"].strip()
+          wanted = "" if wanted == "all" else wanted or CORE
+          names = [n for n in re.split(r"[,\s]+", wanted) if re.fullmatch(r"[a-z0-9-]+", n)]
           variants = [v for v in settings["variants"].split() if re.fullmatch(r"[a-z0-9-]+", v)]
           n = max(1, min(8, int(settings["shards"] or 1)))
           if names:
@@ -84,6 +101,8 @@ jobs:
           print(f"scenarios={' '.join(names)}")
           print(f"variants={' '.join(variants)}")
           print(f"alert_timeout={max(60, min(1800, int(settings['alert_timeout']) if settings['alert_timeout'].isdigit() else 300))}")
+          budget = int(settings["token_budget"]) if settings["token_budget"].isdigit() else 8000000
+          print(f"token_budget={max(1, min(15000000, budget) // n)}")  # per shard
           PY
           cat "$GITHUB_OUTPUT"
 
@@ -114,6 +133,7 @@ jobs:
           SCENARIOS: ${{ needs.plan.outputs.scenarios }}
           SHARD: ${{ matrix.shard }}/${{ needs.plan.outputs.count }}
           ALERT_TIMEOUT: ${{ needs.plan.outputs.alert_timeout }}
+          TOKEN_BUDGET: ${{ needs.plan.outputs.token_budget }}
         run: |
           set -o pipefail
           if [ ! -f lab-out/agents.enabled ]; then
@@ -130,7 +150,7 @@ jobs:
             shard_args=(--shard "$SHARD")
           fi
           uv run python -m scripts.lab eval "${shard_args[@]}" --out lab-out/eval --run "${{ github.run_id }}" \
-            --alert-timeout "$ALERT_TIMEOUT" --deadline $((JOB_START + 340 * 60)) 2>&1 | tee lab-out/eval.txt
+            --alert-timeout "$ALERT_TIMEOUT" --deadline $((JOB_START + 340 * 60)) --token-budget "$TOKEN_BUDGET" 2>&1 | tee lab-out/eval.txt
           uv run python -m app.eval report lab-out/eval/results.json --baseline "" --gate --canary \
             | tee lab-out/eval/report.md >> "$GITHUB_STEP_SUMMARY"
 

@@ -79,9 +79,10 @@ def recordings(directory: Path = RECORDINGS) -> list[tuple[str, str, Path]]:
     return out
 
 
-def settings_for(tenant_variants: dict[str, str]) -> Settings:
+def settings_for(tenant_variants: dict[str, str], agent_max_steps: int) -> Settings:
     return Settings(
         _env_file=None,  # nothing from a local .env or .lab.env
+        agent_max_steps=agent_max_steps,
         remediation_targets=LAB_TARGETS,
         eval_tenant_variants=tenant_variants,
         auto_investigate=True,
@@ -130,7 +131,7 @@ async def replay(engine: AsyncEngine, scenario: str, variant: str, path: Path) -
     meta: dict[str, Any] = rec.llm.meta
     investigated = sorted(rec.expected)
     tenants = {inc["tenant_id"] for inc in rec.incidents if str(inc["id"]) in rec.expected}
-    settings = settings_for({t: variant for t in tenants} if variant != "default" else {})
+    settings = settings_for({t: variant for t in tenants} if variant != "default" else {}, rec.max_steps)
     await _load(engine, rec, set(investigated))
     backend = ReplayBackend(rec.llm)
     order = sorted(

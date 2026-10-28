@@ -203,6 +203,15 @@ def test_cli_backend_runs_an_isolated_claude_and_reads_the_structured_step(
     assert json.loads(args[args.index("--json-schema") + 1]) == step_schema(req)
     assert '<result id="c1_1" tool="prom_query">' in call["prompt"]
     assert call["claudecode"] is None  # a nested claude must not think it runs inside Claude Code
+    assert "--effort" not in args  # none given: the CLI's default
+
+
+def test_the_cli_backend_asks_for_the_configured_effort() -> None:
+    backend = ClaudeCLIBackend(effort="low")
+    args = backend.command(request())
+    assert args[args.index("--effort") + 1] == "low"
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.llm_effort == "low" and settings.agent_max_steps == 5
 
 
 @pytest.mark.parametrize(

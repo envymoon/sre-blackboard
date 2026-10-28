@@ -48,6 +48,12 @@ class Recording:
     tools: Cassette = field(default_factory=Cassette)
     expected: dict[str, Any] = field(default_factory=dict)  # incident id -> outcome
 
+    @property
+    def max_steps(self) -> int:
+        """The investigators' step limit it was recorded with: a replay with another one asks
+        the model questions it was never asked. Recordings from before M7 cut it: 8."""
+        return int(self.llm.meta.get("agent_max_steps", 8))
+
     def dump(self, out: Path) -> None:
         out.mkdir(parents=True, exist_ok=True)
         doc = {"incidents": self.incidents, "annotations": self.annotations, "expected": self.expected}

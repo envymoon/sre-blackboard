@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.db import incidents
 from app.eval import scenarios
 from app.eval.results import ResultFile, score_all
-from app.eval.score import MODEL_UNAVAILABLE
+from app.eval.score import MODEL_UNAVAILABLE, IncidentObs
 from scripts.lab import evaluate
 from scripts.lab.diagnose import Diagnoser
 
@@ -234,3 +234,34 @@ def test_without_time_to_wait_the_run_stops_instead_of_measuring_the_limit(
     [only] = results.observations
     assert only.incidents[0].model_failed
     assert any("stopping" in x and "bad-release" in x for x in lines)
+
+
+def test_no_scenario_starts_once_the_run_has_used_its_token_budget(
+    sync_engine: Engine, migrated_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(evaluate.accept.time, "sleep", lambda s: None)
+
+    async def observe(database_url: str, ids: list[Any], cause_at: Any) -> list[IncidentObs]:
+        return [IncidentObs(incident_id=str(i), service="checkout", priority=1, opened_s=1, outcome="diagnosed",
+                            root_causes=["payment"], tokens=2_000_000) for i in ids]  # fmt: skip
+
+    monkeypatch.setattr(evaluate, "_observe", observe)
+    lab = TwoTenantLab(sync_engine, migrated_url)
+    lines: list[str] = []
+    evaluate.run(
+        lab,  # type: ignore[arg-type]
+        sync_engine,
+        [scenarios.get("payment-failure"), scenarios.get("bad-release")],
+        diagnoser=Diagnoser(sync_engine, migrated_url, "lab", tmp_path / "agent", timeout_s=5, planning=False),
+        remediator=None,
+        database_url=migrated_url,
+        tenant="lab",
+        out=tmp_path,
+        run_id="t1",
+        log=lines.append,
+        token_budget=1_500_000,
+        **FAST,
+    )
+    assert lab.injected == ["payment-failure"]
+    assert any("2.0M tokens so far of 1.5M" in x for x in lines)
+    assert any("stopping: the token budget is spent" in x and "bad-release" in x for x in lines)

@@ -243,7 +243,7 @@ async def test_an_exported_investigation_replays_to_the_same_diagnosis(engine, s
             )
         )
     await recording.load_incidents(engine, rec)
-    config = AgentConfig(model_for=lambda role: "claude-haiku-5-5", max_steps=settings.agent_max_steps)
+    config = AgentConfig(model_for=lambda role: "claude-haiku-5-5", max_steps=rec.max_steps)
     for service, incident_id in ids.items():
         outcome = await recording.replay(engine, rec, incident_id, config)
         expected = rec.expected[str(incident_id)]

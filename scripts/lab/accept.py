@@ -43,11 +43,15 @@ from typing import Any
 
 from sqlalchemy import Engine, text
 
+from app.core.config import Settings
 from scripts.lab.cluster import Lab
 from scripts.lab.diagnose import Diagnoser, DiagnosisSeen, primary
 from scripts.lab.faults import Fault
 from scripts.lab.probes import ProbeResult
 from scripts.lab.remediate import RemediationSeen, Remediator
+
+# The workers' step limit, kept with the recordings (the lab's compose file does not set it).
+AGENT_MAX_STEPS = Settings.model_fields["agent_max_steps"].default
 
 Log = Callable[[str], None]
 Probe = Callable[[Fault], list[ProbeResult]]
@@ -339,7 +343,7 @@ def run_scenario(
                 log(f"[{name}] tool {p.tool} ({p.name}): {'ok' if p.ok else 'FAIL'} - {p.detail}")
         if diagnoser is not None and seen:
             result.diagnosed = True
-            meta = {"scenario": name, "cause_at": t0.isoformat()}
+            meta = {"scenario": name, "cause_at": t0.isoformat(), "agent_max_steps": AGENT_MAX_STEPS}
             everything = diagnoser.wait(fault, first, log, label=name, meta=meta)
             result.diagnoses = [d for d in everything if d.tenant == tenant]
             result.variant_diagnoses = [d for d in everything if d.tenant != tenant]

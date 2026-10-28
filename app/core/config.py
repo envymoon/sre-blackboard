@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     # "cli" (claude -p, subscription), "api" (Anthropic API key) or "replay" (llm_cassette).
     llm_backend: str = "cli"
     llm_cli_binary: str = "claude"
+    # claude -p --effort (low, medium, high, xhigh, max; empty: the CLI's default). Most of a
+    # step's output was thinking (~2,900 tokens a step for a few hundred of answer), and the
+    # evaluation runs on the subscription's usage window: low by default, measured in M7.
+    llm_effort: str = "low"
     llm_cassette: str | None = None
     anthropic_api_key: SecretStr | None = None
     anthropic_base_url: str = "https://api.anthropic.com"
@@ -30,7 +34,9 @@ class Settings(BaseSettings):
     llm_concurrency: int = 2
     # Tokens (prompt, cached or not, plus output) one incident may use before it is escalated.
     llm_incident_token_budget: int = 1_500_000
-    agent_max_steps: int = 8
+    # Steps per investigator (the single agent gets three times this). Each step resends the
+    # whole transcript, so the cost grows faster than the step count: 8 until M7 cut it.
+    agent_max_steps: int = 5
     # Evaluation only (M7): tenants whose incidents are investigated by a variant of the agents,
     # e.g. '{"lab-single": "single"}' (app/agents/variants.py). Every other tenant: "default".
     eval_tenant_variants: dict[str, str] = {}
@@ -81,7 +87,7 @@ class Settings(BaseSettings):
     worker_reap_interval_s: float = 5.0
     worker_shutdown_grace_s: float = 20.0
     # A handler running longer than this fails the attempt (and is retried).
-    # An investigation (about 20 model steps, a few in parallel) is the longest job.
+    # An investigation (up to about 17 model steps, a few in parallel) is the longest job.
     worker_job_timeout_s: float = 1200.0
 
     # Remediation (M5, ADR-0007). After a diagnosis, plan a repair and put it to the policy.
