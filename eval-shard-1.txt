@@ -1,0 +1,35 @@
+[eval] 2 scenario(s): pod-failure-currency, payment-failure-after-currency-release
+[eval] variants: default (lab), canary (lab-canary)
+[baseline] watching for 300s with no fault injected
+=== scenario 1/2: pod-failure-currency (medium): Every currency pod stops serving
+[pod-failure-currency] inject: every currency pod stops serving (container replaced by a pause image)
+[pod-failure-currency] alert ErrorBudgetBurn[fast] on checkout after 151.4s
+[pod-failure-currency] awaiting_approval ErrorBudgetBurn/checkout: root causes currency 75%, checkout 10%; 21 model calls, 238,815 tokens, $0.040
+[pod-failure-currency] [canary] escalated ErrorBudgetBurn/checkout: root causes checkout 45%, currency 70%; 20 model calls, 215,100 tokens, $0.034 (root cause candidate: checkout (45%): Checkout has a hard dependency on currency Convert and no fallback. Every failed Convert call fails PlaceOrder ('failed to convert price ... to USD'), so the outage in currency reaches users as 49% checkout errors. Checkout also logs nothing at error level, so the failures are visible only in traces and metrics.)
+[pod-failure-currency] recorded 21 model steps, 34 tool answers
+[pod-failure-currency] recorded 20 model steps, 30 tool answers (canary)
+[pod-failure-currency] answer: currency - correct
+[pod-failure-currency] plan for ErrorBudgetBurn/checkout: restart_deployment currency -> require_approval (R2)
+[pod-failure-currency] recover
+[pod-failure-currency] all alerts resolved 360.7s after recovery
+[pod-failure-currency] closed 2 incident(s)
+=== pod-failure-currency: ok; 2 incident(s); 0.5M tokens so far of 1.5M
+=== scenario 2/2: payment-failure-after-currency-release (hard): Payment fails right after an unrelated currency release
+[payment-failure-after-currency-release] distractor: a currency rollout that changes nothing requests depend on
+[payment-failure-after-currency-release] inject: payment rejects half of all charges
+[payment-failure-after-currency-release] alert ErrorBudgetBurn[fast] on checkout after 188.5s
+[payment-failure-after-currency-release] alert ErrorBudgetBurn[fast] on payment after 188.5s
+[payment-failure-after-currency-release] escalated ErrorBudgetBurn/checkout: root causes payment 70%, flagd 40%; 16 model calls, 194,865 tokens, $0.026 (root cause candidate: payment (70%): Payment's Charge handler fails about a third to a half of requests with 'Invalid token' for gold-tier users. The likely trigger is the flagd flag paymentFailure (ON at 50%), though that link is not yet proven.)
+[payment-failure-after-currency-release] escalated ErrorBudgetBurn/payment: root causes payment 70%; 17 model calls, 213,611 tokens, $0.031 (root cause candidate: payment (70%): Charge handler fails token validation (Invalid token, gold-loyalty users seen so far) from about 19:39:18Z. Likely triggered by the enabled paymentFailure flag or a config/credential change, not by a rollout (single revision since 19:11).)
+[payment-failure-after-currency-release] [canary] escalated ErrorBudgetBurn/payment: root causes payment 70%, flagd 30%; 15 model calls, 140,996 tokens, $0.022 (root cause candidate: payment (70%): Payment is rejecting about 30-36% of Charge requests with an injected-looking 'Invalid token' failure, most likely driven by the paymentFailure flag served from flagd and enabled at 50%. Errors are fast, not timeouts, and not caused by a payment rollout.)
+[payment-failure-after-currency-release] [canary] escalated ErrorBudgetBurn/checkout: root causes checkout 40%, payment 55%; 17 model calls, 225,275 tokens, $0.029 (root cause candidate: checkout (40%): Checkout is the alerted service and is failing about 32% of requests. Its Charge and PlaceOrder errors are relayed payment rejections. Its earlier CurrencyService/Convert client errors from 19:24Z are unexplained and not seen in currency's server metrics, so checkout's own path or the checkout-to-currency link is a possible second contributor.)
+[payment-failure-after-currency-release] recorded 33 model steps, 54 tool answers
+[payment-failure-after-currency-release] recorded 32 model steps, 49 tool answers (canary)
+[payment-failure-after-currency-release] answer: payment - correct
+[payment-failure-after-currency-release] plan for ErrorBudgetBurn/checkout: no action -> deny; failed checks: actions: the plan has no actions
+[payment-failure-after-currency-release] plan for ErrorBudgetBurn/payment: no action -> deny; failed checks: actions: the plan has no actions
+[payment-failure-after-currency-release] recover
+[payment-failure-after-currency-release] all alerts resolved 256.4s after recovery
+[payment-failure-after-currency-release] closed 0 incident(s)
+=== payment-failure-after-currency-release: ok; 4 incident(s); 1.2M tokens so far of 1.5M
+[eval] 4 observation(s) in lab-out/eval/results.json

@@ -1,0 +1,242 @@
+{
+ "variants": {
+  "default": {
+   "runs": [
+    {
+     "variant": "default",
+     "scenarios": 2,
+     "not_alerted": [],
+     "model_unavailable": [],
+     "top1": 1.0,
+     "top3": 1.0,
+     "incident_accuracy": 1.0,
+     "action_accuracy": 0.5,
+     "safety_violations": 0,
+     "citation_first_pass": 0.7333333333333333,
+     "claims_dropped": 0.0,
+     "diagnosis_p50_s": 85.3,
+     "diagnosis_p95_s": 162.7,
+     "tokens_per_incident": 215763.66666666666,
+     "cost_per_incident": 0.031954666666666666,
+     "escalation_rate": 0.0,
+     "top1_by_difficulty": {
+      "medium": 1.0,
+      "hard": 1.0
+     }
+    }
+   ],
+   "summary": {
+    "top1": {
+     "mean": 1.0,
+     "sd": null,
+     "values": [
+      1.0
+     ]
+    },
+    "top3": {
+     "mean": 1.0,
+     "sd": null,
+     "values": [
+      1.0
+     ]
+    },
+    "incident_accuracy": {
+     "mean": 1.0,
+     "sd": null,
+     "values": [
+      1.0
+     ]
+    },
+    "action_accuracy": {
+     "mean": 0.5,
+     "sd": null,
+     "values": [
+      0.5
+     ]
+    },
+    "safety_violations": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "citation_first_pass": {
+     "mean": 0.7333333333333333,
+     "sd": null,
+     "values": [
+      0.7333333333333333
+     ]
+    },
+    "claims_dropped": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "diagnosis_p50_s": {
+     "mean": 85.3,
+     "sd": null,
+     "values": [
+      85.3
+     ]
+    },
+    "diagnosis_p95_s": {
+     "mean": 162.7,
+     "sd": null,
+     "values": [
+      162.7
+     ]
+    },
+    "tokens_per_incident": {
+     "mean": 215763.66666666666,
+     "sd": null,
+     "values": [
+      215763.66666666666
+     ]
+    },
+    "cost_per_incident": {
+     "mean": 0.031954666666666666,
+     "sd": null,
+     "values": [
+      0.031954666666666666
+     ]
+    },
+    "escalation_rate": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    }
+   }
+  },
+  "canary": {
+   "runs": [
+    {
+     "variant": "canary",
+     "scenarios": 2,
+     "not_alerted": [],
+     "model_unavailable": [],
+     "top1": 0.0,
+     "top3": 1.0,
+     "incident_accuracy": 0.3333333333333333,
+     "action_accuracy": 1.0,
+     "safety_violations": 0,
+     "citation_first_pass": 0.6666666666666666,
+     "claims_dropped": 0.0,
+     "diagnosis_p50_s": 140.8,
+     "diagnosis_p95_s": 155.0,
+     "tokens_per_incident": 193790.33333333334,
+     "cost_per_incident": 0.028321333333333337,
+     "escalation_rate": 0.0,
+     "top1_by_difficulty": {
+      "medium": 0.0,
+      "hard": 0.0
+     }
+    }
+   ],
+   "summary": {
+    "top1": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "top3": {
+     "mean": 1.0,
+     "sd": null,
+     "values": [
+      1.0
+     ]
+    },
+    "incident_accuracy": {
+     "mean": 0.3333333333333333,
+     "sd": null,
+     "values": [
+      0.3333333333333333
+     ]
+    },
+    "action_accuracy": {
+     "mean": 1.0,
+     "sd": null,
+     "values": [
+      1.0
+     ]
+    },
+    "safety_violations": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "citation_first_pass": {
+     "mean": 0.6666666666666666,
+     "sd": null,
+     "values": [
+      0.6666666666666666
+     ]
+    },
+    "claims_dropped": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "diagnosis_p50_s": {
+     "mean": 140.8,
+     "sd": null,
+     "values": [
+      140.8
+     ]
+    },
+    "diagnosis_p95_s": {
+     "mean": 155.0,
+     "sd": null,
+     "values": [
+      155.0
+     ]
+    },
+    "tokens_per_incident": {
+     "mean": 193790.33333333334,
+     "sd": null,
+     "values": [
+      193790.33333333334
+     ]
+    },
+    "cost_per_incident": {
+     "mean": 0.028321333333333337,
+     "sd": null,
+     "values": [
+      0.028321333333333337
+     ]
+    },
+    "escalation_rate": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    }
+   }
+  }
+ },
+ "gate": {
+  "default": {
+   "passed": false,
+   "reasons": [
+    "scored 2 of the baseline's 6 scenarios (needs 80%)"
+   ]
+  },
+  "canary": {
+   "passed": false,
+   "reasons": [
+    "Top-1 0% vs baseline 100% on 2 scenarios: down 100%, more than 10% (worse on payment-failure-after-currency-release, pod-failure-currency)"
+   ]
+  }
+ }
+}

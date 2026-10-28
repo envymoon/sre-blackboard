@@ -1,0 +1,205 @@
+{
+ "annotations": {
+  "801fd1e3-c395-47de-bcd0-87d3a416f584": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 49.4% of requests"
+  }
+ },
+ "expected": {
+  "801fd1e3-c395-47de-bcd0-87d3a416f584": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_89c400ed7a31d5e7",
+       "ev_13047a450bcd6fcf"
+      ],
+      "statement": "Checkout's error spans are dominated by CurrencyService/Convert failing with 'connection refused' to 10.96.152.124:8080 (20 spans in 30m, 10 in the last 10m)."
+     },
+     {
+      "evidence_ids": [
+       "ev_b6fe42b972de189b",
+       "ev_369b4cddd9c50f2d",
+       "ev_7a8b13a8af1f51c3",
+       "ev_976fa4124be9dba9"
+      ],
+      "statement": "Currency's last log line is 'Received SIGTERM, shutting down Currency Server' at 19:23:47Z; it logs nothing afterward, and has no error traces in the window."
+     },
+     {
+      "evidence_ids": [
+       "ev_3d7e037727f28f22"
+      ],
+      "statement": "Frontend's 'failed to convert price' error logs start at 19:23:55Z, about 8s after currency's SIGTERM."
+     },
+     {
+      "evidence_ids": [
+       "ev_33661fd3f49c9cf2",
+       "ev_25b9c1fe789e2ddb"
+      ],
+      "statement": "Checkout's error ratio rose from about 0.105 at 19:24:30Z to 0.62 at 19:26:30Z, so onset is about 19:24-19:25Z."
+     },
+     {
+      "evidence_ids": [
+       "ev_e1d4c08e93c656ba",
+       "ev_23ce3fede0b5cf62"
+      ],
+      "statement": "The only error series among checkout's client spans is CurrencyService/Convert (about 0.143 errors/s). Payment, cart and product-catalog have no client error series."
+     },
+     {
+      "evidence_ids": [
+       "ev_541099db6d4c04f1",
+       "ev_f72d4e26929a1602"
+      ],
+      "statement": "Currency's server p95 is flat at about 1.9 ms, and its Convert spans show only STATUS_CODE_OK with no error-status series."
+     },
+     {
+      "evidence_ids": [
+       "ev_f03fff2eba8c0137"
+      ],
+      "statement": "All 18 flagd flags are off by default; no flag change explains the onset."
+     },
+     {
+      "evidence_ids": [
+       "ev_0824a462cfe47679",
+       "ev_538b9403c89c69f0",
+       "ev_c45f79c0777874da",
+       "ev_67e6f522ea18fd40",
+       "ev_fac47a358795f9e5"
+      ],
+      "statement": "Checkout, payment, cart, product-catalog and shipping each have a single revision (rollout_history) created about 19:11Z, with no later change. Currency's rollout history was not checked."
+     },
+     {
+      "evidence_ids": [
+       "ev_28e9ce0b713022c3"
+      ],
+      "statement": "The 7 Warning events in otel-demo over 120 minutes are readiness probe failures on otel-collector-agent, alertmanager and loki; none involve currency or checkout's dependencies."
+     },
+     {
+      "evidence_ids": [
+       "ev_bbe7652d58ccbc07",
+       "ev_32d57daf9293d721"
+      ],
+      "statement": "Checkout's single pod has no warning, restart or OOM events. Payment's error logs are empty over 30 minutes."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check currency's Deployment replicas and rollout history, its Kubernetes events and pod status for 19:20-19:25Z, and whether the node or pod was evicted.",
+      "statement": "Currency was scaled down, evicted or OOM-killed around 19:23:47Z, and its Deployment or ReplicaSet was not restored."
+     },
+     {
+      "how_to_verify": "Query currency's Convert server span rate per pod and its endpoints for 10.96.152.124 after 19:23:47Z, and confirm the Service has no ready endpoints.",
+      "statement": "Currency's server spans still show about 0.23/s OK after 19:23:47Z. This may be stale data, a second replica, or spans from a different pod, which would contradict the 'currency down' reading."
+     },
+     {
+      "how_to_verify": "Compare checkout's CURRENCY_ADDR env and the currency Service's port and clusterIP, and look for a recent config change.",
+      "statement": "Checkout's Convert client address or port was changed, so it points at a dead endpoint. This is less likely because the same path worked until about 19:24Z."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_b6fe42b972de189b",
+       "ev_89c400ed7a31d5e7",
+       "ev_3d7e037727f28f22",
+       "ev_33661fd3f49c9cf2"
+      ],
+      "statement": "Currency is the failing service. Its SIGTERM at 19:23:47Z precedes checkout's onset (about 19:24Z) and the frontend symptoms (19:23:55Z), and checkout's refused connections to its address match a process that is no longer listening."
+     },
+     {
+      "evidence_ids": [
+       "ev_f03fff2eba8c0137",
+       "ev_e1d4c08e93c656ba",
+       "ev_bbe7652d58ccbc07",
+       "ev_32d57daf9293d721"
+      ],
+      "statement": "The fault is not in checkout's config, flags or resources, and not in payment, cart or product-catalog, because none of them shows errors or changes that match the onset."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "Currency server stopped at about 19:23:47Z (SIGTERM, no logs after) and is not accepting connections on 10.96.152.124:8080, so checkout's Convert calls are refused and checkout fails its orders. The reason for the stop is unknown.",
+      "confidence": 0.75,
+      "evidence_ids": [
+       "ev_b6fe42b972de189b",
+       "ev_369b4cddd9c50f2d",
+       "ev_89c400ed7a31d5e7",
+       "ev_13047a450bcd6fcf",
+       "ev_3d7e037727f28f22"
+      ],
+      "service": "currency"
+     },
+     {
+      "cause": "Not the root cause. Checkout surfaces the currency failure: its error spans are connection-refused Convert calls, and its own logs show no fault. Its own config is unlikely to have changed, since the errors began only after currency stopped.",
+      "confidence": 0.1,
+      "evidence_ids": [
+       "ev_9d30d18190b2d95f",
+       "ev_fc41627bb3016739",
+       "ev_e1d4c08e93c656ba"
+      ],
+      "service": "checkout"
+     }
+    ],
+    "summary": "Checkout's fast error burn is caused by the currency service being down. Currency logged 'Received SIGTERM' at 19:23:47Z and nothing afterward. From about 19:24Z, checkout's gRPC calls to CurrencyService/Convert (10.96.152.124:8080) were refused with connection refused. Checkout's PlaceOrder failures, frontend's 'failed to convert price' errors (from 19:23:55Z) and frontend-proxy's error rise all follow from that. Payment, cart and product-catalog show no errors, and no flag, rollout or event change touches checkout or its other dependencies. The reason for currency's SIGTERM (scale-down, eviction, OOM or manual stop) is not established, and currency's own rollout history and events were not checked."
+   },
+   "findings": 19,
+   "plan": {
+    "actions": [
+     {
+      "action": "restart_deployment",
+      "deployment": "currency",
+      "evidence_ids": [
+       "ev_895c8dd6092b5c7f",
+       "ev_acb82954c3d71e47",
+       "ev_b6fe42b972de189b",
+       "ev_89c400ed7a31d5e7"
+      ],
+      "reason": "Currency stopped at 19:23:47Z (SIGTERM, container killed and restarted by kubelet) and checkout's Convert calls to 10.96.152.124:8080 are refused. No release caused it: currency has one revision from 19:11Z. A rolling restart should restore the listener. Root cause of the stop is still unknown."
+     }
+    ],
+    "alternatives": [
+     {
+      "action": "rollout_undo",
+      "why_not": "Currency has only revision 1 (created 19:11:23Z, no change cause), so there is no earlier revision to return to and no bad release."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "The fault is that the currency endpoint refuses connections, not a shortage of capacity. Adding replicas would not fix a single pod that is not listening."
+     }
+    ],
+    "no_action_reason": null,
+    "summary": "Currency is the broken service: it stopped at 19:23:47Z and checkout's Convert calls to it are refused. A rolling restart of currency is proposed because no release is involved. A human should still find out why the container was killed (events show 'definition changed') and confirm checkout's error ratio drops after the restart."
+   },
+   "state": "AWAITING_APPROVAL"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": null,
+   "created_at": "2026-10-28 19:26:18.041636+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "801fd1e3-c395-47de-bcd0-87d3a416f584",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "AWAITING_APPROVAL",
+   "tenant_id": "lab",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}
