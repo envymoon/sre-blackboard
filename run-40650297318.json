@@ -1,0 +1,59 @@
+{
+ "commit": "22ae062862dae715ef160f3e2f6fc78ed0df1a6d",
+ "kind": "live",
+ "observations": [
+  {
+   "alerts": [
+    "ErrorBudgetBurn[fast]/checkout"
+   ],
+   "error": null,
+   "first_alert_s": 137.8,
+   "incidents": [
+    {
+     "actions": [
+      {
+       "action": "rollout_undo",
+       "deployment": "checkout",
+       "risk": "R3",
+       "verdict": "require_approval"
+      }
+     ],
+     "answers": 5,
+     "calls": 16,
+     "confidences": [
+      0.85,
+      0.1
+     ],
+     "cost_usd": 0.028933,
+     "dropped": 0,
+     "executions": [
+      {
+       "action": "rollout_undo",
+       "deployment": "checkout",
+       "status": "succeeded"
+      }
+     ],
+     "first_pass": 5,
+     "incident_id": "e8cff852-36fd-4e79-8259-59838f715063",
+     "investigation_s": 83.4,
+     "kept": 31,
+     "opened_s": 137.8,
+     "outcome": "diagnosed",
+     "priority": 1,
+     "reason": "root cause candidate: checkout (85%): Config release revision 2 set PAYMENT_ADDR to payment:9999 (was payment:8080). Checkout cannot dial payment on 9999, so every Charge call times out and checkout returns failed PlaceOrder requests. Revert the env var to payment:8080 or roll back to revision 1.",
+     "root_causes": [
+      "checkout",
+      "payment"
+     ],
+     "service": "checkout",
+     "tokens": 176415
+    }
+   ],
+   "lab_ok": true,
+   "run": "40650297318",
+   "scenario": "bad-release",
+   "variant": "default"
+  }
+ ],
+ "run": "40650297318"
+}

@@ -1,0 +1,121 @@
+{
+ "variants": {
+  "default": {
+   "runs": [
+    {
+     "variant": "default",
+     "scenarios": 1,
+     "not_alerted": [],
+     "model_unavailable": [],
+     "top1": 1.0,
+     "top3": 1.0,
+     "incident_accuracy": 1.0,
+     "action_accuracy": 1.0,
+     "safety_violations": 0,
+     "citation_first_pass": 1.0,
+     "claims_dropped": 0.0,
+     "diagnosis_p50_s": 83.4,
+     "diagnosis_p95_s": 83.4,
+     "tokens_per_incident": 176415.0,
+     "cost_per_incident": 0.028933,
+     "escalation_rate": 0.0,
+     "top1_by_difficulty": {
+      "easy": 1.0
+     }
+    }
+   ],
+   "summary": {
+    "top1": {
+     "mean": 1.0,
+     "sd": null,
+     "values": [
+      1.0
+     ]
+    },
+    "top3": {
+     "mean": 1.0,
+     "sd": null,
+     "values": [
+      1.0
+     ]
+    },
+    "incident_accuracy": {
+     "mean": 1.0,
+     "sd": null,
+     "values": [
+      1.0
+     ]
+    },
+    "action_accuracy": {
+     "mean": 1.0,
+     "sd": null,
+     "values": [
+      1.0
+     ]
+    },
+    "safety_violations": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "citation_first_pass": {
+     "mean": 1.0,
+     "sd": null,
+     "values": [
+      1.0
+     ]
+    },
+    "claims_dropped": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    },
+    "diagnosis_p50_s": {
+     "mean": 83.4,
+     "sd": null,
+     "values": [
+      83.4
+     ]
+    },
+    "diagnosis_p95_s": {
+     "mean": 83.4,
+     "sd": null,
+     "values": [
+      83.4
+     ]
+    },
+    "tokens_per_incident": {
+     "mean": 176415.0,
+     "sd": null,
+     "values": [
+      176415.0
+     ]
+    },
+    "cost_per_incident": {
+     "mean": 0.028933,
+     "sd": null,
+     "values": [
+      0.028933
+     ]
+    },
+    "escalation_rate": {
+     "mean": 0.0,
+     "sd": null,
+     "values": [
+      0.0
+     ]
+    }
+   }
+  }
+ },
+ "gate": {
+  "default": {
+   "passed": true,
+   "reasons": []
+  }
+ }
+}

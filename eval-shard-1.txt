@@ -1,0 +1,19 @@
+[eval] 1 scenario(s): bad-release
+[eval] variants: default (lab), 
+[baseline] watching for 300s with no fault injected
+=== scenario 1/1: bad-release (easy): A checkout release points its payment client at a dead port
+[bad-release] inject: a checkout rollout points its payment client at a port nobody listens on
+[bad-release] alert ErrorBudgetBurn[fast] on checkout after 137.8s
+[bad-release] awaiting_approval ErrorBudgetBurn/checkout: root causes checkout 85%, payment 10%; 16 model calls, 176,415 tokens, $0.029
+[bad-release] recorded 16 model steps, 28 tool answers
+[bad-release] answer: checkout - correct
+[bad-release] plan for ErrorBudgetBurn/checkout: rollout_undo checkout -> require_approval (R3); approved by lab-approver
+[bad-release] checkout: RESOLVED (checkout error ratio over 1m is 0 ratio, below 0.06, for 3 checks in a row) 130s after the decision
+[bad-release] execution succeeded: rollout_undo checkout (revision 2 -> 3)
+[bad-release] console case: lab-out/eval/agent/cases/bad-release-checkout.json
+[bad-release] recover
+[bad-release] nothing to recover: sre-blackboard already repaired it
+[bad-release] all alerts resolved 300.8s after recovery
+[bad-release] closed 0 incident(s)
+=== bad-release: ok; 1 incident(s); 0.2M tokens so far of 0.5M
+[eval] 1 observation(s) in lab-out/eval/results.json
