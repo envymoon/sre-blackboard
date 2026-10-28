@@ -84,10 +84,37 @@ CATALOGUE: tuple[Fault, ...] = (
         mechanism=FlagFault("paymentFailure", "50%"),
         tags=("acceptance",),
     ),
+    # The same flag at other strengths (M7): a trickle of failures and a total outage.
+    Fault(
+        name="payment-failure-10",
+        description="payment rejects one in ten charges",
+        root_cause="payment",
+        fault_type="error",
+        symptoms=("payment", "checkout"),
+        mechanism=FlagFault("paymentFailure", "10%"),
+    ),
+    Fault(
+        name="payment-failure-25",
+        description="payment rejects one in four charges",
+        root_cause="payment",
+        fault_type="error",
+        symptoms=("payment", "checkout"),
+        mechanism=FlagFault("paymentFailure", "25%"),
+    ),
+    Fault(
+        name="payment-failure-100",
+        description="payment rejects every charge",
+        root_cause="payment",
+        fault_type="error",
+        symptoms=("payment", "checkout"),
+        mechanism=FlagFault("paymentFailure", "100%"),
+    ),
     Fault(
         name="payment-unreachable",
         description="checkout calls a payment address that does not exist",
-        root_cause="payment",
+        # The flag is read by checkout, which then dials a bad address; payment itself is
+        # healthy and never sees the calls. The service to fix is checkout (M7 relabel).
+        root_cause="checkout",
         fault_type="dependency-unreachable",
         symptoms=("checkout",),
         mechanism=FlagFault("paymentUnreachable", "on"),
@@ -195,6 +222,45 @@ CATALOGUE: tuple[Fault, ...] = (
         symptoms=("frontend", "checkout"),
         mechanism=ChaosFault("PodChaos", {"action": "pod-failure", "mode": "all", "selector": _selector("cart")}),
     ),
+    # More of the same chaos on busier paths (M7): delay and outage of what many requests touch.
+    *(
+        Fault(
+            name=f"network-delay-{service}",
+            description=f"1s of added network latency on {service}",
+            root_cause=service,
+            fault_type="network-latency",
+            symptoms=(service, *callers),
+            mechanism=ChaosFault(
+                "NetworkChaos",
+                {
+                    "action": "delay",
+                    "mode": "all",
+                    "selector": _selector(service),
+                    "delay": {"latency": "1000ms", "jitter": "100ms", "correlation": "0"},
+                    "direction": "to",
+                },
+            ),
+        )
+        for service, callers in (
+            ("cart", ("checkout", "frontend", "frontend-proxy")),
+            ("currency", ("checkout", "frontend", "frontend-proxy")),
+            ("shipping", ("checkout", "frontend", "frontend-proxy")),
+        )
+    ),
+    *(
+        Fault(
+            name=f"pod-failure-{service}",
+            description=f"every {service} pod stops serving (container replaced by a pause image)",
+            root_cause=service,
+            fault_type="unavailable",
+            symptoms=callers,
+            mechanism=ChaosFault("PodChaos", {"action": "pod-failure", "mode": "all", "selector": _selector(service)}),
+        )
+        for service, callers in (
+            ("currency", ("frontend", "frontend-proxy", "checkout")),
+            ("product-catalog", ("frontend", "frontend-proxy", "checkout", "recommendation")),
+        )
+    ),
     Fault(
         name="cpu-stress",
         description="CPU stress inside the recommendation pod",
@@ -227,6 +293,112 @@ CATALOGUE: tuple[Fault, ...] = (
         ),
         tags=("acceptance",),
         repair=("rollout_undo", "checkout"),
+    ),
+    # More bad config releases (M7): each points one client at a port nobody listens on. The
+    # process starts and passes its probes, so the rollout completes and only requests fail.
+    Fault(
+        name="frontend-bad-release",
+        description="a frontend rollout points its product-catalog client at a dead port",
+        root_cause="frontend",
+        fault_type="bad-deploy",
+        # product-catalog itself stays healthy: it never sees the requests. (The first version
+        # broke the recommendation client: too little traffic to page, eval run 40542803104.)
+        symptoms=("frontend", "frontend-proxy"),
+        mechanism=ReleaseFault(
+            deployment="frontend",
+            container="frontend",
+            env={"PRODUCT_CATALOG_ADDR": "product-catalog:9999"},
+            change_cause="frontend config release: catalog client moved to port 9999",
+        ),
+        repair=("rollout_undo", "frontend"),
+    ),
+    Fault(
+        name="checkout-cart-bad-release",
+        description="a checkout rollout points its cart client at a dead port",
+        root_cause="checkout",
+        fault_type="bad-deploy",
+        symptoms=("checkout",),
+        mechanism=ReleaseFault(
+            deployment="checkout",
+            container="checkout",
+            env={"CART_ADDR": "cart:9999"},
+            change_cause="checkout config release: cart client moved to port 9999",
+        ),
+        repair=("rollout_undo", "checkout"),
+    ),
+    Fault(
+        name="recommendation-bad-release",
+        description="a recommendation rollout points its product-catalog client at a dead port",
+        root_cause="recommendation",
+        fault_type="bad-deploy",
+        symptoms=("recommendation", "frontend"),
+        mechanism=ReleaseFault(
+            deployment="recommendation",
+            container="recommendation",
+            env={"PRODUCT_CATALOG_ADDR": "product-catalog:9999"},
+            change_cause="recommendation config release: catalog client moved to port 9999",
+        ),
+        repair=("rollout_undo", "recommendation"),
+    ),
+    Fault(
+        name="shipping-bad-release",
+        description="a shipping rollout points its quote client at a dead port",
+        root_cause="shipping",
+        fault_type="bad-deploy",
+        symptoms=("shipping", "checkout", "frontend"),
+        mechanism=ReleaseFault(
+            deployment="shipping",
+            container="shipping",
+            env={"QUOTE_ADDR": "http://quote:9999"},
+            change_cause="shipping config release: quote client moved to port 9999",
+        ),
+        repair=("rollout_undo", "shipping"),
+    ),
+    # --- harmless releases (M7) --------------------------------------------------------------
+    # Distractors: a real rollout with a plausible change-cause that changes nothing a request
+    # touches (an environment variable the service never reads). Injected shortly before an
+    # unrelated fault, they leave exactly the trail a bad release would.
+    Fault(
+        name="benign-release-currency",
+        description="a currency rollout that changes nothing requests depend on",
+        root_cause="currency",
+        fault_type="benign-deploy",
+        symptoms=(),
+        mechanism=ReleaseFault(
+            deployment="currency",
+            container="currency",
+            env={"CURRENCY_RATES_REFRESH": "15m"},
+            change_cause="currency release: refresh exchange rates every 15 minutes",
+        ),
+        tags=("benign",),
+    ),
+    Fault(
+        name="benign-release-frontend",
+        description="a frontend rollout that changes nothing requests depend on",
+        root_cause="frontend",
+        fault_type="benign-deploy",
+        symptoms=(),
+        mechanism=ReleaseFault(
+            deployment="frontend",
+            container="frontend",
+            env={"PROMO_BANNER": "autumn-sale"},
+            change_cause="frontend release: autumn sale banner",
+        ),
+        tags=("benign",),
+    ),
+    Fault(
+        name="benign-release-checkout",
+        description="a checkout rollout that changes nothing requests depend on",
+        root_cause="checkout",
+        fault_type="benign-deploy",
+        symptoms=(),
+        mechanism=ReleaseFault(
+            deployment="checkout",
+            container="checkout",
+            env={"ORDER_CONFIRMATION_TEMPLATE": "v2"},
+            change_cause="checkout release: new order confirmation template",
+        ),
+        tags=("benign",),
     ),
 )
 

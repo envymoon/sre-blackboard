@@ -5,8 +5,10 @@ inject NAME / recover NAME break or repair one thing (recover --all undoes every
 status                     active faults and firing alerts
 probe                      per-service SLIs right now, to tune alert thresholds
 accept [--tag T | NAMES]   the M2 acceptance run (see scripts/lab/accept.py)
+eval [--shard i/n | IDS]   the M7 evaluation over eval/scenarios (see scripts/lab/evaluate.py)
 env                        settings for the read-only tools (make lab-env writes them to .lab.env)
 fixtures DIR --run ID      turn a lab-recordings branch checkout into the contract test fixtures
+eval-import DIR --run ID   an evaluation's results and recordings into eval/ (the CI replay and baseline)
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 from scripts.lab import accept
 from scripts.lab.cluster import Lab
@@ -165,6 +168,59 @@ def cmd_accept(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def cmd_eval(args: argparse.Namespace) -> int:
+    from sqlalchemy import create_engine
+
+    from app.core.config import get_settings
+    from app.eval import scenarios
+    from scripts.lab.diagnose import Diagnoser
+    from scripts.lab.evaluate import run, shard
+    from scripts.lab.remediate import Remediator
+
+    settings = get_settings()
+    picked = [scenarios.get(n) for n in args.ids] if args.ids else shard(scenarios.catalogue(), args.shard)
+    print(f"[eval] {len(picked)} scenario(s): {', '.join(s.id for s in picked)}")
+    variants = dict(settings.eval_tenant_variants)
+    print(f"[eval] variants: default ({args.tenant}), " + ", ".join(f"{v} ({t})" for t, v in variants.items()))
+    engine = create_engine(settings.database_url)
+    lab = _lab(args)
+    out = Path(args.out)
+    if args.baseline > 0:
+        print(f"[baseline] watching for {args.baseline:.0f}s with no fault injected")
+        if noise := accept.check_baseline(lab, args.baseline, print):
+            print(f"[baseline] alerts on a healthy lab: {', '.join(noise)} (the run goes on; scores may suffer)")
+    diagnoser = Diagnoser(
+        engine,
+        settings.database_url,
+        args.tenant,
+        out / "agent",
+        timeout_s=args.diagnose_timeout,
+        planning=True,
+        variants=variants,
+    )
+    remediator = Remediator(engine, settings, args.tenant, api_url=args.api_url, cases=out / "agent" / "cases")
+    results = run(
+        lab,
+        engine,
+        picked,
+        diagnoser=diagnoser,
+        remediator=remediator,
+        database_url=settings.database_url,
+        tenant=args.tenant,
+        out=out,
+        run_id=args.run,
+        commit=args.commit,
+        alert_timeout=args.alert_timeout,
+        deadline=args.deadline,
+        token_budget=args.token_budget,
+        settle_s=args.settle,
+        resolve_timeout=args.resolve_timeout,
+        hold_s=args.hold,
+    )
+    print(f"[eval] {len(results.observations)} observation(s) in {out / 'results.json'}")
+    return 0
+
+
 # Inside kind's Docker network the node answers by its container name: the NodePorts the
 # host reaches through port mappings, and the API server (its certificate covers that name).
 NODE = "sre-lab-control-plane"
@@ -247,6 +303,52 @@ def cmd_fixtures(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_eval_import(args: argparse.Namespace) -> int:
+    """Copy one live evaluation (a lab-recordings/eval-<id> checkout) into eval/.
+
+    The observations go to eval/results/run-<id>.json; with --baseline the run is added to
+    eval/baseline.json. The recordings of the default variant, and of the variants named
+    with --variants, replace eval/recordings (what CI replays on every pull request). With
+    --add only the --variants recordings are copied, beside the ones already there: a rerun
+    of one variant (a fixed canary) joins the run whose default it is gated against.
+    """
+    import shutil
+
+    src, repo = Path(args.dir), Path(args.repo)
+    result = src / f"run-{args.run}.json"
+    results_dir, recordings = repo / "eval" / "results", repo / "eval" / "recordings"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(result, results_dir / result.name)
+    print(f"observations: {results_dir / result.name}")
+    if args.baseline:
+        baseline = repo / "eval" / "baseline.json"
+        doc: dict[str, Any] = (
+            json.loads(baseline.read_text()) if baseline.exists() else {"variant": "default", "results": []}
+        )
+        entry = f"eval/results/{result.name}"
+        if entry not in doc["results"]:
+            doc["results"].append(entry)
+        baseline.write_text(json.dumps(doc, indent=2) + "\n")
+        print(f"baseline: {', '.join(doc['results'])}")
+    if recordings.exists() and not args.add:
+        shutil.rmtree(recordings)
+    keep = set(args.variants)
+    for scenario in sorted(p for p in (src / "agent").iterdir() if p.is_dir() and p.name != "cases"):
+        if (scenario / "incidents.json").exists() and not args.add:
+            out = recordings / scenario.name
+            out.mkdir(parents=True)
+            for f in ("incidents.json", "llm.jsonl.gz", "tools.jsonl.gz"):
+                shutil.copyfile(scenario / f, out / f)
+        for variant in sorted(p for p in scenario.iterdir() if p.is_dir() and p.name in keep):
+            out = recordings / scenario.name / variant.name
+            if out.exists():
+                shutil.rmtree(out)
+            shutil.copytree(variant, out)
+    size = sum(f.stat().st_size for f in recordings.rglob("*") if f.is_file()) if recordings.exists() else 0
+    print(f"recordings: {recordings} ({size / 1e6:.1f} MB)")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m scripts.lab", description=__doc__.split("\n")[0])
     parser.add_argument("--lab-url", default=os.environ.get("LAB_URL", "http://localhost:18080"))
@@ -295,11 +397,39 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--api-url", default="http://localhost:8000")
     p.set_defaults(func=cmd_accept)
+    p = sub.add_parser("eval", help="the M7 evaluation over eval/scenarios")
+    p.add_argument("ids", nargs="*", help="scenario ids (default: all, or the --shard)")
+    p.add_argument("--shard", help="i/n: every n-th scenario starting with the i-th")
+    p.add_argument("--tenant", default=os.environ.get("SRE_LAB_TENANT", "lab"))
+    p.add_argument("--out", default="lab-out/eval")
+    p.add_argument("--run", default="local", help="the Actions run id, kept with every observation")
+    p.add_argument("--commit", default=os.environ.get("GITHUB_SHA", ""))
+    p.add_argument("--baseline", type=float, default=300)
+    p.add_argument("--alert-timeout", type=float, default=300)
+    p.add_argument("--settle", type=float, default=60)
+    p.add_argument("--resolve-timeout", type=float, default=600)
+    p.add_argument("--hold", type=float, default=60)
+    p.add_argument("--diagnose-timeout", type=float, default=1500)
+    p.add_argument(
+        "--deadline", type=float, help="epoch seconds the run must end by (waits for a usage window only before it)"
+    )
+    p.add_argument("--token-budget", type=int, help="model tokens this run may use; no scenario starts after that")
+    p.add_argument("--api-url", default="http://localhost:8000")
+    p.set_defaults(func=cmd_eval)
     p = sub.add_parser("fixtures", help="contract test fixtures from a lab-recordings checkout")
     p.add_argument("dir")
     p.add_argument("--run", required=True, help="the Actions run id, kept in the manifest")
     p.add_argument("--out", default="tests/fixtures/lab")
     p.set_defaults(func=cmd_fixtures)
+
+    p = sub.add_parser("eval-import", help="an evaluation run's results and recordings into eval/")
+    p.add_argument("dir", help="a checkout of lab-recordings/eval-<run id>")
+    p.add_argument("--run", required=True)
+    p.add_argument("--repo", default=".")
+    p.add_argument("--baseline", action="store_true", help="add the run to eval/baseline.json")
+    p.add_argument("--variants", nargs="*", default=[], help="also keep these variants' recordings")
+    p.add_argument("--add", action="store_true", help="add the --variants recordings to eval/recordings, keep the rest")
+    p.set_defaults(func=cmd_eval_import)
 
     args = parser.parse_args(argv)
     code: int = args.func(args)

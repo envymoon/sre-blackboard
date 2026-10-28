@@ -1,0 +1,229 @@
+{
+ "commit": "1d0b42f360dfb09fbc37299797b3f54d89cf9d1a",
+ "kind": "live",
+ "observations": [
+  {
+   "alerts": [
+    "ErrorBudgetBurn[fast]/checkout",
+    "ErrorBudgetBurn[fast]/payment"
+   ],
+   "error": null,
+   "first_alert_s": 188.5,
+   "incidents": [
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 15,
+     "confidences": [
+      0.7,
+      0.3
+     ],
+     "cost_usd": 0.022091,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 3,
+     "incident_id": "d8794b36-a159-469b-972b-a0a2c430a28f",
+     "investigation_s": 91.3,
+     "kept": 30,
+     "opened_s": 188.5,
+     "outcome": "diagnosed",
+     "priority": 1,
+     "reason": "root cause candidate: payment (70%): Payment is rejecting about 30-36% of Charge requests with an injected-looking 'Invalid token' failure, most likely driven by the paymentFailure flag served from flagd and enabled at 50%. Errors are fast, not timeouts, and not caused by a payment rollout.",
+     "root_causes": [
+      "payment",
+      "flagd"
+     ],
+     "service": "payment",
+     "tokens": 140996
+    },
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 17,
+     "confidences": [
+      0.4,
+      0.55
+     ],
+     "cost_usd": 0.029144,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 4,
+     "incident_id": "38d1fd11-3713-424d-b4d5-66d044d1cba3",
+     "investigation_s": 140.8,
+     "kept": 29,
+     "opened_s": 188.5,
+     "outcome": "diagnosed",
+     "priority": 1,
+     "reason": "root cause candidate: checkout (40%): Checkout is the alerted service and is failing about 32% of requests. Its Charge and PlaceOrder errors are relayed payment rejections. Its earlier CurrencyService/Convert client errors from 19:24Z are unexplained and not seen in currency's server metrics, so checkout's own path or the checkout-to-currency link is a possible second contributor.",
+     "root_causes": [
+      "checkout",
+      "payment"
+     ],
+     "service": "checkout",
+     "tokens": 225275
+    }
+   ],
+   "lab_ok": true,
+   "run": "40751455029",
+   "scenario": "payment-failure-after-currency-release",
+   "variant": "canary"
+  },
+  {
+   "alerts": [
+    "ErrorBudgetBurn[fast]/checkout",
+    "ErrorBudgetBurn[fast]/payment"
+   ],
+   "error": null,
+   "first_alert_s": 188.5,
+   "incidents": [
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 16,
+     "confidences": [
+      0.7,
+      0.4
+     ],
+     "cost_usd": 0.025779,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 4,
+     "incident_id": "826e6ba3-fc37-4e0a-b0a8-be332bb6a64c",
+     "investigation_s": 85.3,
+     "kept": 30,
+     "opened_s": 188.5,
+     "outcome": "diagnosed",
+     "priority": 1,
+     "reason": "root cause candidate: payment (70%): Payment's Charge handler fails about a third to a half of requests with 'Invalid token' for gold-tier users. The likely trigger is the flagd flag paymentFailure (ON at 50%), though that link is not yet proven.",
+     "root_causes": [
+      "payment",
+      "flagd"
+     ],
+     "service": "checkout",
+     "tokens": 194865
+    },
+    {
+     "actions": [],
+     "answers": 5,
+     "calls": 17,
+     "confidences": [
+      0.7
+     ],
+     "cost_usd": 0.030526,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 4,
+     "incident_id": "6e94a157-64fb-4991-a0cf-70e062153006",
+     "investigation_s": 156.2,
+     "kept": 34,
+     "opened_s": 188.5,
+     "outcome": "diagnosed",
+     "priority": 1,
+     "reason": "root cause candidate: payment (70%): Charge handler fails token validation (Invalid token, gold-loyalty users seen so far) from about 19:39:18Z. Likely triggered by the enabled paymentFailure flag or a config/credential change, not by a rollout (single revision since 19:11).",
+     "root_causes": [
+      "payment"
+     ],
+     "service": "payment",
+     "tokens": 213611
+    }
+   ],
+   "lab_ok": true,
+   "run": "40751455029",
+   "scenario": "payment-failure-after-currency-release",
+   "variant": "default"
+  },
+  {
+   "alerts": [
+    "ErrorBudgetBurn[fast]/checkout"
+   ],
+   "error": null,
+   "first_alert_s": 151.4,
+   "incidents": [
+    {
+     "actions": [
+      {
+       "action": "restart_deployment",
+       "deployment": "currency",
+       "risk": "R2",
+       "verdict": "deny"
+      }
+     ],
+     "answers": 5,
+     "calls": 20,
+     "confidences": [
+      0.45,
+      0.7
+     ],
+     "cost_usd": 0.033729,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 3,
+     "incident_id": "b31d67f9-4f7f-477a-942d-0db5253dbdc2",
+     "investigation_s": 155.0,
+     "kept": 31,
+     "opened_s": 151.4,
+     "outcome": "diagnosed",
+     "priority": 1,
+     "reason": "root cause candidate: checkout (45%): Checkout has a hard dependency on currency Convert and no fallback. Every failed Convert call fails PlaceOrder ('failed to convert price ... to USD'), so the outage in currency reaches users as 49% checkout errors. Checkout also logs nothing at error level, so the failures are visible only in traces and metrics.",
+     "root_causes": [
+      "checkout",
+      "currency"
+     ],
+     "service": "checkout",
+     "tokens": 215100
+    }
+   ],
+   "lab_ok": true,
+   "run": "40751455029",
+   "scenario": "pod-failure-currency",
+   "variant": "canary"
+  },
+  {
+   "alerts": [
+    "ErrorBudgetBurn[fast]/checkout"
+   ],
+   "error": null,
+   "first_alert_s": 151.4,
+   "incidents": [
+    {
+     "actions": [
+      {
+       "action": "restart_deployment",
+       "deployment": "currency",
+       "risk": "R2",
+       "verdict": "require_approval"
+      }
+     ],
+     "answers": 5,
+     "calls": 21,
+     "confidences": [
+      0.75,
+      0.1
+     ],
+     "cost_usd": 0.039559,
+     "dropped": 0,
+     "executions": [],
+     "first_pass": 3,
+     "incident_id": "801fd1e3-c395-47de-bcd0-87d3a416f584",
+     "investigation_s": 162.7,
+     "kept": 34,
+     "opened_s": 151.4,
+     "outcome": "diagnosed",
+     "priority": 1,
+     "reason": "root cause candidate: currency (75%): Currency server stopped at about 19:23:47Z (SIGTERM, no logs after) and is not accepting connections on 10.96.152.124:8080, so checkout's Convert calls are refused and checkout fails its orders. The reason for the stop is unknown.",
+     "root_causes": [
+      "currency",
+      "checkout"
+     ],
+     "service": "checkout",
+     "tokens": 238815
+    }
+   ],
+   "lab_ok": true,
+   "run": "40751455029",
+   "scenario": "pod-failure-currency",
+   "variant": "default"
+  }
+ ],
+ "run": "40751455029"
+}

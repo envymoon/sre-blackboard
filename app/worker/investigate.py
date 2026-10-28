@@ -14,6 +14,7 @@ from functools import partial
 
 import httpx
 
+from app.agents import variants
 from app.agents.investigation import AgentConfig, Outcome, investigate
 from app.agents.loop import Deps
 from app.agents.store import PgAgentStore
@@ -88,7 +89,11 @@ def make_investigate(services: AgentServices) -> Callable[[JobContext], Awaitabl
             incident_id=view.id,
             token_budget=settings.llm_incident_token_budget,
         )
-        config = AgentConfig(model_for=partial(model_for, settings=settings), max_steps=settings.agent_max_steps)
+        config = AgentConfig(
+            model_for=partial(model_for, settings=settings),
+            max_steps=settings.agent_max_steps,
+            variant=variants.for_tenant(view.tenant_id, settings.eval_tenant_variants),
+        )
         try:
             outcome = await investigate(view, deps, config)
         except LLMError as e:

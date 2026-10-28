@@ -1,0 +1,12 @@
+id: payment-failure-100
+title: Payment rejects every charge
+difficulty: easy
+tags: [flag, error, dependency, outage]
+inject:
+  - fault: payment-failure-100
+expect:
+  root_cause: payment
+  fault_type: error
+  symptoms: [payment, checkout]
+  repair: []
+notes: Every order fails. The loudest version of payment-failure.

@@ -1,0 +1,15 @@
+id: bad-release
+title: A checkout release points its payment client at a dead port
+difficulty: easy
+tags: [release, error, repairable]
+inject:
+  - fault: bad-release
+expect:
+  root_cause: checkout
+  fault_type: bad-deploy
+  symptoms: [checkout]
+  repair:
+    - {action: rollout_undo, deployment: checkout}
+notes: >
+  The acceptance fault since M2 and the closed loop of M5. The errors look like payment is
+  down, but payment never sees a request: checkout's new revision dials port 9999.

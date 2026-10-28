@@ -3,7 +3,8 @@
 For each incident a fault opened, once its plan has been reviewed by the policy:
 
 - the fault has a known repair (``Fault.repair``) and the plan waiting for an approval is
-  exactly that repair: approve it, as ``lab-approver``, bound to the plan's hash;
+  exactly that repair: approve it, as ``lab-approver``, bound to the plan's hash. Once: the
+  same repair proposed on the fault's other incidents is left waiting (M7);
 - it waits with any other plan: reject it (a human would not approve a repair they do not
   recognise);
 - the fault has no repair in the catalogue: leave it; the lab closes the incident after
@@ -56,6 +57,7 @@ class RemediationSeen:
     risk: str | None = None
     failed_checks: list[str] = field(default_factory=list)
     decision: str | None = None  # approve | reject | None (left waiting)
+    left: str = ""  # why it was left waiting, when it was
     state: str = ""
     reason: str = ""
     approved_to_final_s: float | None = None
@@ -94,9 +96,16 @@ class Remediator:
         token = mint_token(settings, subject=subject, tenant_id=self.tenant, roles=[role], ttl_s=6 * 3600)
         return {"Authorization": f"Bearer {token}"}
 
-    def run(self, fault: Fault, diagnoses: list[DiagnosisSeen], log: Any) -> list[RemediationSeen]:
+    def run(
+        self, fault: Fault, diagnoses: list[DiagnosisSeen], log: Any, label: str | None = None
+    ) -> list[RemediationSeen]:
+        """Approve the expected repair once: a human who has approved rolling shipping back on
+        one incident does not approve it again on the four others the same fault opened (the
+        executor would find the rollout already undone). Those are left waiting."""
+        name = label or fault.name
         seen = []
         approved: dict[str, float] = {}
+        approved_on: str | None = None
         for d in diagnoses:
             r = RemediationSeen(d.incident_id, d.service, state=d.state)
             plans = self._get(f"/api/v1/incidents/{d.incident_id}/plans")
@@ -105,9 +114,13 @@ class Remediator:
                 r.plan = [f"{a['action']} {a['deployment']}" for a in plan["plan"]["actions"]]
                 r.verdict, r.risk = plan["verdict"], plan["risk"]
                 r.failed_checks = [f"{c['name']}: {c['detail']}" for c in plan["checks"] if not c["ok"]]
-                if d.state == "AWAITING_APPROVAL" and fault.repair is not None:
-                    wanted = [f"{fault.repair[0]} {fault.repair[1]}"]
+                wanted = [f"{fault.repair[0]} {fault.repair[1]}"] if fault.repair is not None else []
+                if d.state == "AWAITING_APPROVAL" and wanted and r.plan == wanted and approved_on is not None:
+                    r.left = f"already approved on {approved_on}"
+                elif d.state == "AWAITING_APPROVAL" and wanted:
                     r.decision = "approve" if r.plan == wanted else "reject"
+                    if r.decision == "approve":
+                        approved_on = f"{d.title}/{d.service}"
                     comment = (
                         "lab: the expected repair"
                         if r.decision == "approve"
@@ -121,9 +134,10 @@ class Remediator:
                     resp.raise_for_status()
                     approved[d.incident_id] = time.monotonic()
             log(
-                f"[{fault.name}] plan for {d.title}/{d.service}: {', '.join(r.plan) or 'no action'} "
+                f"[{name}] plan for {d.title}/{d.service}: {', '.join(r.plan) or 'no action'} "
                 f"-> {r.verdict or 'none'}{f' ({r.risk})' if r.risk else ''}"
                 + (f"; {r.decision}d by {APPROVER}" if r.decision else "")
+                + (f"; left waiting: {r.left}" if r.left else "")
                 + (f"; failed checks: {'; '.join(r.failed_checks)}" if r.failed_checks and r.verdict == "deny" else "")
             )
             seen.append(r)
@@ -154,17 +168,17 @@ class Remediator:
                 for x in p["executions"]
             ]
             log(
-                f"[{fault.name}] {r.service}: {r.state} ({r.reason})"
+                f"[{name}] {r.service}: {r.state} ({r.reason})"
                 + (f" {r.approved_to_final_s:.0f}s after the decision" if r.approved_to_final_s is not None else "")
             )
             for x in r.executions:
-                log(f"[{fault.name}] execution {x}")
+                log(f"[{name}] execution {x}")
             if self.cases is not None and r.closed_loop:
-                path = self.cases / f"{fault.name}-{r.service}.json"
+                path = self.cases / f"{name}-{r.service}.json"
                 self.cases.mkdir(parents=True, exist_ok=True)
                 doc = asyncio.run(export(self.settings, UUID(r.incident_id)))
                 path.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n")
-                log(f"[{fault.name}] console case: {path}")
+                log(f"[{name}] console case: {path}")
         return seen
 
     def verify_audit(self) -> dict[str, Any]:

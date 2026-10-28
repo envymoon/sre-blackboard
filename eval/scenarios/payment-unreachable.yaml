@@ -1,0 +1,16 @@
+id: payment-unreachable
+title: Checkout dials a payment address that does not exist
+difficulty: hard
+tags: [flag, dependency, misleading-name]
+inject:
+  - fault: payment-unreachable
+expect:
+  root_cause: checkout
+  fault_type: dependency-unreachable
+  symptoms: [checkout]
+  repair: []
+notes: >
+  The flag is called paymentUnreachable, but it is read by checkout, which then connects to
+  a bad address. payment is healthy and never sees a request; its own spans and logs show
+  nothing. The service to fix is checkout (its flag). Blaming payment is the wrong answer
+  the flag name invites.

@@ -1,0 +1,15 @@
+id: shipping-bad-release
+title: A shipping release points its quote client at a dead port
+difficulty: medium
+tags: [release, error, repairable, healthy-dependency]
+inject:
+  - fault: shipping-bad-release
+expect:
+  root_cause: shipping
+  fault_type: bad-deploy
+  symptoms: [shipping, checkout, frontend, frontend-proxy]
+  repair:
+    - {action: rollout_undo, deployment: shipping}
+notes: >
+  shipping cannot get quotes; quote is healthy and simply stops being called. checkout and
+  frontend fail where they ask shipping for a quote.

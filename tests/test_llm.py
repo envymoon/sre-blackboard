@@ -203,6 +203,15 @@ def test_cli_backend_runs_an_isolated_claude_and_reads_the_structured_step(
     assert json.loads(args[args.index("--json-schema") + 1]) == step_schema(req)
     assert '<result id="c1_1" tool="prom_query">' in call["prompt"]
     assert call["claudecode"] is None  # a nested claude must not think it runs inside Claude Code
+    assert "--effort" not in args  # none given: the CLI's default
+
+
+def test_the_cli_backend_asks_for_the_configured_effort() -> None:
+    backend = ClaudeCLIBackend(effort="low")
+    args = backend.command(request())
+    assert args[args.index("--effort") + 1] == "low"
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.llm_effort == "low" and settings.agent_max_steps == 5
 
 
 @pytest.mark.parametrize(
@@ -480,3 +489,18 @@ def test_model_for_role_then_family_then_default() -> None:
 def test_live_cli_step() -> None:
     result = asyncio.run(ClaudeCLIBackend().step(request()))
     assert result.step["actions"] or result.step["final"]
+
+
+def test_the_reset_time_is_read_from_either_way_the_cli_says_it() -> None:
+    from datetime import UTC, datetime
+
+    from app.llm.cli import seconds_until_reset
+
+    now = datetime(2026, 10, 27, 19, 40, tzinfo=UTC).timestamp()
+    session = "exit 1, HTTP 429: You've hit your session limit · resets 8:50pm (UTC)"
+    assert seconds_until_reset(session, now) == 70 * 60
+    # Past that time today: tomorrow's.
+    assert seconds_until_reset("resets 7am (UTC)", now) == (11 * 60 + 20) * 60
+    assert seconds_until_reset("resets 12:05am (UTC)", now) == (4 * 60 + 25) * 60
+    assert seconds_until_reset(f"Claude AI usage limit reached|{int(now) + 600}", now) == 600
+    assert seconds_until_reset("Rate limited", now) is None

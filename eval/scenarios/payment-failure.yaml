@@ -1,0 +1,16 @@
+id: payment-failure
+title: Payment rejects half of all charges
+difficulty: easy
+tags: [flag, error, dependency]
+inject:
+  - fault: payment-failure
+expect:
+  root_cause: payment
+  fault_type: error
+  symptoms: [payment, checkout]
+  # A feature flag in payment's code. No catalogue action turns a flag off; a restart or
+  # a rollback changes nothing while the flag is on.
+  repair: []
+notes: >
+  The acceptance fault since M2. checkout alerts too, because every order calls payment;
+  checkout is the event host, payment the problem host.

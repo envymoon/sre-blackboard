@@ -1,0 +1,15 @@
+id: payment-failure-25
+title: Payment rejects one in four charges
+difficulty: medium
+tags: [flag, error, dependency, strength]
+inject:
+  - fault: payment-failure-25
+expect:
+  root_cause: payment
+  fault_type: error
+  symptoms: [payment, checkout]
+  repair: []
+notes: >
+  The payment flag at a quarter of all charges, half the acceptance strength:
+  enough to page, with fewer failed spans to find. (10% never paged in 15 minutes at the
+  lab's traffic: eval run 40557832275.)

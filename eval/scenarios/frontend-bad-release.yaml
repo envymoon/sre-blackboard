@@ -1,0 +1,15 @@
+id: frontend-bad-release
+title: A frontend release points its catalog client at a dead port
+difficulty: hard
+tags: [release, error, repairable, healthy-dependency]
+inject:
+  - fault: frontend-bad-release
+expect:
+  root_cause: frontend
+  fault_type: bad-deploy
+  symptoms: [frontend, frontend-proxy]
+  repair:
+    - {action: rollout_undo, deployment: frontend}
+notes: >
+  frontend's calls to product-catalog fail, but product-catalog is healthy and its traffic
+  just drops. Blaming product-catalog is the trap; the change is in frontend's rollout history.

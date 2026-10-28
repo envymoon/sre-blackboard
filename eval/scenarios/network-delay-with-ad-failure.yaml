@@ -1,0 +1,20 @@
+id: network-delay-with-ad-failure
+title: Network delay on product-catalog while ad fails on its own
+difficulty: hard
+tags: [chaos, network, latency, distractor, concurrent-incidents]
+inject:
+  - fault: ad-failure
+    role: distractor
+    root_cause: ad
+    symptoms: [ad]
+  - fault: network-delay
+    after_s: 60
+expect:
+  root_cause: product-catalog
+  fault_type: network-latency
+  symptoms: [product-catalog, recommendation, checkout, frontend, frontend-proxy]
+  repair: []
+notes: >
+  Two unrelated problems at once. Each incident has its own right answer: ad's for ad's
+  incidents, product-catalog for the latency ones. The investigators see both in the list of
+  other open incidents; neither explains the other.

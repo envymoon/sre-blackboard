@@ -1,0 +1,162 @@
+{
+ "annotations": {
+  "2f5295c6-037a-47e6-b983-3fd35bb0febd": {
+   "description": "Error ratio over 5m is above 14.4x the 1% error budget (fast burn); at this rate a 30-day budget lasts about 2 days.",
+   "summary": "checkout is failing 42.37% of requests"
+  }
+ },
+ "expected": {
+  "2f5295c6-037a-47e6-b983-3fd35bb0febd": {
+   "agents": {
+    "coordinator": "done",
+    "investigator.changes": "done",
+    "investigator.logs_traces": "done",
+    "investigator.metrics": "done",
+    "synthesizer": "done"
+   },
+   "diagnosis": {
+    "facts": [
+     {
+      "evidence_ids": [
+       "ev_79de4a97960cd3cd",
+       "ev_37676d316b962b79",
+       "ev_26bb8e9b8f8057e3"
+      ],
+      "statement": "Checkout's client spans to CurrencyService/Convert fail with 'connection refused' to 10.96.57.183:8080 in 20 of 20 error traces."
+     },
+     {
+      "evidence_ids": [
+       "ev_450e6fc62ecc2b64",
+       "ev_e12aeb1163197875"
+      ],
+      "statement": "Currency logged 'Received SIGTERM, shutting down' at 16:09:36Z as its last line."
+     },
+     {
+      "evidence_ids": [
+       "ev_5b5c50fffaf19f89",
+       "ev_cb6c6dbdbad2348a",
+       "ev_1c99630c005606bd"
+      ],
+      "statement": "No later revisions exist for checkout or its dependencies, and all 18 flagd flags are currently off."
+     },
+     {
+      "evidence_ids": [
+       "ev_1d1416b0582d1a12",
+       "ev_e8772358149f0930"
+      ],
+      "statement": "Checkout's error ratio rose from about 0 at about 15:38Z to 0.58. The payment error wave peaked at 15:43Z and is now 0."
+     },
+     {
+      "evidence_ids": [
+       "ev_6e97048384020c16",
+       "ev_d1895613aa6c3ba5"
+      ],
+      "statement": "Currency's server spans show no error series, and the Convert client p95 is flat at about 1.9 ms."
+     }
+    ],
+    "hypotheses": [
+     {
+      "how_to_verify": "Check currency pod status, restart count, last termination reason, endpoints and Kubernetes events from 16:00Z onward.",
+      "statement": "The currency pod was evicted, OOM-killed or rescheduled at about 16:09Z, and is not ready."
+     },
+     {
+      "how_to_verify": "Check flagd logs and payment error logs and traces for 15:35-15:45Z.",
+      "statement": "A flag was briefly enabled earlier, causing the payment wave at 15:38-15:43Z."
+     }
+    ],
+    "inferences": [
+     {
+      "evidence_ids": [
+       "ev_79de4a97960cd3cd",
+       "ev_c88004f89b7778c2"
+      ],
+      "statement": "Frontend 500s on /api/checkout and the frontend-proxy errors are downstream symptoms of checkout failing to convert prices."
+     },
+     {
+      "evidence_ids": [
+       "ev_6e97048384020c16",
+       "ev_37676d316b962b79"
+      ],
+      "statement": "Currency has no server-side errors because refused connections never reach it, so the clean server metrics do not contradict the outage."
+     }
+    ],
+    "root_causes": [
+     {
+      "cause": "The currency service stopped (SIGTERM at 16:09:36Z, no later logs) and refuses connections. Checkout's price conversions fail, so PlaceOrder returns errors. The reason for the termination (eviction, restart, scale-down) is not established.",
+      "confidence": 0.6,
+      "evidence_ids": [
+       "ev_450e6fc62ecc2b64",
+       "ev_79de4a97960cd3cd",
+       "ev_37676d316b962b79",
+       "ev_26bb8e9b8f8057e3"
+      ],
+      "service": "currency"
+     },
+     {
+      "cause": "An earlier payment fault caused the first wave of checkout errors (15:38-15:43Z). It has since cleared and does not explain the current errors. It may explain why the checkout error ratio was elevated before 16:09Z.",
+      "confidence": 0.2,
+      "evidence_ids": [
+       "ev_e8772358149f0930",
+       "ev_1b5a66f64d51ea11"
+      ],
+      "service": "payment"
+     }
+    ],
+    "summary": "Checkout is failing about 42-58% of requests. The current errors are CurrencyService/Convert calls from checkout that get 'connection refused' at 10.96.57.183:8080. Currency logged SIGTERM at 16:09:36Z and nothing after, so the currency pod was stopped or is not serving. No rollout, flag or warning event explains why. An earlier wave of checkout errors (15:38-15:43Z) matched payment server errors and has since stopped. Payment is not implicated now. The cause of the currency shutdown is still unknown."
+   },
+   "findings": 16,
+   "plan": {
+    "actions": [
+     {
+      "action": "restart_deployment",
+      "deployment": "currency",
+      "evidence_ids": [
+       "ev_8b688622b87b08cf",
+       "ev_541630fca16f5fc3"
+      ],
+      "reason": "Currency pod was killed at 16:09:36Z ('container definition changed') and replaced by a pause container, so it is not serving. The Deployment has one clean revision, so a restart returns the pod to the spec. The cause of the in-place change is unknown."
+     }
+    ],
+    "alternatives": [
+     {
+      "action": "rollout_undo",
+      "why_not": "Currency has only revision 1, so there is no earlier revision to return to, and no bad release is shown."
+     },
+     {
+      "action": "scale_deployment",
+      "why_not": "The pod is not short of capacity; it is not serving at all, so more replicas would not fix the outage."
+     },
+     {
+      "action": "none",
+      "why_not": "Checkout is failing about 58% of requests, so a restart of the broken dependency is a justified low-risk mitigation."
+     }
+    ],
+    "no_action_reason": null,
+    "summary": "Restart the currency Deployment so its pod is recreated from the single, unchanged revision (image 3.1.0-currency) and checkout's CurrencyService/Convert calls succeed again. This restores service but does not explain what altered the running container at 16:09:36Z, which a human must investigate."
+   },
+   "state": "AWAITING_APPROVAL"
+  }
+ },
+ "incidents": [
+  {
+   "closed_at": null,
+   "created_at": "2026-10-28 16:12:18.017262+00:00",
+   "environment": "lab",
+   "fingerprint": "4f05c66242923b6c34d19943ecef78fb",
+   "id": "2f5295c6-037a-47e6-b983-3fd35bb0febd",
+   "labels": {
+    "alertname": "ErrorBudgetBurn",
+    "burn": "fast",
+    "environment": "lab",
+    "service_name": "checkout",
+    "severity": "critical",
+    "slo": "availability"
+   },
+   "priority": 1,
+   "service": "checkout",
+   "state": "AWAITING_APPROVAL",
+   "tenant_id": "lab-strong-plan",
+   "title": "ErrorBudgetBurn"
+  }
+ ]
+}

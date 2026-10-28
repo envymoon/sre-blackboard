@@ -1,0 +1,14 @@
+id: pod-failure-product-catalog
+title: Every product-catalog pod stops serving
+difficulty: medium
+tags: [chaos, unavailable]
+inject:
+  - fault: pod-failure-product-catalog
+expect:
+  root_cause: product-catalog
+  fault_type: unavailable
+  symptoms: [frontend, frontend-proxy, checkout, recommendation]
+  repair: []
+notes: >
+  Four callers fail at once (frontend, checkout, recommendation and the proxy in front);
+  product-catalog itself goes silent rather than failing.

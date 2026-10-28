@@ -1,0 +1,19 @@
+id: payment-failure-after-currency-release
+title: Payment fails right after an unrelated currency release
+difficulty: hard
+tags: [flag, error, distractor, red-herring-release]
+inject:
+  - fault: benign-release-currency
+    role: distractor
+  - fault: payment-failure
+    after_s: 90
+expect:
+  root_cause: payment
+  fault_type: error
+  symptoms: [payment, checkout]
+  repair: []
+notes: >
+  currency was rolled out 90 seconds before the payment flag, with a plausible
+  change-cause. checkout calls currency too, so the release is in the right place and at
+  the right time; only the data says it did not matter (currency's own errors stay at zero).
+  Rolling back currency would be a change to a healthy service.

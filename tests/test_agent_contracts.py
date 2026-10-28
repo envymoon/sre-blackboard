@@ -47,7 +47,7 @@ async def test_a_recorded_lab_investigation_replays_to_the_same_outcome(engine, 
     rec = recording.Recording.load(FIXTURES / fault)
     expected = rec.expected[incident]
     await recording.load_incidents(engine, rec)
-    config = AgentConfig(model_for=lambda role: "claude-haiku-5-5", max_steps=settings.agent_max_steps)
+    config = AgentConfig(model_for=lambda role: "claude-haiku-5-5", max_steps=rec.max_steps)
     outcome = await recording.replay(engine, rec, UUID(incident), config)
 
     async with engine.connect() as conn:

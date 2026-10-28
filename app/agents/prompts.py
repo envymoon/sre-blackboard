@@ -52,5 +52,15 @@ def synthesizer() -> Prompt:
     return compose("synthesizer", "synthesizer", "environment")
 
 
+def solo() -> Prompt:
+    """The single-agent variant (app/agents/variants.py): every investigator's brief, and the synthesizer's job."""
+    return compose("solo", "solo", "metrics", "logs_traces", "changes", "environment")
+
+
+def canary_synthesizer() -> Prompt:
+    """The canary variant's synthesizer: deliberately wrong, for the evaluation to catch."""
+    return compose("synthesizer", "canary_synthesizer", "environment")
+
+
 def planner() -> Prompt:
     return compose("planner", "planner", "environment")

@@ -1,0 +1,14 @@
+id: pod-failure-currency
+title: Every currency pod stops serving
+difficulty: medium
+tags: [chaos, unavailable]
+inject:
+  - fault: pod-failure-currency
+expect:
+  root_cause: currency
+  fault_type: unavailable
+  symptoms: [frontend, frontend-proxy, checkout]
+  repair: []
+notes: >
+  The pod is Running but nothing answers, so currency has no server spans of its own to
+  fail: the errors are all on its callers. A restart does not help while the experiment runs.

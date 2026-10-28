@@ -1,0 +1,16 @@
+id: intl-shipping-slowdown
+title: Shipping sleeps five seconds on every order outside the US
+difficulty: medium
+tags: [flag, latency, dependency]
+inject:
+  - fault: intl-shipping-slowdown
+# Pages on latency only, 5-7 minutes in (eval run 40557832275).
+alert_timeout_s: 600
+expect:
+  root_cause: shipping
+  fault_type: latency
+  symptoms: [shipping, checkout, frontend, frontend-proxy]
+  repair: []
+notes: >
+  Only some orders are slow (non-US addresses), so p95 moves more than the mean. checkout
+  waits on shipping; shipping's own server spans are the slow ones.

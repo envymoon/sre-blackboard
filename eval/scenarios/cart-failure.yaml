@@ -1,0 +1,16 @@
+id: cart-failure
+title: Cart fails half of its EmptyCart calls
+difficulty: medium
+tags: [flag, error, dependency]
+inject:
+  - fault: cart-failure
+# Pages on latency only, 5-7 minutes in (eval run 40557832275).
+alert_timeout_s: 600
+expect:
+  root_cause: cart
+  fault_type: error
+  symptoms: [cart, checkout]
+  repair: []
+notes: >
+  cart's EmptyCart is called by checkout after an order is placed, so checkout's PlaceOrder
+  fails although payment and the order itself went through.

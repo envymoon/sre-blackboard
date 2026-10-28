@@ -52,6 +52,10 @@ services:
       SRE_LLM_BACKEND: ${SRE_LLM_BACKEND:-cli}
       SRE_AUTO_INVESTIGATE: ${SRE_AUTO_INVESTIGATE:-true}
       SRE_LLM_ROLE_MODELS: ${SRE_LLM_ROLE_MODELS:-{}}
+      SRE_LLM_CONCURRENCY: ${SRE_LLM_CONCURRENCY:-2}
+      SRE_LLM_EFFORT: ${SRE_LLM_EFFORT:-low}
+      # Evaluation only (M7): tenant -> agent variant, e.g. {"lab-single": "single"}.
+      SRE_EVAL_TENANT_VARIANTS: ${SRE_EVAL_TENANT_VARIANTS:-{}}
       # No value: passed through from the shell or .env when set, absent otherwise.
       CLAUDE_CODE_OAUTH_TOKEN:
       ANTHROPIC_API_KEY:

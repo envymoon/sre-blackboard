@@ -18,6 +18,7 @@ import re
 import tempfile
 import time
 from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.llm.render import step_schema, system_text, transcript_text
@@ -34,6 +35,22 @@ CLI_INSTRUCTION = (
     "Data sources are requested inside it, in `actions`."
 )
 _RESET_AT = re.compile(r"\|(\d{10})\b")  # "Claude AI usage limit reached|1760000000"
+# "You've hit your session limit · resets 8:50pm (UTC)" (seen in eval run 40566329647).
+_RESET_CLOCK = re.compile(r"resets\s+(\d{1,2})(?::(\d{2}))?\s*([ap]m)\s*\(UTC\)", re.I)
+
+
+def seconds_until_reset(text: str, now: float | None = None) -> float | None:
+    """When a subscription's usage window reopens, from the CLI's message about it."""
+    now = time.time() if now is None else now
+    if m := _RESET_AT.search(text):
+        return max(0.0, int(m.group(1)) - now)
+    if m := _RESET_CLOCK.search(text):
+        hour = int(m.group(1)) % 12 + (12 if m.group(3).lower() == "pm" else 0)
+        at = datetime.fromtimestamp(now, UTC).replace(hour=hour, minute=int(m.group(2) or 0), second=0, microsecond=0)
+        if at.timestamp() <= now:
+            at += timedelta(days=1)  # the next time the clock shows it
+        return at.timestamp() - now
+    return None
 
 
 class ClaudeCLIBackend:
@@ -46,12 +63,14 @@ class ClaudeCLIBackend:
         timeout_s: float = 180.0,
         concurrency: int = 2,
         extra_args: Sequence[str] = (),
+        effort: str = "",
     ) -> None:
         self.binary = binary
         self.timeout_s = timeout_s
         # Every process holds ~250 MB and the subscription has a rate window: few at a time.
         self.semaphore = asyncio.Semaphore(concurrency)
         self.extra_args = tuple(extra_args)
+        self.effort = effort
         # An empty working directory, so no CLAUDE.md or project settings are picked up.
         self.workdir = tempfile.mkdtemp(prefix="sre-llm-")
 
@@ -73,6 +92,7 @@ class ClaudeCLIBackend:
             "--output-format",
             "json",
             "--no-session-persistence",
+            *(("--effort", self.effort) if self.effort else ()),
             *self.extra_args,
         ]
 
@@ -140,9 +160,7 @@ def classify_error(returncode: int, out: dict[str, Any], stderr: str) -> LLMErro
     text = f"{out.get('result') or ''} {stderr}".strip()
     message = f"exit {returncode}" + (f", HTTP {status}" if status else "") + (f": {text[:300]}" if text else "")
     if status == 429 or _RATE_LIMIT.search(text):
-        reset = _RESET_AT.search(text)
-        retry_after = max(0.0, int(reset.group(1)) - time.time()) if reset else None
-        return LLMError("rate_limited", message, retryable=True, retry_after_s=retry_after)
+        return LLMError("rate_limited", message, retryable=True, retry_after_s=seconds_until_reset(text))
     if status in (401, 403) or re.search(r"not logged in|invalid api key|authenticat|/login", text, re.I):
         return LLMError("auth", message)
     if status in (400, 404, 413):
