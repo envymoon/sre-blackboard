@@ -36,11 +36,16 @@ def _models(settings: Settings, args: argparse.Namespace) -> tuple[Embedder, Rer
 
 
 async def _ingest(settings: Settings, args: argparse.Namespace) -> int:
-    emb, _ = _models(settings, args)
+    emb = embedder(args.embedder or settings.kb_embedder, settings.kb_model_dir, settings.kb_offline)
     docs = load_dir(Path(args.dir or settings.kb_dir))
     engine = create_async_engine(settings.database_url)
     try:
-        for tenant in args.tenant:
+        tenants = list(args.tenant or [])
+        if args.all_tenants:
+            tenants += [t for t in [*settings.kb_tenants, *settings.eval_tenant_variants] if t not in tenants]
+        if not tenants:
+            raise SystemExit("ingest: name --tenant, or --all-tenants")
+        for tenant in tenants:
             report = await ingest(engine, tenant, docs, emb, chunking=PRESETS[args.chunking], prune=args.prune)
             print(json.dumps({"tenant": tenant, **report.to_dict()}))
     finally:
@@ -98,7 +103,8 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("models", help="download the embedder and reranker weights")
     p = sub.add_parser("ingest", help="chunk, embed and store the knowledge base for tenants")
-    p.add_argument("--tenant", action="append", required=True, help="repeat for several tenants")
+    p.add_argument("--tenant", action="append", help="repeat for several tenants")
+    p.add_argument("--all-tenants", action="store_true", help="SRE_KB_TENANTS and every evaluation tenant")
     p.add_argument("--dir", help="documents (default: SRE_KB_DIR)")
     p.add_argument("--chunking", choices=sorted(PRESETS), default=DEFAULT_CHUNKING)
     p.add_argument("--prune", action="store_true", help="delete documents no longer in the directory")

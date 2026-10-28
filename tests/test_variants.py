@@ -102,3 +102,19 @@ def test_tenants_map_to_variants_and_unknown_names_are_refused() -> None:
     assert variants.for_tenant("lab", mapping) is variants.DEFAULT
     with pytest.raises(ValueError, match="unknown agent variant"):
         variants.for_tenant("x", {"x": "nope"})
+
+
+def test_the_rag_variant_adds_only_the_knowledge_base_to_the_investigators() -> None:
+    default, rag = ScriptedLLM(payment_scripts()), ScriptedLLM(payment_scripts())
+    asyncio.run(investigate(incident(), deps(default, MemoryAgentStore()), config("default")))
+    asyncio.run(investigate(incident(), deps(rag, MemoryAgentStore()), config("rag")))
+    for req in rag.requests:
+        names = {t["name"] for t in req.tools}
+        if req.agent.startswith("investigator."):
+            assert names == {*INVESTIGATOR_TOOLS[req.agent.removeprefix("investigator.")], "kb_search"}
+            assert "## The knowledge base" in req.system
+        else:
+            assert "kb_search" not in names and "## The knowledge base" not in req.system
+    versions = {r.agent: r.prompt_version for r in default.requests}
+    changed = {r.agent for r in rag.requests if versions[r.agent] != r.prompt_version}
+    assert changed == {"investigator.metrics", "investigator.logs_traces", "investigator.changes"}

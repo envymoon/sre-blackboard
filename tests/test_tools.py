@@ -50,7 +50,7 @@ async def _call(name: str, args: dict[str, Any], fake: FakeBackends | None = Non
 
 def test_every_tool_is_read_only_and_has_a_strict_schema() -> None:
     names = [t.name for t in ALL_TOOLS]
-    assert len(names) == len(set(names)) == 9
+    assert len(names) == len(set(names)) == 10
     for tool in ALL_TOOLS:
         assert tool.risk == "R0"
         spec = tool.spec()

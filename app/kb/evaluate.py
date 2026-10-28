@@ -8,8 +8,10 @@ mode: ``bm25``, ``vector``, ``hybrid`` (RRF), ``rerank`` (RRF then the cross-enc
 - Context tokens: the mean size of the top 3 results, what a prompt would pay for them.
 
 The reranker's threshold is chosen on the dev split only, as the score that best separates
-"the top result is relevant" from "nothing should be returned" (balanced accuracy over
-answerable and unanswerable queries); the test split is reported with that threshold.
+the answerable queries' best results from the unanswerable queries' best results (balanced
+accuracy); the test split is reported with that threshold. Ranking is a separate question:
+an answerable query whose top result is wrong still should not come back empty. The
+reranker's top score for every query is in the report, so the cut can be checked by eye.
 
 The metrics depend only on the corpus, the queries, the models and the code, so the report
 is reproducible; CI recomputes it with the real models and fails when it no longer matches
@@ -117,17 +119,20 @@ def _thresholded(outcomes: Sequence[Outcome], threshold: float) -> dict[str, Any
 
 
 def choose_threshold(dev: Sequence[Outcome]) -> float:
-    """The cut that best separates "top result relevant" from "nothing to return" on dev."""
-    good = [o.top_score for o in dev if o.query.answerable and o.top_relevant and o.top_score is not None]
-    bad = [o.top_score for o in dev if o.top_score is not None and not (o.query.answerable and o.top_relevant)]
-    candidates = sorted({0.0, *good, *bad})
+    """The cut that best separates answerable from unanswerable queries on dev, by their best
+    result's score. Ties go to the lowest such cut: dropping a useful passage costs more than
+    showing a weak one, which the agent can ignore."""
+    good = [o.top_score or 0.0 for o in dev if o.query.answerable]
+    bad = [o.top_score or 0.0 for o in dev if not o.query.answerable]
     best, best_score = 0.0, -1.0
-    for t in candidates:
+    for t in sorted({0.0, *good, *bad}):
         tpr = sum(s >= t for s in good) / len(good) if good else 0.0
         tnr = sum(s < t for s in bad) / len(bad) if bad else 0.0
         if (tpr + tnr) / 2 > best_score:
             best, best_score = t, (tpr + tnr) / 2
-    return best
+    # Halfway to the next lower score: the cut sits between the classes, not on a query.
+    below = [s for s in (*good, *bad) if s < best]
+    return (best + max(below)) / 2 if below else best
 
 
 async def run(
@@ -184,6 +189,7 @@ async def run(
                     "dev": _thresholded([o for o in outcomes if o.query.split == "dev"], t),
                     "test": _thresholded([o for o in outcomes if o.query.split == "test"], t),
                 }
+                entry["top_scores"] = {o.query.id: round(o.top_score or 0.0, 3) for o in outcomes}
             report["results"].append(entry)
             lat = sorted(o.latency_ms for o in outcomes)
             report["latency_ms"][f"{name}/{mode}"] = {

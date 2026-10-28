@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
+import httpx
 import pytest
 from sqlalchemy import func, select
 
@@ -19,6 +21,10 @@ from app.kb.chunking import PRESETS, ChunkParams, chunk, load_dir, parse, redact
 from app.kb.models import DIM, HashEmbedder, OverlapReranker
 from app.kb.search import Hit, KnowledgeBase, or_query, rrf
 from app.kb.store import ingest
+from app.tools import ALL_TOOLS, ToolContext, ToolRegistry
+from app.tools.clients import Clients
+from app.tools.evidence import MemoryEvidenceStore
+from app.tools.sources import Cassette, LiveSource, RecordingSource, ReplaySource
 
 CORPUS = load_dir(Path("kb"))
 
@@ -207,8 +213,64 @@ def test_threshold_choice_and_report_comparison() -> None:
         q = evaluate.Query(qid, "agent", "q", frozenset({"X#a"}) if answerable else frozenset())
         return evaluate.Outcome(q, 1 if relevant else None, score, relevant, 0, 0.0)
 
-    dev = [outcome("q1", True, 0.9), outcome("q3", True, 0.7), outcome("q5", False, 0.2, answerable=False)]
-    assert evaluate.choose_threshold(dev) == 0.7
+    dev = [
+        outcome("q1", True, 0.9),
+        outcome("q3", False, 0.6),  # answerable, top result wrong: still should not be emptied
+        outcome("q5", False, 0.2, answerable=False),
+        outcome("q7", False, 0.1, answerable=False),
+    ]
+    assert evaluate.choose_threshold(dev) == pytest.approx(0.4)  # between 0.2 and 0.6
     assert evaluate.differences({"a": {"hit@1": 0.5, "n": 3}}, {"a": {"hit@1": 0.51, "n": 3}}) == []
     assert evaluate.differences({"a": {"hit@1": 0.5}}, {"a": {"hit@1": 0.6}}) == ["/a/hit@1: 0.5 -> 0.6"]
     assert evaluate.differences({"misses": ["q1"]}, {"misses": ["q2"]}) == ["/misses: ['q1'] -> ['q2']"]
+
+
+# --- the kb_search tool -----------------------------------------------------------------
+
+
+class FakeSearcher:
+    def __init__(self) -> None:
+        self.tenants: list[str] = []
+
+    async def search_for_tool(self, tenant_id: str, query: str, k: int) -> dict[str, Any]:
+        self.tenants.append(tenant_id)
+        hit = {
+            "chunk_id": "RB-PAYMENT#02",
+            "doc_id": "RB-PAYMENT",
+            "kind": "runbook",
+            "title": "payment service",
+            "version": "2026-10-28",
+            "headings": ["Typical failures"],
+            "score": 0.97,
+            "content": "## Typical failures\n\n" + "\n".join(["y" * 250] * 8),
+        }
+        return {"status": "ok", "degraded": False, "hits": [hit][:k]}
+
+
+async def test_kb_search_runs_in_the_incidents_tenant_and_replays() -> None:
+    searcher = FakeSearcher()
+    clients = Clients(*(httpx.AsyncClient() for _ in range(5)), extra={"kb": searcher})
+    cassette = Cassette()
+    registry = ToolRegistry(ALL_TOOLS, RecordingSource(LiveSource(clients), cassette), MemoryEvidenceStore())
+    out = await registry.call("kb_search", {"query": "payment declines", "k": 2}, ToolContext(tenant_id="lab-rag"))
+    assert out.ok and searcher.tenants == ["lab-rag"]
+    assert (
+        out.summary is not None and out.summary["passages"][0]["source"] == "RB-PAYMENT (runbook, version 2026-10-28)"
+    )
+    lines = out.summary["passages"][0]["text"]
+    assert lines[0] == "## Typical failures" and sum(map(len, lines)) <= 901 and lines[-1].endswith("…")
+    assert "not data about this incident" in out.summary["note"]
+    # The model cannot pick a tenant: unknown arguments are refused.
+    bad = await registry.call("kb_search", {"query": "payment", "tenant": "other"}, ToolContext(tenant_id="lab"))
+    assert bad.error is not None and bad.error.code == "invalid_args"
+    replayed = await ToolRegistry(ALL_TOOLS, ReplaySource(cassette), MemoryEvidenceStore()).call(
+        "kb_search", {"query": "payment declines", "k": 2}, ToolContext(tenant_id="lab-rag")
+    )
+    assert replayed.summary == out.summary and searcher.tenants == ["lab-rag"]
+    unconfigured = Clients(*(httpx.AsyncClient() for _ in range(5)))
+    none = await ToolRegistry(ALL_TOOLS, LiveSource(unconfigured), MemoryEvidenceStore()).call(
+        "kb_search", {"query": "payment"}, ToolContext(tenant_id="lab")
+    )
+    assert none.error is not None and none.error.code == "unavailable"
+    await clients.aclose()
+    await unconfigured.aclose()

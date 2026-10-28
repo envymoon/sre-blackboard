@@ -1,5 +1,6 @@
 # Two targets from one base: `api` (also runs migrations) and `worker`, which adds the
-# Claude Code CLI for the subscription backend (SRE_LLM_BACKEND=cli, the default).
+# Claude Code CLI for the subscription backend (SRE_LLM_BACKEND=cli, the default) and the
+# knowledge base's models (it also runs the ingest job).
 
 FROM node:22-bookworm-slim AS claude-cli
 # Pinned. The npm package installs a native binary (about 250 MB); only that is kept.
@@ -24,6 +25,14 @@ USER app
 
 FROM base AS worker
 COPY --from=claude-cli /claude /usr/local/bin/claude
+# The knowledge base's models (M6, app/kb/models.py: ~200 MB, CPU only), baked in so that
+# neither the worker nor the ingest job downloads anything at run time.
+USER root
+RUN mkdir -p /srv/models \
+ && SRE_KB_MODEL_DIR=/srv/models python -m app.kb models \
+ && chmod -R a+rX /srv/models
+USER app
+ENV SRE_KB_MODEL_DIR=/srv/models SRE_KB_OFFLINE=true
 # Authentication for the CLI comes from the environment: CLAUDE_CODE_OAUTH_TOKEN
 # (from `claude setup-token`, uses the subscription) or ANTHROPIC_API_KEY.
 CMD ["python", "-m", "app.worker"]

@@ -19,7 +19,7 @@ import json
 import random
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
@@ -37,8 +37,11 @@ class Fetched:
 
 
 class Source(Protocol):
-    # ``agent`` is who asked; only replay uses it (see ReplaySource).
-    async def fetch(self, tool: Tool, args: ToolArgs, agent: str | None = None) -> Fetched: ...
+    # ``agent`` is who asked; only replay uses it (see ReplaySource). ``tenant`` is whose
+    # incident it is; only tenant-scoped backends use it (the knowledge base).
+    async def fetch(
+        self, tool: Tool, args: ToolArgs, agent: str | None = None, tenant: str | None = None
+    ) -> Fetched: ...
 
 
 @dataclass
@@ -84,15 +87,16 @@ class LiveSource:
     def breaker(self, backend: str) -> Breaker:
         return self.breakers.setdefault(backend, Breaker())
 
-    async def fetch(self, tool: Tool, args: ToolArgs, agent: str | None = None) -> Fetched:
+    async def fetch(self, tool: Tool, args: ToolArgs, agent: str | None = None, tenant: str | None = None) -> Fetched:
         breaker = self.breaker(tool.backend)
+        clients = replace(self.clients, tenant_id=tenant)
         attempt = 0
         while True:
             attempt += 1
             breaker.check(tool.backend)
             at = self.now()
             try:
-                raw = await asyncio.wait_for(tool.fetch(self.clients, args, at), timeout=tool.timeout_s)
+                raw = await asyncio.wait_for(tool.fetch(clients, args, at), timeout=tool.timeout_s)
             except TimeoutError:
                 err = ToolError("timeout", f"{tool.name} took longer than {tool.timeout_s:.0f}s", retryable=True)
             except ToolError as e:
@@ -146,12 +150,12 @@ class RecordingSource:
     live: Source
     cassette: Cassette
 
-    async def fetch(self, tool: Tool, args: ToolArgs, agent: str | None = None) -> Fetched:
+    async def fetch(self, tool: Tool, args: ToolArgs, agent: str | None = None, tenant: str | None = None) -> Fetched:
         entry: dict[str, Any] = {"tool": tool.name, "args": args.model_dump(mode="json")}
         if agent is not None:
             entry["agent"] = agent
         try:
-            got = await self.live.fetch(tool, args, agent)
+            got = await self.live.fetch(tool, args, agent, tenant)
         except ToolError as e:
             entry |= {"at": datetime.now(UTC).isoformat(), "error": {"code": e.code, "message": e.message}}
             self.cassette.entries.append(entry)
@@ -187,7 +191,7 @@ class ReplaySource:
             return self._last[key]
         return self._last.get(key)
 
-    async def fetch(self, tool: Tool, args: ToolArgs, agent: str | None = None) -> Fetched:
+    async def fetch(self, tool: Tool, args: ToolArgs, agent: str | None = None, tenant: str | None = None) -> Fetched:
         dumped = args.model_dump(mode="json")
         entry = self._take(canonical_json([agent, tool.name, dumped])) if agent is not None else None
         if entry is None:

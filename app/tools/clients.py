@@ -25,6 +25,9 @@ class Clients:
     k8s: httpx.AsyncClient
     namespace: str = "otel-demo"
     extra: dict[str, Any] = field(default_factory=dict)
+    # Set per call by LiveSource from the tool context, never by a model: the tenant a
+    # tenant-scoped backend (the knowledge base) must stay inside.
+    tenant_id: str | None = None
 
     @classmethod
     def from_settings(cls, settings: Settings, transport: httpx.AsyncBaseTransport | None = None) -> Clients:

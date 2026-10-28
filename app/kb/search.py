@@ -30,8 +30,10 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from sqlalchemy import TextClause, text
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+from app.core.config import Settings
+from app.kb import models
 from app.kb.models import Embedder, Reranker
 
 log = logging.getLogger(__name__)
@@ -220,3 +222,53 @@ class KnowledgeBase:
             h.score = s
         ranked = sorted(fused, key=lambda h: (-h.score, h.chunk_id))
         return Result([h for h in ranked if h.score >= self.min_score][:k], "rerank")
+
+
+class LazyKnowledgeBase:
+    """The worker's knowledge base: the models are loaded on the first search, not at start
+    (most workers never search; a variant or a setting turns the tool on)."""
+
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+        self._kb: KnowledgeBase | None = None
+        self._lock = asyncio.Lock()
+        self._engine: AsyncEngine | None = None
+
+    async def _get(self) -> KnowledgeBase:
+        async with self._lock:
+            if self._kb is None:
+                s = self.settings
+                emb, rr = await asyncio.to_thread(
+                    lambda: (
+                        models.embedder(s.kb_embedder, s.kb_model_dir, s.kb_offline),
+                        models.reranker(s.kb_reranker, s.kb_model_dir, s.kb_offline),
+                    )
+                )
+                self._engine = create_async_engine(s.database_url, pool_size=2)
+                self._kb = KnowledgeBase(self._engine, emb, rr, min_score=s.kb_min_score)
+            return self._kb
+
+    async def search_for_tool(self, tenant_id: str, query: str, k: int) -> dict[str, Any]:
+        """The kb_search tool's raw result: plain JSON, stored as evidence and in cassettes."""
+        result = await (await self._get()).search(tenant_id, query, k=k)
+        return {
+            "status": result.status,
+            "degraded": result.degraded,
+            "hits": [
+                {
+                    "chunk_id": h.chunk_id,
+                    "doc_id": h.doc_id,
+                    "kind": h.kind,
+                    "title": h.title,
+                    "version": h.version,
+                    "headings": h.headings,
+                    "score": round(h.score, 4),
+                    "content": h.content,
+                }
+                for h in result.hits
+            ],
+        }
+
+    async def aclose(self) -> None:
+        if self._engine is not None:
+            await self._engine.dispose()

@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     # and "overlap" are the deterministic stand-ins for tests. Offline: only weights already
     # in kb_model_dir are used (the worker image has them), nothing is downloaded.
     kb_dir: str = "kb"
+    # Tenants `python -m app.kb ingest --all-tenants` fills (plus every evaluation tenant).
+    kb_tenants: list[str] = ["lab"]
     kb_embedder: str = "BAAI/bge-small-en-v1.5"
     kb_reranker: str = "Xenova/ms-marco-MiniLM-L-6-v2"
     kb_model_dir: str | None = None

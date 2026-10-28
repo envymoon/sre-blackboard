@@ -40,6 +40,8 @@ INVESTIGATOR_TOOLS: dict[str, tuple[str, ...]] = {
     "logs_traces": ("logs_search", "traces_search", "trace_get"),
     "changes": ("rollout_history", "deploy_diff", "k8s_events", "flag_state"),
 }
+# Added to every investigator by a variant with knowledge (app/agents/variants.py).
+KNOWLEDGE_TOOLS: tuple[str, ...] = ("kb_search",)
 
 
 @dataclass(frozen=True)
@@ -144,6 +146,7 @@ async def investigate(incident: IncidentView, deps: Deps, config: AgentConfig) -
         outcome.agents[spec.name] = "done"
         return entries
 
+    knowledge = KNOWLEDGE_TOOLS if config.variant.knowledge else ()
     try:
         if config.variant.mode == "single":
             dx_entries = await _solo(incident, deps, config, once)
@@ -161,8 +164,8 @@ async def investigate(incident: IncidentView, deps: Deps, config: AgentConfig) -
         async def investigator(focus: str) -> list[Entry] | None:
             spec = AgentSpec(
                 f"investigator.{focus}",
-                prompts.investigator(focus),
-                INVESTIGATOR_TOOLS[focus],
+                prompts.investigator(focus, knowledge=config.variant.knowledge),
+                INVESTIGATOR_TOOLS[focus] + knowledge,
                 InvestigatorReport,
                 max_steps=config.max_steps,
             )
@@ -234,7 +237,11 @@ async def _solo(incident: IncidentView, deps: Deps, config: AgentConfig, once: O
     """The single-agent variant: every investigator's tools and their steps together, and
     the synthesizer's answer at the end. Its citations may name anything it was shown."""
     tools = tuple(t for focus in INVESTIGATORS for t in INVESTIGATOR_TOOLS[focus])
-    spec = AgentSpec(SOLO, prompts.solo(), tools, Diagnosis, max_steps=config.max_steps * len(INVESTIGATORS))
+    if config.variant.knowledge:
+        tools += KNOWLEDGE_TOOLS
+    spec = AgentSpec(
+        SOLO, prompts.solo(config.variant.knowledge), tools, Diagnosis, max_steps=config.max_steps * len(INVESTIGATORS)
+    )
 
     async def check(dx: Diagnosis, shown: dict[str, str]) -> Checked[Diagnosis]:
         return check_diagnosis(dx, await deps.store.evidence_tools(incident.id, dx.cited()), shown)
