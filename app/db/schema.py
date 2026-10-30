@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
     Column,
+    Computed,
     ForeignKey,
     Identity,
     Index,
@@ -19,7 +21,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TIMESTAMP, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TIMESTAMP, TSVECTOR, UUID
 
 metadata = MetaData(
     naming_convention={
@@ -32,6 +34,8 @@ metadata = MetaData(
 )
 
 TS = TIMESTAMP(timezone=True)
+# The knowledge base's embedding size (app/kb/models.py: bge-small-en-v1.5).
+EMBEDDING_DIM = 384
 
 INCIDENT_STATES = (
     "RECEIVED",
@@ -350,4 +354,60 @@ executions = Table(
     Column("finished_at", TS),
     CheckConstraint(_in("status", EXECUTION_STATUSES), name="status_valid"),
     Index("ix_executions_incident_id", "incident_id"),
+)
+
+# --- M6: knowledge base (ADR-0010) ------------------------------------------------------
+
+KB_KINDS = ("runbook", "postmortem")
+
+# One row per document per tenant. Ingest is idempotent: a document whose content hash,
+# embedding model and chunking are unchanged is skipped; a changed one has its chunks replaced.
+kb_documents = Table(
+    "kb_documents",
+    metadata,
+    Column("id", BigInteger, Identity(), primary_key=True),
+    Column("tenant_id", Text, nullable=False),
+    Column("doc_id", Text, nullable=False),
+    Column("kind", Text, nullable=False),
+    Column("title", Text, nullable=False),
+    Column("services", ARRAY(Text), nullable=False),
+    Column("version", Text, nullable=False),
+    Column("content_hash", Text, nullable=False),
+    Column("source_path", Text, nullable=False, server_default=""),
+    Column("embedder", Text, nullable=False),
+    Column("chunking", Text, nullable=False),
+    Column("ingested_at", TS, nullable=False, server_default=func.now()),
+    CheckConstraint(_in("kind", KB_KINDS), name="kind_valid"),
+    Index("ux_kb_documents_tenant_doc", "tenant_id", "doc_id", unique=True),
+)
+
+# Searchable pieces of a document: full text (``tsv``, generated) and an embedding. Every
+# query filters on tenant_id in SQL; there is no search function without a tenant.
+kb_chunks = Table(
+    "kb_chunks",
+    metadata,
+    Column("id", BigInteger, Identity(), primary_key=True),
+    Column("tenant_id", Text, nullable=False),
+    Column("document_id", BigInteger, ForeignKey("kb_documents.id", ondelete="CASCADE"), nullable=False),
+    Column("chunk_id", Text, nullable=False),
+    Column("ordinal", SmallInteger, nullable=False),
+    Column("headings", ARRAY(Text), nullable=False),
+    Column("sections", ARRAY(Text), nullable=False),
+    Column("content", Text, nullable=False),
+    Column("tokens", Integer, nullable=False),
+    # Title and headings weigh more than the body (setweight A/B), as in the embedding text.
+    Column(
+        "tsv",
+        TSVECTOR,
+        Computed(
+            "setweight(to_tsvector('english', search_header), 'A') || setweight(to_tsvector('english', content), 'B')",
+            persisted=True,
+        ),
+        nullable=False,
+    ),
+    Column("search_header", Text, nullable=False),
+    Column("embedding", Vector(EMBEDDING_DIM), nullable=False),
+    Index("ux_kb_chunks_tenant_chunk", "tenant_id", "chunk_id", unique=True),
+    Index("ix_kb_chunks_document_id", "document_id"),
+    Index("ix_kb_chunks_tsv", "tsv", postgresql_using="gin"),
 )

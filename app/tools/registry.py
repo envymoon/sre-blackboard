@@ -75,7 +75,7 @@ class ToolRegistry:
         return tool
 
     async def _run(self, tool: Tool, args: ToolArgs, ctx: ToolContext, outcome: ToolOutcome) -> EvidenceRecord:
-        fetched = await self.source.fetch(tool, args, ctx.agent)
+        fetched = await self.source.fetch(tool, args, ctx.agent, ctx.tenant_id)
         outcome.attempts = fetched.attempts
         outcome.fetched_at = fetched.fetched_at
         raw = without_nul(fetched.raw)

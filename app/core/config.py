@@ -44,7 +44,19 @@ class Settings(BaseSettings):
     # a load test of the ingest path).
     auto_investigate: bool = True
 
+    # Knowledge base (M6, ADR-0010). Models run locally on the CPU (app/kb/models.py); "hash"
+    # and "overlap" are the deterministic stand-ins for tests. Offline: only weights already
+    # in kb_model_dir are used (the worker image has them), nothing is downloaded.
     kb_dir: str = "kb"
+    # Tenants `python -m app.kb ingest --all-tenants` fills (plus every evaluation tenant).
+    kb_tenants: list[str] = ["lab"]
+    kb_embedder: str = "BAAI/bge-small-en-v1.5"
+    kb_reranker: str = "Xenova/ms-marco-MiniLM-L-6-v2"
+    kb_model_dir: str | None = None
+    kb_offline: bool = False
+    # A result the reranker scores below this is dropped: "no relevant knowledge" is an
+    # answer. The cut the retrieval evaluation chose on its dev split (eval/retrieval/report.json).
+    kb_min_score: float = 0.03
 
     # Read-only tools (M3). Defaults are the lab's ports on the host (deploy/kind/cluster.yaml).
     prometheus_url: str = "http://localhost:19090"

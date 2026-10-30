@@ -64,6 +64,21 @@ services:
       replicas: 2
     stop_grace_period: 30s
     depends_on:
+      kb-ingest: {condition: service_completed_successfully}
+
+  # The knowledge base (M6): kb/ chunked and embedded into Postgres for every tenant
+  # (SRE_KB_TENANTS and the evaluation's tenants), once per start; unchanged documents are
+  # skipped. The worker image carries the models, so nothing is downloaded here.
+  kb-ingest:
+    <<: *app
+    build: {context: ., target: worker}
+    command: ["python", "-m", "app.kb", "ingest", "--all-tenants", "--prune"]
+    environment:
+      <<: *app-env
+      SRE_KB_TENANTS: ${SRE_KB_TENANTS:-["lab"]}
+      SRE_EVAL_TENANT_VARIANTS: ${SRE_EVAL_TENANT_VARIANTS:-{}}
+    restart: "no"
+    depends_on:
       migrate: {condition: service_completed_successfully}
 
 volumes:

@@ -202,6 +202,36 @@ def test_the_diagnosis_may_only_cite_what_the_findings_cite() -> None:
     assert [r.service for r in checked.value.root_causes] == ["payment"] and checked.dropped == 1
 
 
+def test_a_knowledge_base_result_never_stands_alone() -> None:
+    known = {"ev_kb": "kb_search", "ev_log": "logs_search"}
+    shown = set(known)
+    r = InvestigatorReport.model_validate(
+        report(
+            finding("runbook and live data", "logs", ["ev_kb", "ev_log"]),
+            finding("only the runbook", "logs", ["ev_kb"]),
+            finding("a runbook suggests it", "logs", ["ev_kb"], kind="hypothesis"),
+        )
+    )
+    checked = check_report(r, known, shown)
+    assert [f.statement for f in checked.value.findings] == ["runbook and live data", "a runbook suggests it"]
+    assert "cites only knowledge base results" in checked.problems[0]
+    dx = Diagnosis.model_validate(
+        {
+            "summary": "s",
+            "root_causes": [
+                {"service": "payment", "cause": "the runbook says so", "confidence": 0.9, "evidence_ids": ["ev_kb"]},
+                {"service": "payment", "cause": "c", "confidence": 0.8, "evidence_ids": ["ev_kb", "ev_log"]},
+            ],
+            "facts": [{"statement": "f", "evidence_ids": ["ev_kb"]}],
+            "inferences": [],
+            "hypotheses": [],
+        }
+    )
+    checked_dx = check_diagnosis(dx, known, shown)
+    assert [r.cause for r in checked_dx.value.root_causes] == ["c"]
+    assert checked_dx.value.facts == [] and checked_dx.dropped == 2
+
+
 # --- the whole investigation ---
 
 

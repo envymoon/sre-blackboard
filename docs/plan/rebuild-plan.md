@@ -163,7 +163,7 @@ app/
   safety/         policy engine, risk classifier, approvals, audit chain
   executor/       action handlers (rollout_undo, scale, flag_toggle), dry-run
   verify/         SLO checks
-  rag/            ingest, chunk, embed, hybrid search, rerank
+  kb/             ingest, chunk, embed, hybrid search, rerank, retrieval eval（计划里叫 rag/）
   eval/           scenarios, runner(live/replay), scoring, report
 web/              React 控制台
 deploy/           kind 配置, helm values, alert rules, chaos 实验, 注入脚本
@@ -412,10 +412,12 @@ claude -p \
 
 ### M6：RAG 知识库（约 1 周）
 
-- [ ] 语料：把运行手册扩充到 15–20 篇，并为每个故障场景写一篇复盘文档。全部自写、公开。
-- [ ] 入库流水线：按标题切块（保留原设计的切块参数）→ 嵌入 → 写入 `kb_chunks`（tsvector + vector）。
-- [ ] 混合检索：BM25（`ts_rank_cd`）Top-20 + 向量 Top-20 → RRF(k=60) → 交叉编码器重排 → 阈值过滤；租户过滤在 SQL 层强制执行。
-- [ ] 标注检索评测集（50–100 条查询，标注相关的 chunk）；消融实验：BM25 / 向量 / 混合 / 混合加重排，报告 HitRate@k 和 MRR。
+- [x] 语料：把运行手册扩充到 15–20 篇，并为每个故障场景写一篇复盘文档。全部自写、公开。（18 篇运行手册；复盘先写了 6 个核心场景各一篇，按计划分批，其余 16 个场景的复盘留到第二批）
+- [x] 入库流水线：按标题切块（保留原设计的切块参数）→ 嵌入 → 写入 `kb_chunks`（tsvector + vector）。（原设计的参数保留为 `original`，但在平均约 300 token 的文档上每篇只切出一块，于是加了按小节切的 `section` 并由评测选择，默认 `section`，见学习笔记 3.1；嵌入和重排是本地 CPU 模型，不走 API）
+- [x] 混合检索：BM25（`ts_rank_cd`）Top-20 + 向量 Top-20 → RRF(k=60) → 交叉编码器重排 → 阈值过滤；租户过滤在 SQL 层强制执行。
+- [x] 标注检索评测集（50–100 条查询，标注相关的 chunk）；消融实验：BM25 / 向量 / 混合 / 混合加重排，报告 HitRate@k 和 MRR。（62 条，按小节标注，dev/test 拆分；CI 用真模型重算并检查报告能复现；混合加重排 hit@5 0.981、MRR 0.841）
+- [x] Agent 接入：只读工具 `kb_search`（租户来自事件上下文）、`rag` 变体、引用校验拒绝只引用知识库的结论。默认变体暂不启用，等 live 消融。
+- 后续：`rag` 变体的 live 消融（消耗订阅额度，需单独确认），以及对每个场景去掉它自己复盘的留一法；其余场景的复盘；真 BM25（`pg_search`）；更大的重排模型或重新校准阈值（学习笔记 3.4）。
 
 面试点：RRF 为什么能融合不同尺度的分数；为什么重排；评测集如何构建；为什么知识库引用不能单独作为结论。
 
@@ -433,7 +435,7 @@ claude -p \
   - 诊断耗时 p50/p95；
   - 每个事件的 token 数和美元成本；
   - 升级率。
-- [x] 消融：单 Agent 对比多 Agent；有无 RAG；不同的模型分级组合。每组跑 3 次，报告均值和方差。（部分完成：单/多 Agent 和模型分级在 6 个核心场景上并排跑了 1 次；受订阅额度约束，3 次重复和全部 22 个场景留到额度允许时，代码已支持；有无 RAG 要等 M6 有了检索，届时再加一个变体）
+- [x] 消融：单 Agent 对比多 Agent；有无 RAG；不同的模型分级组合。每组跑 3 次，报告均值和方差。（部分完成：单/多 Agent 和模型分级在 6 个核心场景上并排跑了 1 次；受订阅额度约束，3 次重复和全部 22 个场景留到额度允许时，代码已支持；有无 RAG：M6 加了 `rag` 变体，live 运行待额度允许）
 - [x] 发布闸门：replay 评测中安全违规 > 0 或 Top-1 下降超过阈值时，CI 失败。另加：评分场景不足基线 80%、模型不可用超过 20% 也不通过；故意写坏的金丝雀变体必须不通过，否则评测作废。
 - [x] 结果写进 README：数字可能不完美，但真实、可复现。
 - 后续：同一根因开出的多个事件各自提议同一个修复，系统层面去重（学习笔记 3.4）；给实验环境加饱和度类告警，把资源类故障放回评测（3.1）。
@@ -507,7 +509,7 @@ claude -p \
 | `runtime.py`、`mcp.py` | 重写 | `tools/`；MCP 作为可选加分项：把只读工具暴露为一个 MCP server，供其他客户端复用 |
 | `queue.py`、`persistence.py`、`store.py` | 重写 | `db/` + `queue/`（Postgres） |
 | `safety.py`、`auth.py` | 重写 | `safety/` + `core/security` |
-| `knowledge.py`、`rag.py` | 重写 | `rag/`（Postgres 混合检索） |
+| `knowledge.py`、`rag.py` | 重写（M6 已删除） | `app/kb/`（Postgres 混合检索） |
 | `reporter.py` | 保留概念 | 结构化 Diagnosis 加模板渲染 |
 | `eval.py`、`eval/*.json` | 重写 | `eval/` 场景加 runner |
 | `observe.py` | 重写 | `core/telemetry` |
@@ -515,7 +517,7 @@ claude -p \
 | `evolution.py`、`online.py`、`code_analysis.py`、`limits.py` | 删除 | 写进 ADR 的"未来工作" |
 | `status.py`、`e2e.py`、`ext.py`、`skills/*/scripts` | 删除 | 由真实流程替代 |
 | `skills/*/SKILL.md` | 转写 | 作为 Investigator 的领域提示片段，或作为 KB 中的运行手册 |
-| `kb/*.md` | 保留并扩充 | M6 |
+| `kb/*.md` | 重写并扩充（原 4 篇写的是虚构系统，M6 换成实验环境的 18 篇运行手册和 6 篇复盘） | M6 |
 
 ---
 
@@ -591,7 +593,7 @@ claude -p \
 | M3 | 已完成 | 2026-10-15 | PR #5，2026-10-15 合并；9 个只读工具 + 证据库 + 录制回放（ADR-0005）；第 11 次实验环境运行中 3 个故障的 16 项工具检查全部通过，录音进契约测试 |
 | M4 | 已完成 | 2026-10-15 | 分支 `milestone/m4-agent`；LLM 后端、Agent 循环、黑板检查点、引用校验（ADR-0006）；第 17 次实验环境运行 Top-1 3/3（8 个事件 7 个正确），每个故障约 0.05–0.22 美元，录音进契约测试 |
 | M5 | 已完成 | 2026-10-17 | 分支 `milestone/m5-safety`；策略引擎、绑定哈希的审批、独立执行器、SLO 验证、注入评测（ADR-0007）；第 18 次实验环境运行坏版本发布闭环 RESOLVED，审计链完整，Top-1 3/3；注入评测安全违规 0 |
-| M6 | 未开始 | | |
+| M6 | 已完成 | 2026-10-28 | 分支 `milestone/m6-rag`；Postgres 混合检索（tsvector + pgvector、RRF、本地交叉编码器重排、阈值），租户过滤在 SQL 里（ADR-0010）；24 篇自写文档；62 条标注查询上混合加重排 hit@1 0.741、hit@5 0.981、MRR 0.841，由 CI 用真模型复现；`kb_search` 工具和 `rag` 变体就位，live 消融待额度允许 |
 | M7 | 已完成 | 2026-10-28 | 分支 `milestone/m7-eval`；22 个人工标注的场景、每个变体一个租户并排调查、回放闸门、必须失败的金丝雀（ADR-0009）；6 个核心场景 4 个变体各 1 次（run 40715248288）：默认变体 Top-1 6/6、安全违规 0、每个事件约 19 万 token / 0.03 美元；坏提示的金丝雀 Top-1 0/2 被闸门拦下（run 40751455029）；受额度约束推理强度 low、步数 5，3 次重复和全部场景留待以后 |
 | M8 | 未开始 | | |
 | M9 | 已完成 | 2026-10-27 | 分支 `milestone/m9-console`；Agent 调用树接口、SSE 变化流、案例导出；React 控制台（设计方向 A，深浅两套 token，对比度测试）；Pages 落地页和真实事件回放（ADR-0008）；首屏 JS 111–157 KB gzip，Lighthouse 移动端 91–94、桌面 100，CLS ≤ 0.028，最慢交互 88 ms（CPU 4 倍降速） |

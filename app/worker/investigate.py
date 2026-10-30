@@ -21,6 +21,7 @@ from app.agents.store import PgAgentStore
 from app.core.config import Settings
 from app.db import incidents, investigations
 from app.ingest import PRIORITY_NAMES
+from app.kb.search import LazyKnowledgeBase
 from app.llm.router import build_backend, model_for
 from app.llm.types import LLMBackend, LLMError
 from app.queue import jobs
@@ -48,7 +49,10 @@ class AgentServices:
     @classmethod
     def from_settings(cls, settings: Settings) -> AgentServices:
         clients = Clients.from_settings(settings)
-        return cls(build_backend(settings), LiveSource(clients), [clients.aclose], clients.prometheus)
+        # The knowledge base behind kb_search (M6); its models load on the first search.
+        kb = LazyKnowledgeBase(settings)
+        clients.extra["kb"] = kb
+        return cls(build_backend(settings), LiveSource(clients), [clients.aclose, kb.aclose], clients.prometheus)
 
     async def aclose(self) -> None:
         for close in self.closers:

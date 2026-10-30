@@ -1,7 +1,8 @@
 """Ways to run the same investigation differently, for the evaluation's ablations (M7, ADR-0009).
 
-A variant changes how an incident is investigated, never what the agents can do: the tools,
-the citation check, the planner and the policy stay the same. Production runs ``default``.
+A variant changes how an incident is investigated, never what the agents can do to the
+system: the citation check, the planner and the policy stay the same, and the only tool a
+variant may add is the read-only knowledge base. Production runs ``default``.
 The lab runs the others side by side on the same faults: Alertmanager sends every alert to
 one tenant per variant, and the worker looks the tenant up in ``SRE_EVAL_TENANT_VARIANTS``.
 
@@ -10,6 +11,9 @@ one tenant per variant, and the worker looks the tenant up in ``SRE_EVAL_TENANT_
   which writes the diagnosis itself. Is splitting the work worth it?
 - ``strong-plan``: the coordinator and the synthesizer on a stronger model, the
   investigators unchanged. Do the two steps that only reason, and run once each, gain from it?
+- ``rag`` (M6): the default, with the knowledge base. Every investigator also gets
+  ``kb_search`` (runbooks and postmortems) and a prompt part on how to use it. Does
+  background knowledge help, once the citation check keeps it from standing in for data?
 - ``canary``: a synthesizer prompt with a plausible, wrong rule ("rank the alerting service
   first"): the classic event-host mistake. It exists to be caught. An evaluation that does
   not fail this variant cannot fail anything (prompts/canary_synthesizer.md).
@@ -35,6 +39,8 @@ class Variant:
     models: Mapping[str, str] = field(default_factory=dict)
     # Role -> prompt, instead of the role's own.
     prompts: Mapping[str, Callable[[], Prompt]] = field(default_factory=dict)
+    # The investigators (or the single agent) may search the knowledge base.
+    knowledge: bool = False
 
     def prompt(self, role: str, default: Callable[[], Prompt]) -> Prompt:
         return self.prompts.get(role, default)()
@@ -47,6 +53,7 @@ VARIANTS: dict[str, Variant] = {
         DEFAULT,
         Variant("single", mode="single"),
         Variant("strong-plan", models={"coordinator": STRONG_MODEL, "synthesizer": STRONG_MODEL}),
+        Variant("rag", knowledge=True),
         Variant("canary", prompts={"synthesizer": prompts.canary_synthesizer}),
     )
 }

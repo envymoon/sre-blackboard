@@ -44,17 +44,19 @@ def coordinator() -> Prompt:
     return compose("coordinator", "coordinator", "environment")
 
 
-def investigator(focus: str) -> Prompt:
-    return compose(f"investigator.{focus}", "investigator", focus, "environment")
+def investigator(focus: str, knowledge: bool = False) -> Prompt:
+    parts = ("investigator", focus, *(("knowledge",) if knowledge else ()), "environment")
+    return compose(f"investigator.{focus}", *parts)
 
 
 def synthesizer() -> Prompt:
     return compose("synthesizer", "synthesizer", "environment")
 
 
-def solo() -> Prompt:
+def solo(knowledge: bool = False) -> Prompt:
     """The single-agent variant (app/agents/variants.py): every investigator's brief, and the synthesizer's job."""
-    return compose("solo", "solo", "metrics", "logs_traces", "changes", "environment")
+    parts = ("solo", "metrics", "logs_traces", "changes", *(("knowledge",) if knowledge else ()), "environment")
+    return compose("solo", *parts)
 
 
 def canary_synthesizer() -> Prompt:
