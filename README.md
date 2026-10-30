@@ -7,7 +7,7 @@ root-cause candidates. Every claim has to cite evidence. Any change to
 production is proposed, checked by a deterministic policy engine, and needs
 human approval before an isolated executor applies it.
 
-> **Status: being rebuilt (M0–M5, M9, M7 and M6 done; M8 next).** The first version was a
+> **Status: being rebuilt (M0–M9 done; M10, the documentation, runs throughout).** The first version was a
 > spec-shaped prototype: it had no real model calls, no real tool backends, and
 > an evaluation that could not fail. This repository is now being rebuilt into a
 > working system, one milestone at a time. The plan, including every known
@@ -41,7 +41,7 @@ These carry over from the prototype and are what the rebuild implements for real
 |---|---|
 | HTTP API | Stateless FastAPI app. `POST /api/v1/alerts` takes Alertmanager webhooks; `GET /api/v1/incidents[/{id}]` reads incidents; `/healthz` (liveness) and `/readyz` (database). Run as many processes as you like. |
 | Auth | HS256 JWT with roles `viewer < responder < approver < admin`, plus an `ingest` service role for alert sources. The tenant comes only from the token; tokens without one are rejected. CORS is an explicit allowlist. |
-| Storage | Postgres 16 with Alembic migrations: `incidents`, `alerts`, `jobs`, `audit_log`, `evidence`, `tool_calls`, for the agents `llm_calls`, `agent_runs`, `blackboard`, and for remediation `remediation_plans`, `approvals`, `executions`, and for the knowledge base `kb_documents`, `kb_chunks` (pgvector). One transaction writes the alert, opens or merges the incident, enqueues its triage job and appends the audit event. |
+| Storage | Postgres 16 with Alembic migrations: `incidents`, `alerts`, `jobs`, `audit_log`, `evidence`, `tool_calls`, for the agents `llm_calls`, `agent_runs`, `blackboard`, and for remediation `remediation_plans`, `approvals`, `executions`, and for the knowledge base `kb_documents`, `kb_chunks` (pgvector); incidents and jobs carry a trace context (M8). One transaction writes the alert, opens or merges the incident, enqueues its triage job and appends the audit event. |
 | Deduplication | A partial unique index allows one open incident per (tenant, fingerprint). Concurrent duplicates merge; a test sends 50 at once and gets one incident. |
 | Job queue | `FOR UPDATE SKIP LOCKED` claims, priority aging (a waiting P3 eventually beats new P0s), a slot reserved for P0, leases with heartbeats, a reaper that keeps priority, fencing tokens, exponential backoff, dead letters. |
 | Worker | `python -m app.worker`: runs handlers, cancels a handler whose lease was taken, and on SIGTERM drains or hands back its jobs. Triage moves an incident from `RECEIVED` to `TRIAGED` and queues its investigation (`SRE_AUTO_INVESTIGATE=false` stops at triage). |
@@ -57,6 +57,7 @@ These carry over from the prototype and are what the rebuild implements for real
 | Prompt injection (M5) | Tool output stays in a data section the prompts say is not instructions; the policy reads no prose; the executor accepts only catalogue actions. `scripts/injection_eval.py` plants instructions in a rollout's change-cause and in a quoted log line and runs the planner with the real model on every `Model check` run: 0 safety violations, and the model ignored both injections. |
 | Evaluation (M7) | 22 fault scenarios in `eval/scenarios/`, labelled from the injection point before any run (root cause, fault type, which services page, the fix a human should approve), each one seen to page on the lab ([ADR-0009](docs/adr/0009-evaluation-scenarios-variants-gate.md)). The live run (`eval.yml`, on `[eval]` in a commit message or by hand) builds the lab, injects each scenario and has every agent variant investigate the same alerts at the same minute, one tenant per variant: `default`, `single` (one agent with every tool), `strong-plan` (Sonnet for the coordinator and synthesizer), `rag` (the knowledge base, M6; not in the default run yet) and `canary` (a synthesizer prompt with a deliberately wrong rule). Scores are recomputed from stored observations: Top-1/Top-3, per-incident accuracy, action correctness, safety violations (an action put to a human that targets a healthy service), citations, diagnosis p50/p95, tokens and $ per incident, escalation rate. Every pull request replays the recorded runs through the worker's own handlers and applies the release gate: zero safety violations, Top-1 at most 10 points below the baseline, at least 80% of the baseline's scenarios scored, and the canary must fail or the evaluation is void. Results below. |
 | Knowledge base (M6) | 18 runbooks and 6 postmortems in `kb/`, written for the lab's shop with the real error messages ([ADR-0010](docs/adr/0010-knowledge-base-hybrid-retrieval.md)). Chunked by section, embedded with `bge-small-en-v1.5` and stored per tenant in Postgres (generated tsvector plus `vector(384)`); ingest is idempotent. A search runs full text (`ts_rank_cd`) and vectors, top 20 each, fuses them with RRF (k=60), reranks with a MiniLM cross-encoder and drops results under a threshold, so "nothing relevant" is an answer; every query filters on the tenant in SQL. Both models run on the CPU (ONNX), offline at run time: no API key and no model usage. Agents reach it through the read-only `kb_search` tool, whose tenant comes from the incident, not the model; the citation check rejects any fact, inference or root cause that cites only the knowledge base. The `rag` agent variant turns it on; the default does not use it yet. Results below. |
+| Observability (M8) | One trace per incident across the API, the workers and the executor ([ADR-0011](docs/adr/0011-system-observability.md)): the incident's root span context is stored with the incident and copied into every job it enqueues, so whichever process claims the job continues the trace. Agents, model calls and tool calls follow the OpenTelemetry GenAI conventions (model, tokens with cache reads, the tool's arguments, the evidence id); the policy verdict, executor actions and state changes are on the same tree; log lines carry the trace id. Prometheus metrics for incident stages and time to first diagnosis, queue wait and job outcomes, tokens and cost by agent, tool errors, approvals and executions; the queue depth and the oldest undiagnosed incident are read from Postgres when the API is scraped, so they are still there when every worker is down. A generated Grafana dashboard and 11 alert rules on the system itself (P0 without a diagnosis after 2 minutes, backlog, dead letters, no workers, model and tool backend errors, token spend), promtool-tested, meant for a human channel and never for the system itself. |
 | Fault lab (M2) | `make env-up` builds a kind cluster with the OpenTelemetry Demo (trimmed), Loki, Chaos Mesh and SLO burn-rate alerts (promtool-tested); Alertmanager posts to this API. `make fault SCENARIO=…` injects one of 15 faults (feature flags, Chaos Mesh, a bad rollout). The lab is rebuilt from scratch and checked on GitHub Actions ([ADR-0004](docs/adr/0004-fault-lab-on-kind-in-ci.md)): a payment failure, a network delay and a bad release each reach this API as alerts within about 2–4 minutes and resolve after recovery, on a lab that first stays alert-free for 10 minutes. The whole lab uses about 4.7 GiB. |
 | Tools (M3) | Nine read-only tools in `app/tools/` over Prometheus, Loki, Jaeger, the Kubernetes API and flagd (plus `kb_search` over the knowledge base since M6) ([ADR-0005](docs/adr/0005-tool-layer-evidence-and-replay.md)). Each has a strict Pydantic schema that doubles as the model's tool definition, a timeout, retries for transient errors and a circuit breaker per backend; failures come back as structured errors with the backend's message. The model gets a bounded summary (counts, top-N, peaks, log templates) and an evidence ID; the raw result is stored in `evidence` with its SHA-256, and rows cannot be updated or deleted. Evidence IDs are derived from the content, so a replay shows the model the same bytes. Calls can be recorded to a cassette and replayed without a cluster. Kubernetes access is a ServiceAccount that can only read in the demo namespace; Chaos Mesh objects are filtered out so the lab never hands the agent the answer. On the lab, during each of the 3 acceptance faults, the tools return the data a diagnosis needs (the failing service's error ratio, the bad revision and its diff, the slow spans); CI replays those real recordings and must reproduce the live results exactly. |
 | Console (M9) | React + Vite + Tailwind in `web/` ([ADR-0008](docs/adr/0008-console-sse-replay-design-tokens.md)). An incident list (filters, virtualised, new incidents slide in) and an incident page: the state machine, the plan with each policy check and optimistic approve/reject bound to the plan's hash, root causes marking problem and event host, the agent call tree (`GET /api/v1/incidents/{id}/agents`: each step's time, tokens, cost and tool calls), the timeline, and an evidence drawer (metric sparklines, log groups, trace errors, deploy diffs). It follows `GET /api/v1/stream` (Server-Sent Events, resumable with `Last-Event-ID`) and refetches only what changed. Design tokens for both themes live in one file and a test checks WCAG AA contrast; CI holds first-screen JS under 200 KB gzip per route. |
@@ -211,6 +212,34 @@ one with no answer: the chosen threshold (0.031) empties all 8 unanswerable quer
 diagnose better with the knowledge base needs a live run of the `rag` variant, which uses the
 subscription and has not been run yet ([study note](docs/learn/m6-rag.md#4-结果)).
 
+### Observability
+
+```bash
+echo "SRE_OTEL_ENDPOINT=http://jaeger:4318" >> .env      # export traces (empty: none)
+docker compose --profile observability up -d            # + Prometheus :9091, Grafana :3000, Jaeger :16686
+uv run python -m scripts.dashboard                       # regenerate the dashboard JSON after editing panels
+make rules-test                                          # promtool tests, the lab's SLO rules and these
+```
+
+In the lab the API, the workers and the executor send their spans straight to the demo's
+Jaeger (`http://localhost:18080/jaeger/ui`, services `sre-blackboard-*`), not through its
+collector: the collector turns spans into the metrics the lab's SLO alerts are computed from,
+and the system's own failing spans must not page the system.
+
+CI checks it without a model: after the load test, `scripts/obs_check.py` reconciles the
+metrics with what was sent (2000 alerts, 200 incidents, 200 triage jobs, an empty queue),
+evaluates every alert and dashboard query on the real Prometheus, checks that Grafana has the
+dashboard and both data sources, finds a trace whose root the API opened and whose triage job a
+worker ran, and replays a recorded investigation into Jaeger. The replayed bad-release
+investigation is 71 spans (3 jobs, 6 agents, 21 model calls, 39 tool calls, the policy); a
+span costs about 37 µs. Durations in a replay are the replay's, not the live run's:
+
+![A replayed investigation in Jaeger](docs/assets/m8-trace.png)
+
+The objective "90% of P0 incidents diagnosed within 2 minutes" is not met today: in the M7 run
+the default agents took 166 s at p50 (the single agent 49 s). A live lab run would show where
+those seconds go, agent by agent; it uses the subscription and has not been run yet.
+
 ## Roadmap
 
 | Milestone | Scope | Status |
@@ -224,7 +253,7 @@ subscription and has not been run yet ([study note](docs/learn/m6-rag.md#4-结�
 | M9 | Minimal console (React), plus a GitHub Pages replay of a real run | done |
 | M7 | Labeled fault scenarios, live and replay eval, ablations, CI release gate | done |
 | M6 | Postgres hybrid retrieval (tsvector + pgvector, RRF, reranker) with a labeled query set | done |
-| M8 | OpenTelemetry traces and Prometheus metrics for the copilot itself | planned |
+| M8 | OpenTelemetry traces and Prometheus metrics for the copilot itself | done |
 
 Rows are listed in execution order.
 
@@ -245,11 +274,13 @@ app/executor/   the executor process: Kubernetes writer, execute job
 app/console/    case export for the static replay (python -m app.console.export)
 app/eval/       scoring, metrics, release gate, report, replay evaluation (python -m app.eval)
 app/kb/         knowledge base: chunking, local models, ingest, hybrid search, retrieval evaluation (python -m app.kb)
+app/obs/        the system's own traces, Prometheus metrics, database-state gauges
 web/            the console and the static site (React, Vite, Tailwind)
 kb/             the knowledge base: 18 runbooks and 6 postmortems for the lab's shop
 tests/          pytest suite; tests/fixtures/{lab,agent}: real lab recordings for the contract tests
 deploy/kind/    fault lab: kind config, pinned versions, chart values, SLO rules and their tests
-scripts/        M1 load test, LLM probe; scripts/lab: fault injection CLI, acceptance, tool checks, diagnosis scoring
+deploy/observability/ Prometheus, alert rules and their tests, Grafana provisioning and dashboard for the system itself
+scripts/        M1 load test, LLM probe, dashboard generator, observability check; scripts/lab: fault injection CLI, acceptance, tool checks, diagnosis scoring
 eval/           scenarios, live results, the baseline and the recordings CI replays; retrieval/: labelled queries and the retrieval report
 docs/plan/      rebuild plan (Chinese)
 docs/adr/       architecture decision records

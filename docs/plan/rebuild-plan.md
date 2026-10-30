@@ -153,7 +153,8 @@ RECEIVED → TRIAGED → INVESTIGATING ⇄ (最多 N 轮补充取证)
 ```
 app/
   api/            routers: alerts, incidents, approvals, evals, events(SSE), health
-  core/           config, logging, telemetry, security(auth/rbac)
+  core/           config, security(auth/rbac)
+  obs/            tracing, metrics, 数据库状态 gauge（计划里放在 core/telemetry）
   db/             models, repositories, migrations/ (alembic)
   queue/          jobs: enqueue / claim / heartbeat / complete / fail / reap
   harness/        state machine, blackboard, budget, checkpoint
@@ -166,7 +167,7 @@ app/
   kb/             ingest, chunk, embed, hybrid search, rerank, retrieval eval（计划里叫 rag/）
   eval/           scenarios, runner(live/replay), scoring, report
 web/              React 控制台
-deploy/           kind 配置, helm values, alert rules, chaos 实验, 注入脚本
+deploy/           kind 配置, helm values, alert rules, chaos 实验, 注入脚本；observability/：本系统的 Prometheus、告警、Grafana
 docs/
   adr/            架构决策记录（ADR-0001 …）
   learn/          每个里程碑的学习笔记和面试问答
@@ -444,14 +445,20 @@ claude -p \
 
 ### M8：系统自身的可观测性（约 1 周，建议从 M4 开始就埋点）
 
-- [ ] OTel trace：一次事件是一棵 trace，span 包括 agent、llm call、tool call、policy、execution；遵循 GenAI 语义约定，记录模型、token 数等属性；导出到 Demo 中已有的 Jaeger。
-- [ ] Prometheus 指标：
+- [x] OTel trace：一次事件是一棵 trace，span 包括 agent、llm call、tool call、policy、execution；遵循 GenAI 语义约定，记录模型、token 数等属性；导出到 Demo 中已有的 Jaeger。
+  - 做法：上下文存进 `incidents.trace_context`，入队时复制到 `jobs.trace_context`（迁移 0006），认领任务的进程接着记；事件的所有任务都挂在根 span 下，审批入队的执行任务也一样。
+  - 偏差：实验环境里直接发给 Demo 的 Jaeger，不经过它的 collector（span 指标会进入实验环境的 SLO 告警，变成自己调查自己）；compose 另有一个 Jaeger，供没有实验环境时使用。
+- [x] Prometheus 指标：
   - 事件吞吐、各状态耗时直方图；
   - 队列深度和等待时长（按优先级）、死信数量；
   - LLM 的 token 数、成本、错误率；
   - 工具的延迟和错误率；
   - 审批等待时长。
-- [ ] Grafana 仪表盘 JSON 放进仓库；为本系统自身也写 SLO 告警（例如 P0 首次诊断超过 2 分钟就告警）。
+  - 做法：数据库里"此刻"的状态（队列深度、最老的未诊断事件）由 API 在被抓取时现查，worker 全挂时仍然有数；事务里的观测等提交后才记。
+- [x] Grafana 仪表盘 JSON 放进仓库；为本系统自身也写 SLO 告警（例如 P0 首次诊断超过 2 分钟就告警）。
+  - 仪表盘由 `scripts/dashboard.py` 生成；11 条规则有 promtool 测试；这些告警发给人，不发给本系统。
+  - 验收：CI 的 e2e 任务启动 observability profile，压测后在真实的 Prometheus、Grafana、Jaeger 上检查，并把一段回放的调查导出到 Jaeger（`scripts/obs_check.py`），不调用模型。
+- 后续：实验环境里用真实模型跑一次，把 M7 的 166 s 拆到每个 Agent 和工具（会消耗订阅额度，待确认）；告警接到人的渠道；控制台的事件页加"打开 trace"；事件量大以后做尾部采样。
 
 面试点：一个 SRE 工具自身如何被运维；用 trace 调试 Agent。
 
@@ -595,6 +602,6 @@ claude -p \
 | M5 | 已完成 | 2026-10-17 | 分支 `milestone/m5-safety`；策略引擎、绑定哈希的审批、独立执行器、SLO 验证、注入评测（ADR-0007）；第 18 次实验环境运行坏版本发布闭环 RESOLVED，审计链完整，Top-1 3/3；注入评测安全违规 0 |
 | M6 | 已完成 | 2026-10-28 | 分支 `milestone/m6-rag`；Postgres 混合检索（tsvector + pgvector、RRF、本地交叉编码器重排、阈值），租户过滤在 SQL 里（ADR-0010）；24 篇自写文档；62 条标注查询上混合加重排 hit@1 0.741、hit@5 0.981、MRR 0.841，由 CI 用真模型复现；`kb_search` 工具和 `rag` 变体就位，live 消融待额度允许 |
 | M7 | 已完成 | 2026-10-28 | 分支 `milestone/m7-eval`；22 个人工标注的场景、每个变体一个租户并排调查、回放闸门、必须失败的金丝雀（ADR-0009）；6 个核心场景 4 个变体各 1 次（run 40715248288）：默认变体 Top-1 6/6、安全违规 0、每个事件约 19 万 token / 0.03 美元；坏提示的金丝雀 Top-1 0/2 被闸门拦下（run 40751455029）；受额度约束推理强度 low、步数 5，3 次重复和全部场景留待以后 |
-| M8 | 未开始 | | |
+| M8 | 已完成 | 2026-10-30 | 分支 `milestone/m8-observability`；一个事件一棵 trace（上下文经 Postgres 队列跨进程传递）、GenAI 语义约定、Prometheus 指标（数据库状态由 API 现查）、生成的 Grafana 仪表盘、11 条有 promtool 测试的告警（ADR-0011）；2000 条告警的压测在真实的 Prometheus 里对上账，回放的 bad-release 调查在 Jaeger 里是 71 个 span 的一棵树；每个 span 约 37 µs；实验环境里真实模型的 trace 待额度允许 |
 | M9 | 已完成 | 2026-10-27 | 分支 `milestone/m9-console`；Agent 调用树接口、SSE 变化流、案例导出；React 控制台（设计方向 A，深浅两套 token，对比度测试）；Pages 落地页和真实事件回放（ADR-0008）；首屏 JS 111–157 KB gzip，Lighthouse 移动端 91–94、桌面 100，CLS ≤ 0.028，最慢交互 88 ms（CPU 4 倍降速） |
 | M10 | 贯穿全程 | | |
