@@ -19,11 +19,13 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 from uuid import UUID
 
+from opentelemetry.trace import Span
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.db import audit, incidents
 from app.executor.k8s import DeploymentWriter, ExecError, Prepared
+from app.obs import metrics, tracing
 from app.queue import jobs
 from app.remediation import flow
 from app.remediation.actions import CATALOGUE
@@ -52,83 +54,95 @@ def make_execute(writer: DeploymentWriter) -> Callable[[JobContext], Awaitable[N
 
         note = f"sre-blackboard: plan {plan.plan_hash[:12]} for incident {incident_id}"
         for i, action in enumerate(plan.plan.actions):
-            key = f"plan:{plan.id}:action:{i}"
-            async with ctx.engine.connect() as conn:
-                done = (
-                    await conn.execute(text("SELECT status FROM executions WHERE idempotency_key = :k"), {"k": key})
-                ).scalar_one_or_none()
-            if done == "succeeded":
-                continue  # an earlier attempt finished this action
-            if done is not None:
-                if done == "started":
-                    async with ctx.transaction() as conn:
-                        await conn.execute(
-                            text(
-                                "UPDATE executions SET status = 'unknown', finished_at = now(), "
-                                "error = 'the executor stopped while the change was being sent' WHERE idempotency_key = :k"
-                            ),
-                            {"k": key},
-                        )
-                reason = f"{action.action} {action.deployment}: outcome unknown after an interrupted attempt; check the cluster"
-                await _escalate(ctx, incident_id, me, reason, plan_id=plan.id)
-                return
+            with tracing.TRACER.start_as_current_span(
+                f"remediation.action {action.action} {action.deployment}",
+                attributes={"sre.action": action.action, "sre.deployment": action.deployment, "sre.plan.id": plan.id},
+            ) as span:
+                key = f"plan:{plan.id}:action:{i}"
+                async with ctx.engine.connect() as conn:
+                    done = (
+                        await conn.execute(text("SELECT status FROM executions WHERE idempotency_key = :k"), {"k": key})
+                    ).scalar_one_or_none()
+                if done == "succeeded":
+                    continue  # an earlier attempt finished this action
+                if done is not None:
+                    if done == "started":
+                        async with ctx.transaction() as conn:
+                            await conn.execute(
+                                text(
+                                    "UPDATE executions SET status = 'unknown', finished_at = now(), "
+                                    "error = 'the executor stopped while the change was being sent' WHERE idempotency_key = :k"
+                                ),
+                                {"k": key},
+                            )
+                    reason = f"{action.action} {action.deployment}: outcome unknown after an interrupted attempt; check the cluster"
+                    _outcome(span, action.action, "interrupted")
+                    await _escalate(ctx, incident_id, me, reason, plan_id=plan.id)
+                    return
 
-            base = {
-                "tenant": incident["tenant_id"],
-                "incident": incident_id,
-                "plan": plan.id,
-                "index": i,
-                "action": action.model_dump_json(),
-                "key": key,
-                "executor": me,
-            }
-            # 1. Work out the change and let the API server check it, without applying it.
-            try:
-                prepared = await writer.prepare(action, note=note)
-                dry = await writer.patch(prepared.deployment, prepared.ops, dry_run=True) if prepared.ops else None
-            except ExecError as e:
-                await _record(ctx, base, "failed", error=str(e))
-                await _escalate(
-                    ctx, incident_id, me, f"{action.action} {action.deployment} failed before any change: {e}", plan.id
-                )
-                return
-            dry_summary = _dry_summary(dry)
+                base = {
+                    "tenant": incident["tenant_id"],
+                    "incident": incident_id,
+                    "plan": plan.id,
+                    "index": i,
+                    "action": action.model_dump_json(),
+                    "key": key,
+                    "executor": me,
+                }
+                # 1. Work out the change and let the API server check it, without applying it.
+                try:
+                    prepared = await writer.prepare(action, note=note)
+                    dry = await writer.patch(prepared.deployment, prepared.ops, dry_run=True) if prepared.ops else None
+                except ExecError as e:
+                    await _record(ctx, base, "failed", error=str(e))
+                    _outcome(span, action.action, "failed_before_change")
+                    await _escalate(
+                        ctx,
+                        incident_id,
+                        me,
+                        f"{action.action} {action.deployment} failed before any change: {e}",
+                        plan.id,
+                    )
+                    return
+                dry_summary = _dry_summary(dry)
 
-            # 2. Commit the intent, then send the change. From here on a crash means "unknown".
-            await _record(ctx, base, "started", dry_run=dry_summary, before=prepared.before)
-            async with ctx.transaction() as conn:
-                await audit.append(
-                    conn,
-                    actor=me,
-                    event="execution.started",
-                    subject=str(incident_id),
-                    tenant_id=incident["tenant_id"],
-                    payload={
-                        "plan_id": plan.id,
-                        "action": i,
-                        "summary": prepared.summary,
-                        "dry_run": dry_summary,
-                        "before": prepared.before,
-                    },
-                )
-            try:
-                after = await _apply(writer, prepared, ctx.settings.executor_rollout_timeout_s)
-            except ExecError as e:
-                status = "unknown" if e.applied is None else "failed"
-                await _finish(ctx, key, status, error=str(e))
-                await _escalate(ctx, incident_id, me, f"{prepared.summary}: {status}: {e}", plan.id)
-                return
-            await _finish(ctx, key, "succeeded", after=after)
-            async with ctx.transaction() as conn:
-                await audit.append(
-                    conn,
-                    actor=me,
-                    event="execution.succeeded",
-                    subject=str(incident_id),
-                    tenant_id=incident["tenant_id"],
-                    payload={"plan_id": plan.id, "action": i, "summary": prepared.summary, "after": after},
-                )
-            log.info("incident %s: %s", incident_id, prepared.summary)
+                # 2. Commit the intent, then send the change. From here on a crash means "unknown".
+                await _record(ctx, base, "started", dry_run=dry_summary, before=prepared.before)
+                async with ctx.transaction() as conn:
+                    await audit.append(
+                        conn,
+                        actor=me,
+                        event="execution.started",
+                        subject=str(incident_id),
+                        tenant_id=incident["tenant_id"],
+                        payload={
+                            "plan_id": plan.id,
+                            "action": i,
+                            "summary": prepared.summary,
+                            "dry_run": dry_summary,
+                            "before": prepared.before,
+                        },
+                    )
+                try:
+                    after = await _apply(writer, prepared, ctx.settings.executor_rollout_timeout_s)
+                except ExecError as e:
+                    status = "unknown" if e.applied is None else "failed"
+                    await _finish(ctx, key, status, error=str(e))
+                    _outcome(span, action.action, status)
+                    await _escalate(ctx, incident_id, me, f"{prepared.summary}: {status}: {e}", plan.id)
+                    return
+                await _finish(ctx, key, "succeeded", after=after)
+                _outcome(span, action.action, "succeeded")
+                async with ctx.transaction() as conn:
+                    await audit.append(
+                        conn,
+                        actor=me,
+                        event="execution.succeeded",
+                        subject=str(incident_id),
+                        tenant_id=incident["tenant_id"],
+                        payload={"plan_id": plan.id, "action": i, "summary": prepared.summary, "after": after},
+                    )
+                log.info("incident %s: %s", incident_id, prepared.summary)
 
         async with ctx.transaction() as conn:
             current = await incidents.get(conn, incident_id, tenant_id=None)
@@ -159,6 +173,13 @@ def make_execute(writer: DeploymentWriter) -> Callable[[JobContext], Awaitable[N
     return execute_job
 
 
+def _outcome(span: Span, action: str, outcome: str) -> None:
+    span.set_attribute("sre.execution.outcome", outcome)
+    if outcome != "succeeded":
+        tracing.fail(span, outcome)
+    metrics.EXECUTIONS.labels(action, outcome).inc()
+
+
 async def _refusal(conn: AsyncConnection, incident: Any, plan: flow.PlanRow | None, ctx: JobContext) -> str:
     """Why this plan must not run now, or "" if it may."""
     if plan is None:
@@ -167,7 +188,7 @@ async def _refusal(conn: AsyncConnection, incident: Any, plan: flow.PlanRow | No
         return f"the job is for plan {ctx.job.payload.get('plan_id')}, the current plan is {plan.id}"
     if plan.verdict == "deny":
         return "the policy denied this plan"
-    now = await flow.review(conn, incident, plan.plan, ctx.settings)
+    now = await flow.review(conn, incident, plan.plan, ctx.settings, stage="execute")
     if now.verdict == "deny":
         return f"the policy denies it now: {now.reasons()}"
     if plan.verdict == "require_approval" or now.verdict == "require_approval":

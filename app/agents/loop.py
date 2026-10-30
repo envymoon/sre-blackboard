@@ -19,13 +19,15 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 from uuid import UUID
 
+from opentelemetry.trace import Span, SpanKind
 from pydantic import BaseModel, ValidationError
 
 from app.agents.citations import Checked
 from app.agents.prompts import Prompt
 from app.agents.store import AgentStore, LLMCallRecord
 from app.llm.render import inline_refs
-from app.llm.types import LLMBackend, LLMError, LLMRequest, Turn, Usage
+from app.llm.types import LLMBackend, LLMError, LLMRequest, LLMResult, Turn, Usage
+from app.obs import metrics, tracing
 from app.tools.base import ToolContext, ToolError, ToolOutcome
 from app.tools.registry import ToolRegistry
 
@@ -98,7 +100,55 @@ def final_schema(model: type[BaseModel]) -> dict[str, Any]:
 
 
 async def run_agent(spec: AgentSpec, task: str, *, model: str, deps: Deps, check: Check) -> AgentRun:
+    """One agent, start to final answer, in an ``invoke_agent`` span (its model and tool calls nest in it)."""
     run = AgentRun(turns=[{"type": "user", "text": task}])
+    with tracing.TRACER.start_as_current_span(
+        f"invoke_agent {spec.name}",
+        attributes={
+            tracing.GEN_AI_OPERATION: "invoke_agent",
+            tracing.GEN_AI_PROVIDER: "anthropic",
+            tracing.GEN_AI_AGENT_NAME: spec.name,
+            tracing.GEN_AI_REQUEST_MODEL: model,
+            tracing.GEN_AI_CONVERSATION: str(deps.incident_id),
+            "sre.prompt.version": spec.prompt.version,
+        },
+    ) as span:
+        outcome = "error"
+        try:
+            await _run(spec, run, model=model, deps=deps, check=check)
+            outcome = "ok"
+            return run
+        except BudgetExceeded:
+            outcome = "budget"
+            raise
+        except AgentFailed:
+            outcome = "failed"
+            raise
+        except LLMError as e:
+            outcome = f"llm_{e.code}"
+            raise
+        finally:
+            span.set_attributes(
+                {
+                    "sre.agent.outcome": outcome,
+                    "sre.agent.steps": run.steps,
+                    "sre.agent.tool_calls": run.tool_calls,
+                    "sre.agent.tool_errors": run.tool_errors,
+                    "sre.agent.rewrites": run.rewrites,
+                    "sre.agent.dropped": run.dropped,
+                    tracing.GEN_AI_INPUT_TOKENS: run.usage.prompt_tokens,
+                    tracing.GEN_AI_OUTPUT_TOKENS: run.usage.output_tokens,
+                }
+            )
+            if outcome != "ok":
+                tracing.fail(span, outcome)
+            metrics.AGENT_RUNS.labels(spec.name, outcome).inc()
+            metrics.AGENT_STEPS.labels(spec.name).observe(run.steps)
+            if run.dropped:
+                metrics.AGENT_DROPPED.labels(spec.name).inc(run.dropped)
+
+
+async def _run(spec: AgentSpec, run: AgentRun, *, model: str, deps: Deps, check: Check) -> None:
     tool_specs = tuple(deps.registry.specs(spec.tools)) if spec.tools else ()
     schema = final_schema(spec.final_model)
     ctx = ToolContext(tenant_id=deps.tenant_id, incident_id=deps.incident_id, agent=spec.name)
@@ -160,7 +210,7 @@ async def run_agent(spec: AgentSpec, task: str, *, model: str, deps: Deps, check
             continue
         run.final = checked.value
         run.dropped = checked.dropped
-        return run
+        return
 
 
 def _feedback(run: AgentRun, problems: list[str]) -> None:
@@ -187,13 +237,32 @@ async def _step(spec: AgentSpec, request: LLMRequest, run: AgentRun, deps: Deps)
         request_hash=request.hash(),
         status="error",
     )
-    try:
-        result = await deps.backend.step(request)
-    except LLMError as e:
-        await deps.store.record_llm_call(
-            replace(record, error_code=e.code, error=e.message[:2000], attempts=e.attempts)
-        )
-        raise
+    with tracing.TRACER.start_as_current_span(
+        f"chat {request.model}",
+        kind=SpanKind.CLIENT,
+        attributes={
+            tracing.GEN_AI_OPERATION: "chat",
+            tracing.GEN_AI_PROVIDER: "anthropic",
+            tracing.GEN_AI_REQUEST_MODEL: request.model,
+            tracing.GEN_AI_AGENT_NAME: spec.name,
+            tracing.GEN_AI_CONVERSATION: str(deps.incident_id),
+            "sre.llm.backend": deps.backend.name,
+            "sre.llm.step": run.steps,
+            "sre.llm.request_hash": record.request_hash,  # joins llm_calls: the prompt and the answer
+            "sre.llm.force_final": request.force_final,
+        },
+    ) as span:
+        try:
+            result = await deps.backend.step(request)
+        except LLMError as e:
+            tracing.fail(span, e.code, e.message)
+            span.set_attribute("sre.llm.attempts", e.attempts)
+            metrics.LLM_REQUESTS.labels(spec.name, request.model, deps.backend.name, e.code).inc()
+            await deps.store.record_llm_call(
+                replace(record, error_code=e.code, error=e.message[:2000], attempts=e.attempts)
+            )
+            raise
+        _observe_llm(span, spec.name, result)
     await deps.store.record_llm_call(
         replace(
             record,
@@ -225,6 +294,37 @@ async def _step(spec: AgentSpec, request: LLMRequest, run: AgentRun, deps: Deps)
         result.latency_ms,
     )
     return result.step
+
+
+def _observe_llm(span: Span, agent: str, result: LLMResult) -> None:
+    u = result.usage
+    span.set_attributes(
+        {
+            tracing.GEN_AI_RESPONSE_MODEL: result.model,
+            # The conventions count every input token here, cached or not.
+            tracing.GEN_AI_INPUT_TOKENS: u.prompt_tokens,
+            tracing.GEN_AI_OUTPUT_TOKENS: u.output_tokens,
+            tracing.GEN_AI_CACHE_READ: u.cache_read_tokens,
+            tracing.GEN_AI_CACHE_CREATION: u.cache_creation_tokens,
+            "sre.llm.attempts": result.attempts,
+            "sre.llm.latency_ms": result.latency_ms,
+            "sre.llm.actions": len(result.step["actions"]),
+            "sre.llm.final": result.step["final"] is not None,
+        }
+    )
+    if result.cost_usd is not None:
+        span.set_attribute("sre.llm.cost_usd", result.cost_usd)
+        metrics.LLM_COST.labels(agent, result.model).inc(result.cost_usd)
+    metrics.LLM_REQUESTS.labels(agent, result.model, result.backend, "ok").inc()
+    for kind, n in (
+        ("input", u.input_tokens),
+        ("output", u.output_tokens),
+        ("cache_read", u.cache_read_tokens),
+        ("cache_creation", u.cache_creation_tokens),
+    ):
+        if n:
+            metrics.LLM_TOKENS.labels(agent, result.model, kind).inc(n)
+    metrics.observe(metrics.LLM_SECONDS, result.latency_ms / 1000, model=result.model, backend=result.backend)
 
 
 async def _call(spec: AgentSpec, registry: ToolRegistry, action: dict[str, Any], ctx: ToolContext) -> ToolOutcome:

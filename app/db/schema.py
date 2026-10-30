@@ -76,6 +76,8 @@ incidents = Table(
     Column("created_at", TS, nullable=False, server_default=func.now()),
     Column("updated_at", TS, nullable=False, server_default=func.now()),
     Column("closed_at", TS),
+    # W3C traceparent of the incident's root span (M8): its jobs' spans are children of it.
+    Column("trace_context", Text),
     CheckConstraint("priority BETWEEN 0 AND 3", name="priority_range"),
     CheckConstraint(_in("state", INCIDENT_STATES), name="state_valid"),
     # Idempotent ingest: at most one open incident per (tenant, fingerprint).
@@ -129,6 +131,9 @@ jobs = Table(
     # Incremented on every claim. Writes from a worker must carry the fence it claimed with.
     Column("fence", BigInteger, nullable=False, server_default="0"),
     Column("last_error", Text),
+    # Copied from the incident at enqueue time (or the enqueuer's span), so the worker that
+    # claims the job continues the same trace.
+    Column("trace_context", Text),
     Column("enqueued_at", TS, nullable=False, server_default=func.now()),
     Column("updated_at", TS, nullable=False, server_default=func.now()),
     CheckConstraint("priority BETWEEN 0 AND 3", name="priority_range"),

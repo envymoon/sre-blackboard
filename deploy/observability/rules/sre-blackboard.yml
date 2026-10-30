@@ -1,0 +1,126 @@
+# Alerts on sre-blackboard itself (M8, ADR-0011), evaluated by the Prometheus in
+# deploy/observability (docker compose --profile observability). Unit tests: tests/ (make rules-test).
+#
+# Where they go: not into sre-blackboard. A system that is down, stuck or out of quota cannot
+# investigate its own outage, and an incident about the investigator would be investigated by
+# the investigator, spending the model on itself. Route them to a human channel (Alertmanager,
+# a chat webhook); the compose Prometheus only evaluates and shows them.
+#
+# Jobs: sre-api (one target per API container; the queue and incident gauges come from there,
+# read from Postgres at scrape time, so they are taken with max() across API containers),
+# sre-worker and sre-executor (one target per process).
+groups:
+  - name: sre-blackboard-slo
+    interval: 15s
+    rules:
+      # The objective: a P0 incident has its first diagnosis within 2 minutes of opening, for
+      # 90% of P0 incidents. Measured on the lab (M7, default agents): p50 166 s, p95 222 s, so
+      # the default variant does not meet it; the single agent (p50 49 s, p95 136 s) nearly does.
+      - record: sre:p0_diagnosed_within_2m:ratio_1h
+        expr: |
+          sum(increase(sre_incident_diagnosis_seconds_bucket{priority="P0", outcome="diagnosed", le="120"}[1h]))
+          / sum(increase(sre_incident_diagnosis_seconds_count{priority="P0"}[1h]))
+
+      # Right now: a P0 has been open for over 2 minutes without a diagnosis. This is the one
+      # that pages: it fires while there is still time to look at the incident by hand.
+      - alert: P0DiagnosisLate
+        expr: max(sre_incidents_undiagnosed_oldest_seconds{priority="P0"}) > 120
+        labels:
+          severity: page
+        annotations:
+          summary: "A P0 incident has waited {{ $value | humanizeDuration }} for a diagnosis"
+          description: "The first diagnosis of a P0 is due within 2 minutes. Look at the incident yourself; then at the queue (is it claimed?) and the trace of its investigate job (which agent is slow?)."
+
+      # Over the last hour: fewer than 90% of P0 incidents were diagnosed within 2 minutes
+      # (escalations count as misses). The objective, not one incident.
+      - alert: P0DiagnosisObjectiveMissed
+        expr: sre:p0_diagnosed_within_2m:ratio_1h < 0.9
+        labels:
+          severity: ticket
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of P0 incidents diagnosed within 2 minutes over the last hour (objective 90%)"
+          description: "Compare the agent spans of slow investigations: model latency, steps per agent, tool latency."
+
+  - name: sre-blackboard-queue
+    interval: 15s
+    rules:
+      - alert: QueueBacklog
+        expr: max by (priority) (sre_queue_ready_oldest_seconds) > 60
+        for: 2m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A {{ $labels.priority }} job has been ready for {{ $value | humanizeDuration }} without a worker claiming it"
+          description: "Workers are busy, stuck or gone. Check sre_worker_jobs_running against sre_worker_slots and the up series of sre-worker."
+
+      - alert: JobsDeadLettered
+        expr: sum by (kind) (increase(sre_jobs_total{outcome=~"dead|reaped_dead"}[15m])) > 0
+        labels:
+          severity: ticket
+        annotations:
+          summary: "{{ $labels.kind }} jobs went to the dead letters in the last 15 minutes"
+          description: "A job used all its attempts. Its incident will not move on by itself: SELECT id, kind, last_error FROM jobs WHERE status = 'dead'."
+
+      - alert: NoWorkers
+        expr: sum(up{job="sre-worker"}) == 0 or absent(up{job="sre-worker"})
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "No sre-blackboard worker is up"
+          description: "Incidents are opened (the API takes alerts) but nothing triages or investigates them."
+
+      - alert: StateUnreadable
+        expr: max(sre_state_up) == 0 or absent(sre_state_up)
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "The API cannot read the queue and incident state from Postgres"
+          description: "Either the database is down or no API is scraped; the queue and diagnosis alerts are blind meanwhile."
+
+  - name: sre-blackboard-dependencies
+    interval: 15s
+    rules:
+      - alert: ModelErrors
+        expr: |
+          sum(rate(sre_llm_requests_total{outcome!="ok"}[10m])) / sum(rate(sre_llm_requests_total[10m])) > 0.2
+          and sum(increase(sre_llm_requests_total[10m])) >= 5
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of model calls failed over 10 minutes"
+          description: "By error code: sum by (outcome) (rate(sre_llm_requests_total[10m])). rate_limited or overloaded: the subscription's usage window or the API; auth: the token."
+
+      # Failures of the data sources, not of the model's queries: invalid_args, bad_query,
+      # not_found and too_large are the agent asking badly, and it is told to fix the query.
+      - alert: ToolBackendFailing
+        expr: |
+          sum by (tool) (rate(sre_tool_calls_total{outcome=~"timeout|unavailable|backend_error|forbidden"}[10m]))
+          / sum by (tool) (rate(sre_tool_calls_total[10m])) > 0.5
+          and sum by (tool) (increase(sre_tool_calls_total[10m])) >= 4
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "{{ $labels.tool }} fails {{ $value | humanizePercentage }} of calls (timeouts, unavailable, auth)"
+          description: "Investigations go on without this source and say so. Check the backend and the read-only token."
+
+      # Spend: more tokens in an hour than about 25 incidents use (M7: 191k each). A loop, a
+      # flapping alert opening incident after incident, or an evaluation left running.
+      - alert: TokenSpendHigh
+        expr: sum(increase(sre_llm_tokens_total[1h])) > 5e6
+        labels:
+          severity: ticket
+        annotations:
+          summary: "{{ $value | humanize }} tokens in the last hour"
+          description: "By agent: topk(5, sum by (agent) (increase(sre_llm_tokens_total[1h]))). Opened incidents: increase(sre_incidents_opened_total[1h])."
+
+      - alert: ApprovalWaiting
+        expr: max(sre_approvals_pending_oldest_seconds) > 900
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A repair plan has waited {{ $value | humanizeDuration }} for an approval"
+          description: "It is escalated when its approval window closes (30 minutes by default)."

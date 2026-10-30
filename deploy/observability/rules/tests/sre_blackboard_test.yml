@@ -1,0 +1,136 @@
+# promtool unit tests for ../sre-blackboard.yml: `make rules-test`.
+rule_files:
+  - ../sre-blackboard.yml
+evaluation_interval: 15s
+
+tests:
+  # A P0 opened at 0 waits for its diagnosis: the gauge grows by 15 s a sample. Nothing waits at P1.
+  - interval: 15s
+    input_series:
+      - series: 'sre_incidents_undiagnosed_oldest_seconds{job="sre-api", instance="api:8000", priority="P0"}'
+        values: '0+15x20'
+      - series: 'sre_incidents_undiagnosed_oldest_seconds{job="sre-api", instance="api:8000", priority="P1"}'
+        values: '0x20'
+      - series: 'up{job="sre-worker", instance="10.0.0.2:9464"}'
+        values: '1x20'
+      - series: 'sre_state_up{job="sre-api", instance="api:8000"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: P0DiagnosisLate
+        exp_alerts: []
+      - eval_time: 2m15s
+        alertname: P0DiagnosisLate
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: "A P0 incident has waited 2m 15s for a diagnosis"
+              description: "The first diagnosis of a P0 is due within 2 minutes. Look at the incident yourself; then at the queue (is it claimed?) and the trace of its investigate job (which agent is slow?)."
+      - eval_time: 3m
+        alertname: NoWorkers
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: StateUnreadable
+        exp_alerts: []
+
+  # Four P0 diagnoses in the hour: two within 2 minutes, one at 3 minutes, one escalated.
+  - interval: 1m
+    input_series:
+      - series: 'sre_incident_diagnosis_seconds_bucket{priority="P0", outcome="diagnosed", le="120"}'
+        values: '0 0 1 1 2 2 2 2 2 2'
+      - series: 'sre_incident_diagnosis_seconds_count{priority="P0", outcome="diagnosed"}'
+        values: '0 0 1 1 2 3 3 3 3 3'
+      - series: 'sre_incident_diagnosis_seconds_count{priority="P0", outcome="escalated"}'
+        values: '0 0 0 0 0 0 1 1 1 1'
+    promql_expr_test:
+      - expr: sre:p0_diagnosed_within_2m:ratio_1h
+        eval_time: 9m
+        exp_samples:
+          - labels: 'sre:p0_diagnosed_within_2m:ratio_1h'
+            value: 0.5
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: P0DiagnosisObjectiveMissed
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+            exp_annotations:
+              summary: "50% of P0 incidents diagnosed within 2 minutes over the last hour (objective 90%)"
+              description: "Compare the agent spans of slow investigations: model latency, steps per agent, tool latency."
+
+  # Workers gone: their targets are down. A dead letter. The model rate limited. Prometheus
+  # down for the tools' backend, while the agent's own bad queries do not count.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="sre-worker", instance="10.0.0.2:9464"}'
+        values: '1 1 0 0 0 0 0 0 0 0 0 0'
+      - series: 'up{job="sre-worker", instance="10.0.0.3:9464"}'
+        values: '1 1 0 0 0 0 0 0 0 0 0 0'
+      - series: 'sre_jobs_total{kind="investigate", outcome="dead"}'
+        values: '0 0 0 1 1 1 1 1 1 1 1 1'
+      - series: 'sre_llm_requests_total{agent="coordinator", model="claude-haiku-5-5", backend="cli", outcome="ok"}'
+        values: '0+2x11'
+      - series: 'sre_llm_requests_total{agent="coordinator", model="claude-haiku-5-5", backend="cli", outcome="rate_limited"}'
+        values: '0+3x11'
+      - series: 'sre_tool_calls_total{tool="prom_query", outcome="ok"}'
+        values: '0+1x11'
+      - series: 'sre_tool_calls_total{tool="prom_query", outcome="unavailable"}'
+        values: '0+3x11'
+      - series: 'sre_tool_calls_total{tool="loki_query", outcome="ok"}'
+        values: '0+1x11'
+      - series: 'sre_tool_calls_total{tool="loki_query", outcome="bad_query"}'
+        values: '0+5x11'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: NoWorkers
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: "No sre-blackboard worker is up"
+              description: "Incidents are opened (the API takes alerts) but nothing triages or investigates them."
+      - eval_time: 5m
+        alertname: JobsDeadLettered
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              kind: investigate
+            exp_annotations:
+              summary: "investigate jobs went to the dead letters in the last 15 minutes"
+              description: "A job used all its attempts. Its incident will not move on by itself: SELECT id, kind, last_error FROM jobs WHERE status = 'dead'."
+      - eval_time: 11m
+        alertname: ModelErrors
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+            exp_annotations:
+              summary: "60% of model calls failed over 10 minutes"
+              description: "By error code: sum by (outcome) (rate(sre_llm_requests_total[10m])). rate_limited or overloaded: the subscription's usage window or the API; auth: the token."
+      - eval_time: 11m
+        alertname: ToolBackendFailing
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              tool: prom_query
+            exp_annotations:
+              summary: "prom_query fails 75% of calls (timeouts, unavailable, auth)"
+              description: "Investigations go on without this source and say so. Check the backend and the read-only token."
+
+  # Spend: 6M tokens within the hour.
+  - interval: 5m
+    input_series:
+      - series: 'sre_llm_tokens_total{agent="investigator.metrics", model="claude-haiku-5-5", type="cache_read"}'
+        values: '0 1e6 2e6 3e6 4e6 5e6 6e6 6e6 6e6 6e6 6e6 6e6 6e6'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: TokenSpendHigh
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: TokenSpendHigh
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+            exp_annotations:
+              summary: "5.455M tokens in the last hour"  # increase() over samples at 5m steps: the window holds 5.45M of the 6M
+              description: "By agent: topk(5, sum by (agent) (increase(sre_llm_tokens_total[1h]))). Opened incidents: increase(sre_incidents_opened_total[1h])."

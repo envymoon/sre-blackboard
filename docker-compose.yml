@@ -1,4 +1,6 @@
 # Postgres, a one-shot migration, the API (2 processes) and 2 workers.
+# `--profile observability` adds Prometheus (:9091), Grafana (:3000) and Jaeger (:16686) for
+# the system itself (M8, ADR-0011); export traces with SRE_OTEL_ENDPOINT=http://jaeger:4318.
 # Needs SRE_JWT_SECRET (32+ characters) in the environment or in .env; see .env.example.
 # The workers call the model through the Claude CLI: set CLAUDE_CODE_OAUTH_TOKEN (from
 # `claude setup-token`) or ANTHROPIC_API_KEY. Without either, investigations escalate.
@@ -11,6 +13,8 @@ x-app: &app
     # Deployments remediation may touch (JSON list). The API, the workers and the executor
     # must agree: each of them puts plans to the policy. Default: none (fail closed).
     SRE_REMEDIATION_TARGETS: ${SRE_REMEDIATION_TARGETS:-[]}
+    # Traces (M8): an OTLP/HTTP endpoint; empty, none are exported.
+    SRE_OTEL_ENDPOINT: ${SRE_OTEL_ENDPOINT:-}
   restart: unless-stopped
 
 services:
@@ -80,6 +84,46 @@ services:
     restart: "no"
     depends_on:
       migrate: {condition: service_completed_successfully}
+
+  # --- The system's own observability (M8): docker compose --profile observability up -d ---
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    profiles: [observability]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+      # Histogram exemplars carry trace ids: Grafana links a slow point to its trace.
+      - --enable-feature=exemplar-storage
+    ports: ["9091:9090"]
+    volumes:
+      - ./deploy/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/observability/rules:/etc/prometheus/rules:ro
+    restart: unless-stopped
+
+  jaeger:
+    # 2.20: 2.21 dropped the /api/services and /api/traces query API that Grafana 13.2's Jaeger
+    # data source still calls (only /api/v3 is left).
+    image: jaegertracing/jaeger:2.20.0
+    profiles: [observability]
+    ports: ["16686:16686", "4318:4318"]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.2.3
+    profiles: [observability]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/sre-blackboard.json
+      SRE_PROMETHEUS_QUERY_URL: http://prometheus:9090
+      # The lab's Jaeger instead: http://sre-lab-control-plane:30080/jaeger/ui (on kind's network).
+      SRE_JAEGER_QUERY_URL: ${SRE_JAEGER_QUERY_URL:-http://jaeger:16686}
+    ports: ["3000:3000"]
+    volumes:
+      - ./deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on: [prometheus]
+    restart: unless-stopped
 
 volumes:
   pgdata:

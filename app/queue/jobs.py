@@ -23,6 +23,8 @@ from sqlalchemy import text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from app.obs import tracing
+
 
 class LeaseLost(Exception):
     """The job's fence moved on: another worker owns it now, or it is no longer running."""
@@ -40,10 +42,13 @@ class Job:
     max_attempts: int
     fence: int
     lease_owner: str
+    # The trace this job continues (app/obs/tracing.py), and how long it was ready before this claim.
+    trace_context: str | None = None
+    waited_s: float = 0.0
 
     @classmethod
     def from_row(cls, row: RowMapping) -> Job:
-        return cls(**{f: row[f] for f in cls.__dataclass_fields__})
+        return cls(**{f: row[f] for f in cls.__dataclass_fields__ if f in row})
 
 
 async def enqueue(
@@ -63,15 +68,19 @@ async def enqueue(
 
     ``delay_s`` holds it back (an approval deadline, a settle time before verifying); its place
     in line is still counted from now.
+
+    The job carries a trace context: its incident's root span, so all of an incident's jobs are
+    one trace whoever enqueued them (an approval request too), or else the enqueuer's span.
     """
     row = await conn.execute(
         text(
             """
             INSERT INTO jobs (tenant_id, incident_id, kind, payload, idempotency_key,
-                              priority, max_attempts, sort_key, run_after)
+                              priority, max_attempts, sort_key, run_after, trace_context)
             VALUES (:tenant_id, :incident_id, :kind, CAST(:payload AS jsonb), :key,
                     :priority, :max_attempts, now() + make_interval(secs => :priority * :step),
-                    now() + make_interval(secs => :delay))
+                    now() + make_interval(secs => :delay),
+                    COALESCE((SELECT trace_context FROM incidents WHERE id = :incident_id), :trace_context))
             ON CONFLICT (idempotency_key) DO NOTHING
             RETURNING id
             """
@@ -86,6 +95,7 @@ async def enqueue(
             "max_attempts": max_attempts,
             "step": aging_step_s,
             "delay": delay_s,
+            "trace_context": tracing.traceparent(),
         },
     )
     return row.scalar_one_or_none()
@@ -126,7 +136,7 @@ async def claim(
                 updated_at = now()
             FROM next
             WHERE j.id = next.id
-            RETURNING j.*
+            RETURNING j.*, EXTRACT(EPOCH FROM now() - j.run_after)::float8 AS waited_s
             """
         ),
         {"owner": owner, "ttl": lease_ttl_s, "max_priority": max_priority, "kinds": list(kinds) if kinds else None},

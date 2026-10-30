@@ -69,6 +69,12 @@ class Settings(BaseSettings):
     k8s_ca_file: str | None = None
     k8s_namespace: str = "otel-demo"
 
+    # The system's own observability (M8, ADR-0011). OTLP/HTTP base URL for traces, e.g.
+    # http://jaeger:4318; empty: no traces are exported. Workers and the executor serve their
+    # Prometheus metrics on metrics_port (0: not at all); the API serves them at /metrics.
+    otel_endpoint: str | None = None
+    metrics_port: int = 9464
+
     database_url: str = "postgresql+psycopg://sre:sre@localhost:5432/sre"
     db_pool_size: int = 10
 

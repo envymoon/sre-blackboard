@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+from functools import partial
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select, text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncConnection
+
+from app.obs import metrics, tracing
 
 from . import audit
 from .schema import incidents
@@ -121,14 +124,18 @@ async def transition(
     if the incident is no longer at ``(from_state, expected_version)``.
     """
     check_transition(from_state, to_state)
+    # Joined with the row as it was, for how long it stayed in from_state (metrics).
     result = await conn.execute(
         text(
             """
-            UPDATE incidents
-            SET state = :to_state, version = version + 1, updated_at = now(),
-                closed_at = CASE WHEN :terminal THEN now() ELSE closed_at END
-            WHERE id = :id AND state = :from_state AND version = :version
-            RETURNING tenant_id, version
+            UPDATE incidents AS i
+            SET state = :to_state, version = i.version + 1, updated_at = now(),
+                closed_at = CASE WHEN :terminal THEN now() ELSE i.closed_at END
+            FROM (SELECT id, updated_at FROM incidents WHERE id = :id) AS before
+            WHERE i.id = before.id AND i.state = :from_state AND i.version = :version
+            RETURNING i.tenant_id, i.version, i.priority,
+                      EXTRACT(EPOCH FROM now() - before.updated_at)::float8 AS in_state_s,
+                      EXTRACT(EPOCH FROM now() - i.created_at)::float8 AS open_s
             """
         ),
         {
@@ -150,7 +157,20 @@ async def transition(
         tenant_id=row.tenant_id,
         payload={"from": from_state, "to": to_state, "version": row.version, "reason": reason},
     )
+    tracing.event("incident.transition", **{"from": from_state, "to": to_state, "actor": actor, "reason": reason[:200]})
+    metrics.after_commit(conn, partial(_observe, from_state, to_state, row.priority, row.in_state_s, row.open_s))
     return int(row.version)
+
+
+def _observe(from_state: str, to_state: str, priority: int, in_state_s: float, open_s: float) -> None:
+    p = tracing.PRIORITIES[priority]
+    metrics.TRANSITIONS.labels(from_state, to_state).inc()
+    metrics.STATE_SECONDS.labels(from_state, p).observe(in_state_s)
+    if from_state == "INVESTIGATING" and to_state in ("DIAGNOSED", "ESCALATED"):
+        outcome = "diagnosed" if to_state == "DIAGNOSED" else "escalated"
+        metrics.DIAGNOSIS_SECONDS.labels(p, outcome).observe(open_s)
+    if to_state in TERMINAL:
+        metrics.CLOSE_SECONDS.labels(p, to_state).observe(open_s)
 
 
 async def get(conn: AsyncConnection, incident_id: UUID, *, tenant_id: str | None) -> RowMapping | None:

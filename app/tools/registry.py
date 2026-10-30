@@ -13,6 +13,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from app.obs import metrics, tracing
 from app.tools.base import Tool, ToolArgs, ToolContext, ToolError, ToolOutcome, canonical_json, sha256_hex, without_nul
 from app.tools.compress import MAX_SUMMARY_CHARS, bound
 from app.tools.evidence import EvidenceRecord, EvidenceSink, ToolCallRecord, evidence_id
@@ -38,6 +39,29 @@ class ToolRegistry:
         return [self.tools[n].spec() for n in chosen]
 
     async def call(self, name: str, raw_args: dict[str, Any], ctx: ToolContext) -> ToolOutcome:
+        with tracing.TRACER.start_as_current_span(
+            f"execute_tool {name}",
+            attributes={
+                tracing.GEN_AI_OPERATION: "execute_tool",
+                tracing.GEN_AI_TOOL_NAME: name,
+                tracing.GEN_AI_AGENT_NAME: ctx.agent,
+            },
+        ) as span:
+            outcome = await self._call(name, raw_args, ctx)
+            # Queries, not secrets: what the agent asked is what a trace is read for.
+            span.set_attribute(tracing.GEN_AI_TOOL_ARGS, canonical_json(outcome.args)[:1000])
+            span.set_attribute("sre.tool.attempts", outcome.attempts)
+            if outcome.evidence_id:
+                span.set_attribute("sre.evidence.id", outcome.evidence_id)
+                span.set_attribute("sre.tool.result_bytes", outcome.meta.get("result_bytes", 0))
+            if outcome.error is not None:
+                tracing.fail(span, outcome.error.code, outcome.error.message)
+        label = name if name in self.tools else "unknown"  # a name the model made up is not a label
+        metrics.TOOL_CALLS.labels(label, outcome.error.code if outcome.error else "ok").inc()
+        metrics.TOOL_SECONDS.labels(label).observe(outcome.latency_ms / 1000)
+        return outcome
+
+    async def _call(self, name: str, raw_args: dict[str, Any], ctx: ToolContext) -> ToolOutcome:
         started = time.monotonic()
         outcome = ToolOutcome(tool=name, args=dict(raw_args))
         evidence: EvidenceRecord | None = None

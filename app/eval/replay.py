@@ -34,6 +34,7 @@ from app.core.config import Settings
 from app.eval.collect import observe
 from app.eval.score import IncidentObs, ScenarioObs
 from app.llm.replay import ReplayBackend
+from app.obs import tracing
 from app.queue import jobs
 from app.tools.sources import ReplaySource
 from app.worker.handlers import triage
@@ -97,8 +98,17 @@ async def _load(engine: AsyncEngine, rec: recording.Recording, investigated: set
         for inc in rec.incidents:
             if str(inc["id"]) not in investigated:
                 continue
+            # A trace per replayed incident, as the API opens one for a live incident.
+            context = tracing.open_incident(
+                inc["id"],
+                tenant_id=inc["tenant_id"],
+                service=inc["service"],
+                title=inc["title"],
+                priority=inc["priority"],
+            )
             await conn.execute(
-                text("UPDATE incidents SET state = 'RECEIVED', closed_at = NULL WHERE id = :id"), {"id": inc["id"]}
+                text("UPDATE incidents SET state = 'RECEIVED', closed_at = NULL, trace_context = :c WHERE id = :id"),
+                {"id": inc["id"], "c": context},
             )
             await jobs.enqueue(
                 conn,
@@ -120,9 +130,10 @@ async def _drive(engine: AsyncEngine, settings: Settings, services: AgentService
             job = await jobs.claim(conn, owner=OWNER, lease_ttl_s=600, kinds=KINDS)
         if job is None:
             return
-        await handlers[job.kind](JobContext(job, engine, settings, OWNER))
-        async with engine.begin() as conn:
-            await jobs.complete(conn, job)
+        with tracing.job_span(job):
+            await handlers[job.kind](JobContext(job, engine, settings, OWNER))
+            async with engine.begin() as conn:
+                await jobs.complete(conn, job)
 
 
 async def replay(engine: AsyncEngine, scenario: str, variant: str, path: Path) -> Replayed:
