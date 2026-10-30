@@ -39,5 +39,8 @@ CMD ["python", "-m", "app.worker"]
 
 FROM base AS api
 EXPOSE 8000
-# The API is stateless (all state is in Postgres), so it can run several processes.
-CMD ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+# The API is stateless (all state is in Postgres), so it can run several processes. Their
+# Prometheus counters are files in PROMETHEUS_MULTIPROC_DIR, summed on scrape (M8); the
+# directory is emptied at every start so a restart does not carry old processes' values.
+# Set here, not with ENV: the executor runs from this image as one process with its own registry.
+CMD ["sh", "-c", "export PROMETHEUS_MULTIPROC_DIR=/tmp/sre-metrics && rm -rf \"$PROMETHEUS_MULTIPROC_DIR\" && mkdir -p \"$PROMETHEUS_MULTIPROC_DIR\" && exec uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000 --workers 2"]

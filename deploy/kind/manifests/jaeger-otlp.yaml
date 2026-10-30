@@ -1,0 +1,15 @@
+# OTLP/HTTP into the demo's Jaeger, from outside the cluster (M8, ADR-0011): sre-blackboard's
+# own traces. Straight to Jaeger, not through the demo's collector: the collector turns spans
+# into the span metrics the lab's SLO alerts are computed from, and sre-blackboard's own
+# failing spans must never page sre-blackboard (it would investigate itself).
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger-otlp-external
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: jaeger
+    app.kubernetes.io/component: all-in-one
+  ports:
+    - {name: otlp-http, port: 4318, targetPort: 4318, nodePort: 30318}

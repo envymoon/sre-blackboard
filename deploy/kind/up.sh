@@ -106,6 +106,9 @@ log "read-only ServiceAccount for the tools (make lab-env mints its token)"
 log "the executor's ServiceAccount: patch Deployments in $NS, nothing else (M5)"
 "${kctl[@]}" -n "$NS" apply -f "$here/manifests/executor.yaml"
 
+log "OTLP into the demo's Jaeger for sre-blackboard's own traces (M8)"
+"${kctl[@]}" -n "$NS" apply -f "$here/manifests/jaeger-otlp.yaml"
+
 log "Loki"
 sed "s#image: LOKI_IMAGE.*#image: $LOKI_IMAGE#" "$here/manifests/loki.yaml" | "${kctl[@]}" -n "$NS" apply -f -
 

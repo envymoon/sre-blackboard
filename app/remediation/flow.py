@@ -15,6 +15,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from typing import Any
 from uuid import UUID
 
@@ -24,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from app.agents.schemas import Diagnosis
 from app.core.config import Settings
 from app.db import audit, incidents
+from app.obs import metrics, tracing
 from app.queue import jobs
 from app.remediation.plans import RemediationPlan, describe, plan_hash
 from app.remediation.policy import Decision, EvidenceRef, PolicyContext, evaluate
@@ -80,11 +82,30 @@ async def policy_context(
 
 
 async def review(
-    conn: AsyncConnection, incident: Mapping[Any, Any], plan: RemediationPlan, settings: Settings
+    conn: AsyncConnection,
+    incident: Mapping[Any, Any],
+    plan: RemediationPlan,
+    settings: Settings,
+    *,
+    stage: str = "submit",
 ) -> Decision:
-    """The policy's verdict on a plan for this incident, now."""
+    """The policy's verdict on a plan for this incident, now. ``stage``: "submit" when the plan
+    is proposed, "execute" when the executor checks it again."""
     dx = await diagnosis(conn, incident["id"])
-    return evaluate(plan, await policy_context(conn, incident, dx, settings, datetime.now(UTC)))
+    with tracing.TRACER.start_as_current_span("policy.evaluate") as span:
+        decision = evaluate(plan, await policy_context(conn, incident, dx, settings, datetime.now(UTC)))
+        failed = [c.name for c in decision.checks if not c.ok]
+        span.set_attributes(
+            {
+                "sre.policy.stage": stage,
+                "sre.policy.verdict": decision.verdict,
+                "sre.policy.risk": decision.risk or "",
+                "sre.policy.actions": [f"{a.action} {a.deployment}" for a in plan.actions],
+                "sre.policy.failed_checks": failed,
+            }
+        )
+    metrics.after_commit(conn, metrics.POLICY.labels(stage, decision.verdict, decision.risk or "none").inc)
+    return decision
 
 
 async def current_plan(conn: AsyncConnection, incident_id: UUID) -> PlanRow | None:
@@ -287,6 +308,9 @@ async def decide(
     )
     if inserted.scalar_one_or_none() is None:
         raise ApprovalRefused(409, "this plan has already been decided")
+    waited = (datetime.now(UTC) - plan.created_at).total_seconds()
+    metrics.after_commit(conn, partial(metrics.APPROVAL_WAIT.labels(decision).observe, waited))
+    tracing.event("remediation.decision", decision=decision, plan_hash=plan.plan_hash[:12], waited_s=round(waited))
     await audit.append(
         conn,
         actor=approver,

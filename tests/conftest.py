@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from app.api.app import create_app
 from app.core.config import Settings
+from app.obs import metrics
 
 TEST_JWT_SECRET = "test-secret-that-is-at-least-32-bytes-long"
 
@@ -58,6 +59,7 @@ def settings(migrated_url: str) -> Settings:
 @pytest.fixture
 async def engine(settings: Settings) -> AsyncIterator[AsyncEngine]:
     eng = create_async_engine(settings.database_url, pool_size=settings.db_pool_size)
+    metrics.install(eng)  # as make_engine does: metrics observed in a transaction wait for its commit
     async with eng.begin() as conn:
         await conn.execute(
             text(

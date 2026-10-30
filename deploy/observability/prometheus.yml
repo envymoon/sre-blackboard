@@ -1,0 +1,28 @@
+# Prometheus for sre-blackboard itself (M8, ADR-0011): docker compose --profile observability.
+# Not the lab's Prometheus: that one watches the demo shop; this one watches the watcher.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  # The API processes share one port per container; their counters are summed across
+  # processes (PROMETHEUS_MULTIPROC_DIR). The queue and incident gauges are read from Postgres.
+  - job_name: sre-api
+    dns_sd_configs:
+      - names: [api]
+        type: A
+        port: 8000
+  # One target per worker replica: compose's DNS returns every container behind "worker".
+  - job_name: sre-worker
+    dns_sd_configs:
+      - names: [worker]
+        type: A
+        port: 9464
+  - job_name: sre-executor
+    dns_sd_configs:
+      - names: [executor]
+        type: A
+        port: 9464

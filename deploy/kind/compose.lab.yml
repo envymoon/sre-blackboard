@@ -11,10 +11,24 @@
 # allowed to patch Deployments: `uv run python -m scripts.lab env --internal --executor >
 # .lab.executor.env`, then `up -d executor`. It has no model and no read tools; the workers
 # never see its token.
+#
+# Traces (M8, ADR-0011): the API, the workers and the executor export to the demo's Jaeger
+# (deploy/kind/manifests/jaeger-otlp.yaml), so the incident trees are in the same Jaeger UI as
+# the shop's own traces: http://localhost:18080/jaeger/ui, service sre-blackboard-*.
+x-traces: &traces
+  SRE_OTEL_ENDPOINT: http://sre-lab-control-plane:30318
+
 services:
+  api:
+    networks: [default, kind]
+    environment:
+      <<: *traces
+
   worker:
     networks: [default, kind]
     env_file: [.lab.worker.env]
+    environment:
+      <<: *traces
     volumes:
       - ./.lab-ca.crt:/run/lab/ca.crt:ro
 
@@ -24,6 +38,7 @@ services:
     environment:
       SRE_DATABASE_URL: postgresql+psycopg://sre:sre@db:5432/sre
       SRE_REMEDIATION_TARGETS: ${SRE_REMEDIATION_TARGETS:-[]}
+      <<: *traces
     env_file: [.lab.executor.env]
     networks: [default, kind]
     volumes:

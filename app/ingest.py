@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from app.core.config import Settings
 from app.db import audit, incidents
+from app.obs import metrics, tracing
 from app.queue import jobs
 
 PRIORITY_NAMES = ("P0", "P1", "P2", "P3")
@@ -119,10 +120,13 @@ async def ingest(
             )
             if created:
                 await _on_incident_created(conn, incident_id, ident, alert, tenant_id, actor, settings)
+            result = "opened" if created else "merged"
         else:
             # Resolution is recorded against the open incident; closing it is the harness's job.
             incident_id, created = await _open_incident_id(conn, tenant_id, ident.fingerprint), False
+            result = "resolved" if incident_id else "unmatched"
         await _record_alert(conn, tenant_id, incident_id, ident.fingerprint, alert)
+        metrics.after_commit(conn, metrics.ALERTS.labels(alert.status, result).inc)
         results.append(IngestedAlert(ident.fingerprint, alert.status, incident_id, created))
     return results
 
@@ -137,6 +141,15 @@ async def _on_incident_created(
     settings: Settings,
 ) -> None:
     priority = priority_of(alert.labels)
+    # The incident's own trace: every job it gets continues it (app/obs/tracing.py).
+    context = tracing.open_incident(
+        incident_id, tenant_id=tenant_id, service=ident.service, title=ident.title, priority=priority
+    )
+    if context:
+        await conn.execute(
+            text("UPDATE incidents SET trace_context = :c WHERE id = :id"), {"c": context, "id": incident_id}
+        )
+    metrics.after_commit(conn, metrics.INCIDENTS_OPENED.labels(PRIORITY_NAMES[priority]).inc)
     await jobs.enqueue(
         conn,
         tenant_id=tenant_id,

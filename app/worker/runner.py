@@ -12,6 +12,7 @@ import contextlib
 import logging
 import os
 import socket
+import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
@@ -20,6 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from app.core.config import Settings
 from app.db import audit
+from app.ingest import PRIORITY_NAMES
+from app.obs import metrics, tracing
 from app.queue import jobs
 from app.queue.jobs import Job, LeaseLost
 
@@ -66,6 +69,7 @@ class Worker:
         self.handlers = handlers
         self.worker_id = worker_id or default_worker_id()
         self._running: dict[int, asyncio.Task[None]] = {}
+        metrics.WORKER_SLOTS.set(settings.worker_concurrency)
 
     async def run(self, stop: asyncio.Event) -> None:
         """Process jobs until ``stop`` is set, then drain in-flight jobs."""
@@ -109,30 +113,46 @@ class Worker:
         lease_lost = asyncio.Event()
         heartbeat = asyncio.create_task(self._heartbeat(job, task, lease_lost))
         ctx = JobContext(job, self.engine, self.settings, self.worker_id)
-        try:
-            handler = self.handlers.get(job.kind)
-            if handler is None:
-                raise PermanentJobError(f"no handler for job kind {job.kind!r}")
-            async with asyncio.timeout(self.settings.worker_job_timeout_s):
-                await handler(ctx)
-            async with self.engine.begin() as conn:
-                await jobs.complete(conn, job)
-            log.info("job %s (%s) done", job.id, job.kind)
-        except LeaseLost:
-            log.warning("job %s: lease lost, result discarded", job.id)
-        except asyncio.CancelledError:
-            if lease_lost.is_set():
-                log.warning("job %s: lease lost, handler cancelled", job.id)
-                return
-            await self._release(job)
-            raise
-        except PermanentJobError as exc:
-            await self._fail(job, exc, retryable=False)
-        except Exception as exc:
-            await self._fail(job, exc, retryable=True)
-        finally:
-            heartbeat.cancel()
-            self._running.pop(job.id, None)
+        metrics.QUEUE_WAIT.labels(job.kind, PRIORITY_NAMES[job.priority]).observe(job.waited_s)
+        metrics.JOBS_RUNNING.inc()
+        started = time.monotonic()
+        outcome = "error"
+        with tracing.job_span(job) as span:
+            span.set_attribute("sre.worker", self.worker_id)
+            try:
+                handler = self.handlers.get(job.kind)
+                if handler is None:
+                    raise PermanentJobError(f"no handler for job kind {job.kind!r}")
+                async with asyncio.timeout(self.settings.worker_job_timeout_s):
+                    await handler(ctx)
+                async with self.engine.begin() as conn:
+                    await jobs.complete(conn, job)
+                outcome = "done"
+                log.info("job %s (%s) done", job.id, job.kind)
+            except LeaseLost:
+                outcome = "lease_lost"
+                log.warning("job %s: lease lost, result discarded", job.id)
+            except asyncio.CancelledError:
+                if lease_lost.is_set():
+                    outcome = "lease_lost"
+                    log.warning("job %s: lease lost, handler cancelled", job.id)
+                    return
+                outcome = "released"
+                await self._release(job)
+                raise
+            except PermanentJobError as exc:
+                outcome = await self._fail(job, exc, retryable=False)
+            except Exception as exc:
+                outcome = await self._fail(job, exc, retryable=True)
+            finally:
+                heartbeat.cancel()
+                self._running.pop(job.id, None)
+                metrics.JOBS_RUNNING.dec()
+                metrics.JOBS.labels(job.kind, outcome).inc()
+                metrics.observe(metrics.JOB_SECONDS, time.monotonic() - started, kind=job.kind, outcome=outcome)
+                span.set_attribute("sre.job.outcome", outcome)
+                if outcome not in ("done", "released"):
+                    tracing.fail(span, outcome)
 
     async def _heartbeat(self, job: Job, task: asyncio.Task[None], lease_lost: asyncio.Event) -> None:
         interval = self.settings.queue_lease_ttl_s / 3
@@ -150,7 +170,8 @@ class Worker:
                 task.cancel()
                 return
 
-    async def _fail(self, job: Job, exc: BaseException, *, retryable: bool) -> None:
+    async def _fail(self, job: Job, exc: BaseException, *, retryable: bool) -> str:
+        """Record the failure; returns how the attempt ended: retry, dead or lease_lost."""
         error = f"{type(exc).__name__}: {exc}"
         try:
             async with self.engine.begin() as conn:
@@ -166,8 +187,9 @@ class Worker:
                     await _audit_dead(conn, job, error, actor=f"worker:{self.worker_id}")
         except LeaseLost:
             log.warning("job %s: lease lost before failure was recorded", job.id)
-            return
+            return "lease_lost"
         log.warning("job %s (%s) failed, now %s: %s", job.id, job.kind, status, error)
+        return "dead" if status == "dead" else "retry"
 
     async def _release(self, job: Job) -> None:
         try:
@@ -185,6 +207,7 @@ class Worker:
                 async with self.engine.begin() as conn:
                     for job_id, status in await jobs.reap(conn):
                         log.warning("job %s: lease expired, now %s", job_id, status)
+                        metrics.after_commit(conn, metrics.JOBS.labels("any", f"reaped_{status}").inc)
                         if status == "dead":
                             await audit.append(
                                 conn,

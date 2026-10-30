@@ -11,6 +11,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from uuid import UUID
 
 from app.agents.loop import Deps
@@ -18,6 +19,7 @@ from app.agents.store import PgAgentStore
 from app.db import audit, incidents, investigations
 from app.llm.router import model_for
 from app.llm.types import LLMError
+from app.obs import metrics, tracing
 from app.remediation import flow, planner, verify
 from app.remediation.actions import CATALOGUE
 from app.tools import ALL_TOOLS, ToolRegistry
@@ -107,6 +109,8 @@ async def approval_timeout(ctx: JobContext) -> None:
         plan = await flow.current_plan(conn, incident_id)
         if plan is None or plan.id != plan_id or await flow.approval(conn, plan.id) is not None:
             return  # revised or decided since
+        waited = (datetime.now(UTC) - plan.created_at).total_seconds()
+        metrics.after_commit(conn, partial(metrics.APPROVAL_WAIT.labels("timed_out").observe, waited))
         await incidents.transition(
             conn,
             incident_id,
@@ -149,6 +153,7 @@ def make_verify(services: AgentServices) -> Callable[[JobContext], Awaitable[Non
             healthy = value is not None and value < check.healthy_below
             streak = streak + 1 if healthy else 0
             samples.append({"at": datetime.now(UTC).isoformat(timespec="seconds"), "value": value, "note": note})
+            tracing.event("verify.sample", value=value, healthy=healthy, streak=streak, note=note or None)
             shown = "no data" if value is None else f"{value:.3g}"
             if streak >= s.verify_healthy_checks:
                 reason = (
@@ -186,6 +191,7 @@ async def _verified(
         incident = await incidents.get(conn, incident_id, tenant_id=None)
         if incident is None or incident["state"] != "VERIFYING":
             return
+        metrics.after_commit(conn, metrics.VERIFICATIONS.labels("passed" if ok else "failed").inc)
         await audit.append(
             conn,
             actor="verifier",

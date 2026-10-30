@@ -84,10 +84,11 @@ lab-accept:  ## Acceptance: inject, alert within 5 min, diagnosis (M4), approved
 lab-env:  ## Endpoints and a 12h read-only token for the tools (python -m app.tools), into .lab.env
 	uv run python -m scripts.lab env > .lab.env
 
-lab-workers:  ## Point the compose workers at the lab (read-only token) and start the executor (its own token); see deploy/kind/compose.lab.yml
+lab-workers:  ## Point the compose workers at the lab (read-only token), start the executor (its own token), send traces to the lab's Jaeger; see deploy/kind/compose.lab.yml
 	uv run python -m scripts.lab env --internal > .lab.worker.env
 	uv run python -m scripts.lab env --internal --executor > .lab.executor.env
-	docker compose -f docker-compose.yml -f deploy/kind/compose.lab.yml up -d --no-deps worker executor
+	docker compose -f docker-compose.yml -f deploy/kind/compose.lab.yml up -d --no-deps worker executor api
 
-rules-test:  ## promtool unit tests for the SLO alert rules (needs Docker)
+rules-test:  ## promtool unit tests for the lab's SLO alerts and the system's own alerts (needs Docker)
 	docker run --rm -v $(CURDIR)/deploy/kind/rules:/rules -w /rules/tests --entrypoint promtool $(PROMTOOL_IMAGE) test rules slo_test.yml
+	docker run --rm -v $(CURDIR)/deploy/observability/rules:/rules -w /rules/tests --entrypoint promtool $(PROMTOOL_IMAGE) test rules sre_blackboard_test.yml

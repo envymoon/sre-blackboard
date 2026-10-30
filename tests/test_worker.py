@@ -212,6 +212,7 @@ def start_worker_process(settings: Settings, **env: str) -> subprocess.Popen[byt
             "PYTHONPATH": str(ROOT),
             "SRE_DATABASE_URL": settings.database_url,
             "SRE_WORKER_POLL_INTERVAL_S": "0.05",
+            "SRE_METRICS_PORT": "0",  # several workers on one machine
             **env,
         },
         stdout=subprocess.PIPE,

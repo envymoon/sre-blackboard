@@ -97,8 +97,10 @@ runs:
         uv run python -m scripts.lab env --internal --executor > .lab.executor.env
         if [ -n "$LAB_CLAUDE_TOKEN" ]; then export CLAUDE_CODE_OAUTH_TOKEN="$LAB_CLAUDE_TOKEN"; fi
         # The executor's environment has no model token: the override does not pass it through.
+        # The API too: it joins kind's network to send its spans to the demo's Jaeger (M8).
         docker compose -f docker-compose.yml -f deploy/kind/compose.lab.yml up -d --no-deps \
-          --scale worker="$WORKERS" worker executor
+          --scale worker="$WORKERS" worker executor api
+        timeout 60 bash -c 'until curl -fsS localhost:8000/readyz >/dev/null; do sleep 2; done'
         sleep 5
         {
           echo "# claude in the worker image"
