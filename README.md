@@ -7,13 +7,33 @@ root-cause candidates. Every claim has to cite evidence. Any change to
 production is proposed, checked by a deterministic policy engine, and needs
 human approval before an isolated executor applies it.
 
-> **Status: being rebuilt (M0–M9 done; M10, the documentation, runs throughout).** The first version was a
+> **Status: rebuilt (M0–M10 done).** The first version was a
 > spec-shaped prototype: it had no real model calls, no real tool backends, and
 > an evaluation that could not fail. This repository is now being rebuilt into a
 > working system, one milestone at a time. The plan, including every known
 > defect and how it gets fixed, is in
 > [`docs/plan/rebuild-plan.md`](docs/plan/rebuild-plan.md) (Chinese).
-> This README only describes what exists on `main`.
+> This README only describes what exists on `main`; every number in it is traced to the run,
+> file or test it came from in [`docs/results.md`](docs/results.md), together with what is not
+> shown yet.
+
+![A real lab incident replayed: alert, five agents investigate, a rollback plan passes the policy and waits for a human, approval, rollback, the SLO recovers](docs/assets/demo-bad-release.gif)
+
+A real incident from the lab, replayed at 30× in the console from its exported case (no model,
+no cluster): a bad release of `checkout`, diagnosed in 2.6 minutes, a rollback approved by a
+human, `RESOLVED` 2 minutes after the approval. It is the same case as the
+[GitHub Pages replay](https://envymoon.github.io/sre-blackboard/#/replay/bad-release).
+
+## Architecture
+
+![Processes and data: the API, workers and executor share one Postgres; agents read the lab, only the executor writes](docs/assets/architecture-1.png)
+
+Three kinds of process share one Postgres and never call each other: everything an incident
+needs next is a row in the job queue. Agents can only read the cluster; the executor is the one
+process that can change it, and only after a human approved the exact plan. Each arrow of the
+incident's state machine is one transaction that moves the incident, appends an audit event
+and enqueues the next job ([diagram](docs/assets/architecture-2.png), source in
+[`docs/architecture.md`](docs/architecture.md)).
 
 ## Design principles
 
@@ -254,6 +274,7 @@ those seconds go, agent by agent; it uses the subscription and has not been run 
 | M7 | Labeled fault scenarios, live and replay eval, ablations, CI release gate | done |
 | M6 | Postgres hybrid retrieval (tsvector + pgvector, RRF, reranker) with a labeled query set | done |
 | M8 | OpenTelemetry traces and Prometheus metrics for the copilot itself | done |
+| M10 | ADRs, study notes, architecture diagrams, demo, the evidence ledger (throughout) | done |
 
 Rows are listed in execution order.
 
@@ -275,15 +296,17 @@ app/console/    case export for the static replay (python -m app.console.export)
 app/eval/       scoring, metrics, release gate, report, replay evaluation (python -m app.eval)
 app/kb/         knowledge base: chunking, local models, ingest, hybrid search, retrieval evaluation (python -m app.kb)
 app/obs/        the system's own traces, Prometheus metrics, database-state gauges
-web/            the console and the static site (React, Vite, Tailwind)
+web/            the console and the static site (React, Vite, Tailwind); web/scripts: budget, diagram and demo renderers
 kb/             the knowledge base: 18 runbooks and 6 postmortems for the lab's shop
 tests/          pytest suite; tests/fixtures/{lab,agent}: real lab recordings for the contract tests
 deploy/kind/    fault lab: kind config, pinned versions, chart values, SLO rules and their tests
 deploy/observability/ Prometheus, alert rules and their tests, Grafana provisioning and dashboard for the system itself
 scripts/        M1 load test, LLM probe, dashboard generator, observability check; scripts/lab: fault injection CLI, acceptance, tool checks, diagnosis scoring
 eval/           scenarios, live results, the baseline and the recordings CI replays; retrieval/: labelled queries and the retrieval report
+docs/architecture.md the diagrams' Mermaid source; docs/assets/ their PNGs, the demo GIF, screenshots
+docs/results.md every claimed number, with where it was measured and how to check it
 docs/plan/      rebuild plan (Chinese)
-docs/adr/       architecture decision records
-docs/learn/     per-milestone study notes with interview Q&A (Chinese)
+docs/adr/       architecture decision records, with an index (Chinese)
+docs/learn/     per-milestone study notes with interview Q&A, with an index (Chinese)
 docs/legacy/    domain notes kept from the prototype
 ```
