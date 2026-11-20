@@ -1,0 +1,398 @@
+{
+  "items": [
+    {
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-10-15T03:30:06Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "name": "checkout-6f48f6dcc5-rkh8g",
+        "namespace": "otel-demo",
+        "resourceVersion": "6125",
+        "uid": "b85c5cb5-9eb2-4723-9880-1ab80e536077"
+      },
+      "lastTimestamp": "2026-10-15T03:30:06Z",
+      "message": "Successfully assigned otel-demo/checkout-6f48f6dcc5-rkh8g to sre-lab-control-plane",
+      "metadata": {
+        "creationTimestamp": "2026-10-15T03:30:06Z",
+        "name": "checkout-6f48f6dcc5-rkh8g.18de96581efb4fe3",
+        "namespace": "otel-demo",
+        "resourceVersion": "6131",
+        "uid": "726614bb-1285-4fd5-b490-976864f26d3d"
+      },
+      "reason": "Scheduled",
+      "reportingComponent": "default-scheduler",
+      "reportingInstance": "",
+      "source": {
+        "component": "default-scheduler"
+      },
+      "type": "Normal"
+    },
+    {
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-10-15T03:30:07Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.initContainers{wait-for-kafka}",
+        "kind": "Pod",
+        "name": "checkout-6f48f6dcc5-rkh8g",
+        "namespace": "otel-demo",
+        "resourceVersion": "6128",
+        "uid": "b85c5cb5-9eb2-4723-9880-1ab80e536077"
+      },
+      "lastTimestamp": "2026-10-15T03:30:07Z",
+      "message": "Pulling image \"busybox:latest\"",
+      "metadata": {
+        "creationTimestamp": "2026-10-15T03:30:07Z",
+        "name": "checkout-6f48f6dcc5-rkh8g.18de965838b6bb39",
+        "namespace": "otel-demo",
+        "resourceVersion": "6134",
+        "uid": "906f776d-90d7-45d1-a0ea-1c18bf422838"
+      },
+      "reason": "Pulling",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "sre-lab-control-plane",
+      "source": {
+        "component": "kubelet",
+        "host": "sre-lab-control-plane"
+      },
+      "type": "Normal"
+    },
+    {
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-10-15T03:30:07Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.initContainers{wait-for-kafka}",
+        "kind": "Pod",
+        "name": "checkout-6f48f6dcc5-rkh8g",
+        "namespace": "otel-demo",
+        "resourceVersion": "6128",
+        "uid": "b85c5cb5-9eb2-4723-9880-1ab80e536077"
+      },
+      "lastTimestamp": "2026-10-15T03:30:07Z",
+      "message": "Successfully pulled image \"busybox:latest\" in 429ms (429ms including waiting). Image size: 2236767 bytes.",
+      "metadata": {
+        "creationTimestamp": "2026-10-15T03:30:07Z",
+        "name": "checkout-6f48f6dcc5-rkh8g.18de965852520b96",
+        "namespace": "otel-demo",
+        "resourceVersion": "6136",
+        "uid": "c42b4cfd-7405-4605-879c-016baff045b1"
+      },
+      "reason": "Pulled",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "sre-lab-control-plane",
+      "source": {
+        "component": "kubelet",
+        "host": "sre-lab-control-plane"
+      },
+      "type": "Normal"
+    },
+    {
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-10-15T03:30:07Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.initContainers{wait-for-kafka}",
+        "kind": "Pod",
+        "name": "checkout-6f48f6dcc5-rkh8g",
+        "namespace": "otel-demo",
+        "resourceVersion": "6128",
+        "uid": "b85c5cb5-9eb2-4723-9880-1ab80e536077"
+      },
+      "lastTimestamp": "2026-10-15T03:30:07Z",
+      "message": "Container created",
+      "metadata": {
+        "creationTimestamp": "2026-10-15T03:30:07Z",
+        "name": "checkout-6f48f6dcc5-rkh8g.18de965852e9953f",
+        "namespace": "otel-demo",
+        "resourceVersion": "6137",
+        "uid": "cc7e4d03-a1fe-4fed-98bc-65c525697dbb"
+      },
+      "reason": "Created",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "sre-lab-control-plane",
+      "source": {
+        "component": "kubelet",
+        "host": "sre-lab-control-plane"
+      },
+      "type": "Normal"
+    },
+    {
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-10-15T03:30:07Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.initContainers{wait-for-kafka}",
+        "kind": "Pod",
+        "name": "checkout-6f48f6dcc5-rkh8g",
+        "namespace": "otel-demo",
+        "resourceVersion": "6128",
+        "uid": "b85c5cb5-9eb2-4723-9880-1ab80e536077"
+      },
+      "lastTimestamp": "2026-10-15T03:30:07Z",
+      "message": "Container started",
+      "metadata": {
+        "creationTimestamp": "2026-10-15T03:30:07Z",
+        "name": "checkout-6f48f6dcc5-rkh8g.18de965856fc0521",
+        "namespace": "otel-demo",
+        "resourceVersion": "6138",
+        "uid": "b1d8988e-f129-451d-9c9b-1af5333aae5e"
+      },
+      "reason": "Started",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "sre-lab-control-plane",
+      "source": {
+        "component": "kubelet",
+        "host": "sre-lab-control-plane"
+      },
+      "type": "Normal"
+    },
+    {
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-10-15T03:30:08Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{checkout}",
+        "kind": "Pod",
+        "name": "checkout-6f48f6dcc5-rkh8g",
+        "namespace": "otel-demo",
+        "resourceVersion": "6128",
+        "uid": "b85c5cb5-9eb2-4723-9880-1ab80e536077"
+      },
+      "lastTimestamp": "2026-10-15T03:30:08Z",
+      "message": "Container image \"ghcr.io/open-telemetry/demo:3.1.0-checkout\" already present on machine and can be accessed by the pod",
+      "metadata": {
+        "creationTimestamp": "2026-10-15T03:30:08Z",
+        "name": "checkout-6f48f6dcc5-rkh8g.18de96588256c8cb",
+        "namespace": "otel-demo",
+        "resourceVersion": "6146",
+        "uid": "3d3a9290-521c-4df5-9269-620bebcc600d"
+      },
+      "reason": "Pulled",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "sre-lab-control-plane",
+      "source": {
+        "component": "kubelet",
+        "host": "sre-lab-control-plane"
+      },
+      "type": "Normal"
+    },
+    {
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-10-15T03:30:08Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{checkout}",
+        "kind": "Pod",
+        "name": "checkout-6f48f6dcc5-rkh8g",
+        "namespace": "otel-demo",
+        "resourceVersion": "6128",
+        "uid": "b85c5cb5-9eb2-4723-9880-1ab80e536077"
+      },
+      "lastTimestamp": "2026-10-15T03:30:08Z",
+      "message": "Container created",
+      "metadata": {
+        "creationTimestamp": "2026-10-15T03:30:08Z",
+        "name": "checkout-6f48f6dcc5-rkh8g.18de96588345d104",
+        "namespace": "otel-demo",
+        "resourceVersion": "6148",
+        "uid": "232cc6a6-9a25-4432-ae6e-985364812d30"
+      },
+      "reason": "Created",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "sre-lab-control-plane",
+      "source": {
+        "component": "kubelet",
+        "host": "sre-lab-control-plane"
+      },
+      "type": "Normal"
+    },
+    {
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-10-15T03:30:08Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{checkout}",
+        "kind": "Pod",
+        "name": "checkout-6f48f6dcc5-rkh8g",
+        "namespace": "otel-demo",
+        "resourceVersion": "6128",
+        "uid": "b85c5cb5-9eb2-4723-9880-1ab80e536077"
+      },
+      "lastTimestamp": "2026-10-15T03:30:08Z",
+      "message": "Container started",
+      "metadata": {
+        "creationTimestamp": "2026-10-15T03:30:08Z",
+        "name": "checkout-6f48f6dcc5-rkh8g.18de96588a465057",
+        "namespace": "otel-demo",
+        "resourceVersion": "6149",
+        "uid": "0d9bb461-f245-49d4-8ec6-9fe3612a86c9"
+      },
+      "reason": "Started",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "sre-lab-control-plane",
+      "source": {
+        "component": "kubelet",
+        "host": "sre-lab-control-plane"
+      },
+      "type": "Normal"
+    },
+    {
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-10-15T03:30:06Z",
+      "involvedObject": {
+        "apiVersion": "apps/v1",
+        "kind": "ReplicaSet",
+        "name": "checkout-6f48f6dcc5",
+        "namespace": "otel-demo",
+        "resourceVersion": "6122",
+        "uid": "b43a6f2a-64aa-4e3e-a4cd-c42e6f353225"
+      },
+      "lastTimestamp": "2026-10-15T03:30:06Z",
+      "message": "Created pod: checkout-6f48f6dcc5-rkh8g",
+      "metadata": {
+        "creationTimestamp": "2026-10-15T03:30:06Z",
+        "name": "checkout-6f48f6dcc5.18de96581e3848ad",
+        "namespace": "otel-demo",
+        "resourceVersion": "6127",
+        "uid": "4b5b5632-6acc-48f0-ab32-9e70f5f1675c"
+      },
+      "reason": "SuccessfulCreate",
+      "reportingComponent": "replicaset-controller",
+      "reportingInstance": "",
+      "source": {
+        "component": "replicaset-controller"
+      },
+      "type": "Normal"
+    },
+    {
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-10-15T03:30:08Z",
+      "involvedObject": {
+        "apiVersion": "v1",
+        "fieldPath": "spec.containers{checkout}",
+        "kind": "Pod",
+        "name": "checkout-7758999659-2wllm",
+        "namespace": "otel-demo",
+        "resourceVersion": "999",
+        "uid": "25a355fb-8b8f-4578-92b3-51684b30922b"
+      },
+      "lastTimestamp": "2026-10-15T03:30:08Z",
+      "message": "Stopping container checkout",
+      "metadata": {
+        "creationTimestamp": "2026-10-15T03:30:08Z",
+        "name": "checkout-7758999659-2wllm.18de96588d4a6d5c",
+        "namespace": "otel-demo",
+        "resourceVersion": "6159",
+        "uid": "2b22f30b-cf98-4dcf-a118-511557a01873"
+      },
+      "reason": "Killing",
+      "reportingComponent": "kubelet",
+      "reportingInstance": "sre-lab-control-plane",
+      "source": {
+        "component": "kubelet",
+        "host": "sre-lab-control-plane"
+      },
+      "type": "Normal"
+    },
+    {
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-10-15T03:30:08Z",
+      "involvedObject": {
+        "apiVersion": "apps/v1",
+        "kind": "ReplicaSet",
+        "name": "checkout-7758999659",
+        "namespace": "otel-demo",
+        "resourceVersion": "6155",
+        "uid": "1fc332d2-a396-4631-a0e0-6aa1f1d26f2f"
+      },
+      "lastTimestamp": "2026-10-15T03:30:08Z",
+      "message": "Deleted pod: checkout-7758999659-2wllm",
+      "metadata": {
+        "creationTimestamp": "2026-10-15T03:30:08Z",
+        "name": "checkout-7758999659.18de96588d40ede7",
+        "namespace": "otel-demo",
+        "resourceVersion": "6161",
+        "uid": "fae27c28-6165-44b3-b7f2-bdeed13f8f28"
+      },
+      "reason": "SuccessfulDelete",
+      "reportingComponent": "replicaset-controller",
+      "reportingInstance": "",
+      "source": {
+        "component": "replicaset-controller"
+      },
+      "type": "Normal"
+    },
+    {
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-10-15T03:30:06Z",
+      "involvedObject": {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "name": "checkout",
+        "namespace": "otel-demo",
+        "resourceVersion": "6121",
+        "uid": "cd81ff3c-5207-4362-a732-0cc74c528289"
+      },
+      "lastTimestamp": "2026-10-15T03:30:06Z",
+      "message": "Scaled up replica set checkout-6f48f6dcc5 from 0 to 1",
+      "metadata": {
+        "creationTimestamp": "2026-10-15T03:30:06Z",
+        "name": "checkout.18de96581d73e809",
+        "namespace": "otel-demo",
+        "resourceVersion": "6124",
+        "uid": "5e34a893-ece2-443b-a371-b07478e8a07c"
+      },
+      "reason": "ScalingReplicaSet",
+      "reportingComponent": "deployment-controller",
+      "reportingInstance": "",
+      "source": {
+        "component": "deployment-controller"
+      },
+      "type": "Normal"
+    },
+    {
+      "count": 1,
+      "eventTime": null,
+      "firstTimestamp": "2026-10-15T03:30:08Z",
+      "involvedObject": {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "name": "checkout",
+        "namespace": "otel-demo",
+        "resourceVersion": "6133",
+        "uid": "cd81ff3c-5207-4362-a732-0cc74c528289"
+      },
+      "lastTimestamp": "2026-10-15T03:30:08Z",
+      "message": "Scaled down replica set checkout-7758999659 from 1 to 0",
+      "metadata": {
+        "creationTimestamp": "2026-10-15T03:30:08Z",
+        "name": "checkout.18de96588cd92787",
+        "namespace": "otel-demo",
+        "resourceVersion": "6156",
+        "uid": "211e8ccd-15be-446c-bda3-d2ac7002e056"
+      },
+      "reason": "ScalingReplicaSet",
+      "reportingComponent": "deployment-controller",
+      "reportingInstance": "",
+      "source": {
+        "component": "deployment-controller"
+      },
+      "type": "Normal"
+    }
+  ],
+  "namespace": "otel-demo"
+}

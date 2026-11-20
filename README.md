@@ -297,6 +297,7 @@ app/eval/       scoring, metrics, release gate, report, replay evaluation (pytho
 app/kb/         knowledge base: chunking, local models, ingest, hybrid search, retrieval evaluation (python -m app.kb)
 app/obs/        the system's own traces, Prometheus metrics, database-state gauges
 web/            the console and the static site (React, Vite, Tailwind); web/scripts: budget, diagram and demo renderers
+skills/         a standalone agent skill: evidence-cited investigation with a deterministic citation verifier
 kb/             the knowledge base: 18 runbooks and 6 postmortems for the lab's shop
 tests/          pytest suite; tests/fixtures/{lab,agent}: real lab recordings for the contract tests
 deploy/kind/    fault lab: kind config, pinned versions, chart values, SLO rules and their tests
