@@ -498,13 +498,11 @@ claude -p \
 
 ### M10：文档与面试材料（贯穿全程）
 
-- [ ] `docs/adr/`：每个关键选型一篇（见附录 A）。
-- [ ] `docs/learn/`：每个里程碑一篇，结构为"背景知识 → 本项目怎么做 → 踩过的坑 → 面试问答 5–10 题"。
-- [ ] 架构图（Mermaid 放进仓库，导出 PNG 用于 README）。
-- [ ] 演示视频或 GIF：从注入故障到回滚恢复的全过程。
-- [ ] 简历描述：根据最终的真实指标撰写，每一句都能在仓库中找到证据。
-
----
+- [x] `docs/adr/`：每个关键选型一篇（见附录 A），共 11 篇；[`docs/adr/README.md`](../adr/README.md) 是索引，并对照附录 A 的初稿题目写在哪一篇。
+- [x] `docs/learn/`：每个里程碑一篇，结构为"背景知识 → 本项目怎么做 → 踩过的坑 → 面试问答"，每篇 8–12 题；[`docs/learn/README.md`](../learn/README.md) 是索引和阅读顺序。
+- [x] 架构图：Mermaid 源文件在 [`docs/architecture.md`](../architecture.md)（进程与数据、事件状态机），`web/scripts/render-diagrams.mjs` 导出 PNG，放进 README。
+- [x] 演示 GIF：从告警到回滚恢复的全过程。用的是第 40465726955 次实验环境运行导出的真实案例（坏版本发布），在控制台里 30 倍速回放，录制脚本 `web/scripts/record-demo.mjs`，不调用模型、不需要集群。
+- [x] 简历描述：每一句都要能在仓库里找到证据。证据清单 [`docs/results.md`](../results.md) 列出每个数字的出处（哪次运行、哪个文件或测试）、怎么复核，以及还没有证明的事。简历正文属于个人信息，不进仓库（`resume/` 在 `.gitignore` 里）。
 
 ## 4. 原设计的取舍对照
 
@@ -604,4 +602,4 @@ claude -p \
 | M7 | 已完成 | 2026-10-28 | 分支 `milestone/m7-eval`；22 个人工标注的场景、每个变体一个租户并排调查、回放闸门、必须失败的金丝雀（ADR-0009）；6 个核心场景 4 个变体各 1 次（run 40715248288）：默认变体 Top-1 6/6、安全违规 0、每个事件约 19 万 token / 0.03 美元；坏提示的金丝雀 Top-1 0/2 被闸门拦下（run 40751455029）；受额度约束推理强度 low、步数 5，3 次重复和全部场景留待以后 |
 | M8 | 已完成 | 2026-10-30 | 分支 `milestone/m8-observability`；一个事件一棵 trace（上下文经 Postgres 队列跨进程传递）、GenAI 语义约定、Prometheus 指标（数据库状态由 API 现查）、生成的 Grafana 仪表盘、11 条有 promtool 测试的告警（ADR-0011）；2000 条告警的压测在真实的 Prometheus 里对上账，回放的 bad-release 调查在 Jaeger 里是 71 个 span 的一棵树；每个 span 约 37 µs；实验环境里真实模型的 trace 待额度允许 |
 | M9 | 已完成 | 2026-10-27 | 分支 `milestone/m9-console`；Agent 调用树接口、SSE 变化流、案例导出；React 控制台（设计方向 A，深浅两套 token，对比度测试）；Pages 落地页和真实事件回放（ADR-0008）；首屏 JS 111–157 KB gzip，Lighthouse 移动端 91–94、桌面 100，CLS ≤ 0.028，最慢交互 88 ms（CPU 4 倍降速） |
-| M10 | 贯穿全程 | | |
+| M10 | 已完成 | 2026-11-20 | 分支 `milestone/m10-docs`；11 篇 ADR 加索引，10 篇学习笔记加索引；架构图（Mermaid 源文件加 PNG）；真实事件回放的演示 GIF；证据清单 `docs/results.md`。贯穿全程：之后的改动照样补 ADR、笔记和证据 |
