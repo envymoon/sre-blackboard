@@ -308,5 +308,6 @@ docs/results.md every claimed number, with where it was measured and how to chec
 docs/plan/      rebuild plan (Chinese)
 docs/adr/       architecture decision records, with an index (Chinese)
 docs/learn/     per-milestone study notes with interview Q&A, with an index (Chinese)
+docs/book/      the design book: 16 chapters with diagrams and interviewer follow-ups (Chinese)
 docs/legacy/    domain notes kept from the prototype
 ```

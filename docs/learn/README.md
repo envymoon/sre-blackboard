@@ -2,6 +2,8 @@
 
 每个里程碑一篇，结构相同：这一阶段做了什么 → 背景知识 → 本项目怎么做 → 踩过的坑 → 验收结果 → 面试问答。数字和结论都能在仓库里找到出处，汇总在 [`../results.md`](../results.md)。
 
+想按系统组件而不是按里程碑读，看 [《SRE Blackboard 设计全书》](../book/README.md)：16 章，带配图和面试官追问。
+
 | 笔记 | 主题 | 问答 |
 |---|---|---|
 | [M0](m0-engineering-baseline.md) | 诚实化与工程基线：uv、ruff、mypy、CI、fail fast | 8 |
